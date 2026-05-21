@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
 import shlex
+import shutil
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
@@ -66,6 +68,10 @@ DEFAULT_EXPLORATORY_CONCURRENCY = 2
 DEFAULT_OPERATOR_MAX_CYCLES = 10
 DEFAULT_DEPLOY_REPAIR_CYCLE_LIMIT = 2
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
+QA_RUNTIME_MIN_FREE_BYTES = 5 * 1024 * 1024 * 1024
+QA_RUNTIME_MIN_FREE_INODES = 100_000
+QA_RUNTIME_MIN_FREE_BYTES_ENV = "RALPH_QA_RUNTIME_MIN_FREE_BYTES"
+QA_RUNTIME_MIN_FREE_INODES_ENV = "RALPH_QA_RUNTIME_MIN_FREE_INODES"
 DIRTY_WORKTREE_STATUS_PREVIEW_LIMIT = 12
 COMMAND_READ_CHUNK_SIZE = 65536
 COMMIT_LINE_PATTERN = re.compile(r"(?m)^Commit: `(?P<sha>[0-9a-f]{7,40})`$")
@@ -74,6 +80,7 @@ RUN_MANIFEST_LINE_PATTERN = re.compile(
 )
 GITFLOW_INTEGRATION_COMMENT_TITLE = "Ralph Gitflow integration completed."
 MANUAL_GITFLOW_RECOVERY_COMMENT_TITLE = "Ralph Gitflow manual recovery completed."
+PRE_PUSH_REQUEUE_COMMENT_TITLE = "Ralph pre-push requeue completed."
 EXPLORATORY_ACCEPTANCE_COMMENT_TITLE = "Ralph exploratory acceptance completed."
 MANUAL_GITFLOW_RECOVERY_HINT_PATTERN = re.compile(
     r"(?is)\bmanual(?:ly)?\b.{0,120}\brecover(?:y|ed|ing)?\b"
@@ -232,7 +239,7 @@ AEMO_ETL_E2E_QA_NAME = "aemo-etl End-to-end test"
 AEMO_ETL_E2E_TEST_LANE = "AEMO ETL End-to-end test"
 AEMO_ETL_FULL_E2E_SCENARIO = "full-gas-model"
 AEMO_ETL_PROMOTION_E2E_SCENARIO = "promotion-gas-model"
-AEMO_ETL_PROMOTION_E2E_TIMEOUT_SECONDS = 20 * 60
+AEMO_ETL_PROMOTION_E2E_TIMEOUT_SECONDS = 30 * 60
 AEMO_ETL_PROMOTION_E2E_MAX_CONCURRENT_RUNS = 6
 MAINTAINED_DOC_PREFIXES = (
     "docs/",
@@ -247,6 +254,7 @@ ENVIRONMENT_FAILURE_PATTERNS = (
     "could not connect to podman",
     "podman.sock",
     "permission denied while trying to connect",
+    "no space left on device",
 )
 
 
@@ -544,6 +552,10 @@ class EnvironmentFailure(IssueFailure):
     """A local environment failure that should stop the drain."""
 
 
+class QARuntimeCleanupRefusal(RalphError):
+    """A QA runtime path is not safe for Ralph-owned cleanup."""
+
+
 class BranchSyncFailure(EnvironmentFailure):
     """A source-to-target branch sync failure that should stop the drain."""
 
@@ -614,6 +626,50 @@ class IssueReference:
 class QARuntimeEnv:
     values: dict[str, str]
     metadata: dict[str, dict[str, str]]
+
+
+@dataclass(frozen=True)
+class QARuntimeDiskThresholds:
+    min_free_bytes: int
+    min_free_inodes: int
+
+
+@dataclass(frozen=True)
+class QARuntimeCapacity:
+    path: Path
+    free_bytes: int
+    free_inodes: int
+
+    def below(self, thresholds: QARuntimeDiskThresholds) -> tuple[str, ...]:
+        signals: list[str] = []
+        if self.free_bytes < thresholds.min_free_bytes:
+            signals.append("free bytes")
+        if self.free_inodes < thresholds.min_free_inodes:
+            signals.append("free inodes")
+        return tuple(signals)
+
+
+@dataclass(frozen=True)
+class QARuntimeCleanupAction:
+    path: Path
+    status: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class QARuntimePreflightResult:
+    label: str
+    runtime_root: Path
+    repo_runtime_root: Path
+    qa_runtime_env: QARuntimeEnv
+    thresholds: QARuntimeDiskThresholds
+    capacity_before: QARuntimeCapacity
+    capacity_after: QARuntimeCapacity
+    cleanup_actions: tuple[QARuntimeCleanupAction, ...]
+
+    @property
+    def failed_signals(self) -> tuple[str, ...]:
+        return self.capacity_after.below(self.thresholds)
 
 
 @dataclass(frozen=True)
@@ -1114,7 +1170,539 @@ def slugify(value: str, *, max_length: int = 56) -> str:
 
 
 def default_qa_runtime_root(repo: str, run_dir: Path) -> Path:
-    return Path("/tmp") / QA_RUNTIME_ROOT_DIR_NAME / slugify(repo) / run_dir.name
+    return default_qa_runtime_repo_root(repo) / run_dir.name
+
+
+def default_qa_runtime_repo_root(repo: str) -> Path:
+    return Path("/tmp") / QA_RUNTIME_ROOT_DIR_NAME / slugify(repo)
+
+
+def qa_runtime_disk_thresholds(
+    base_env: dict[str, str] | None = None,
+) -> QARuntimeDiskThresholds:
+    source_env = os.environ if base_env is None else base_env
+    return QARuntimeDiskThresholds(
+        min_free_bytes=parse_nonnegative_int_env(
+            source_env,
+            QA_RUNTIME_MIN_FREE_BYTES_ENV,
+            default=QA_RUNTIME_MIN_FREE_BYTES,
+        ),
+        min_free_inodes=parse_nonnegative_int_env(
+            source_env,
+            QA_RUNTIME_MIN_FREE_INODES_ENV,
+            default=QA_RUNTIME_MIN_FREE_INODES,
+        ),
+    )
+
+
+def parse_nonnegative_int_env(
+    source_env: Mapping[str, str],
+    name: str,
+    *,
+    default: int,
+) -> int:
+    raw_value = source_env.get(name)
+    if raw_value is None or raw_value == "":
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError as error:
+        raise EnvironmentFailure(
+            f"{name} must be a non-negative integer, got {raw_value!r}."
+        ) from error
+    if value < 0:
+        raise EnvironmentFailure(
+            f"{name} must be a non-negative integer, got {raw_value!r}."
+        )
+    return value
+
+
+def qa_runtime_capacity(path: Path) -> QARuntimeCapacity:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        usage = shutil.disk_usage(path)
+        stat = os.statvfs(path)
+    except OSError as error:
+        raise qa_runtime_filesystem_environment_failure(
+            path,
+            error,
+            action="check QA runtime disk capacity",
+        ) from error
+    return QARuntimeCapacity(
+        path=path,
+        free_bytes=usage.free,
+        free_inodes=stat.f_favail,
+    )
+
+
+def qa_runtime_capacity_existing_path(path: Path) -> QARuntimeCapacity:
+    probe_path = nearest_existing_ancestor(path)
+    try:
+        usage = shutil.disk_usage(probe_path)
+        stat = os.statvfs(probe_path)
+    except OSError as error:
+        raise qa_runtime_filesystem_environment_failure(
+            path,
+            error,
+            action="check QA runtime disk capacity",
+        ) from error
+    return QARuntimeCapacity(
+        path=path,
+        free_bytes=usage.free,
+        free_inodes=stat.f_favail,
+    )
+
+
+def nearest_existing_ancestor(path: Path) -> Path:
+    candidate = path
+    while not candidate.exists():
+        parent = candidate.parent
+        if parent == candidate:
+            return candidate
+        candidate = parent
+    return candidate
+
+
+def qa_runtime_filesystem_environment_failure(
+    path: Path,
+    error: OSError,
+    *,
+    action: str,
+) -> EnvironmentFailure:
+    signal = qa_runtime_os_error_signal(error)
+    return EnvironmentFailure(
+        (
+            f"QA runtime filesystem failure while trying to {action} for {path}: "
+            f"{error}. Capacity signal: {signal}. Next action: free capacity for "
+            "the path or set operator-provided cache paths outside the full "
+            "filesystem, then rerun the Operator command or targeted Ralph run."
+        ),
+        failure_type="qa_runtime_disk_capacity",
+        recovery_guidance=(
+            f"Free capacity for `{path}` or set operator-provided `DAGSTER_HOME`, "
+            "`XDG_CACHE_HOME`, and `UV_CACHE_DIR` outside the full filesystem, "
+            "then rerun the Operator command or targeted Ralph run."
+        ),
+    )
+
+
+def qa_runtime_os_error_signal(error: OSError) -> str:
+    if error.errno == errno.ENOSPC:
+        return "No space left on device"
+    if error.strerror is not None and error.strerror != "":
+        return error.strerror
+    return error.__class__.__name__
+
+
+def qa_runtime_env_uses_ralph_default(qa_runtime_env: QARuntimeEnv) -> bool:
+    return any(
+        variable_metadata.get("source") == "ralph_default"
+        for variable_metadata in qa_runtime_env.metadata.values()
+    )
+
+
+def validate_qa_runtime_cleanup_target(
+    path: Path,
+    *,
+    repo: str,
+    log_root: Path,
+    active_run_dirs: tuple[Path, ...] = (),
+) -> None:
+    repo_runtime_root = default_qa_runtime_repo_root(repo).resolve()
+    if path.parent.resolve() != repo_runtime_root:
+        raise QARuntimeCleanupRefusal(
+            f"not a direct child of Ralph default QA runtime root: {path}"
+        )
+    if path.is_symlink() or not path.is_dir():
+        raise QARuntimeCleanupRefusal(f"not a normal run-scoped directory: {path}")
+    active_names = {run_dir.name for run_dir in active_run_dirs}
+    if path.name in active_names:
+        raise QARuntimeCleanupRefusal(f"active run directory: {path}")
+
+    manifest_path = log_root / path.name / MANIFEST_NAME
+    if not manifest_path.exists():
+        raise QARuntimeCleanupRefusal(
+            f"matching run manifest not found: {manifest_path}"
+        )
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise QARuntimeCleanupRefusal(
+            f"matching run manifest is invalid JSON: {manifest_path}: {error}"
+        ) from error
+    if not isinstance(payload, dict):
+        raise QARuntimeCleanupRefusal(
+            f"matching run manifest is not a JSON object: {manifest_path}"
+        )
+    run_kind = str(payload.get("run_kind") or "")
+    if run_kind not in {"implementation", "promotion"}:
+        raise QARuntimeCleanupRefusal(
+            f"matching run manifest is not a QA child run: {manifest_path}"
+        )
+    if str(payload.get("status") or "") != "succeeded":
+        raise QARuntimeCleanupRefusal(
+            f"matching run manifest did not succeed: {manifest_path}"
+        )
+    paths = payload.get("paths")
+    if isinstance(paths, dict):
+        manifest_run_dir = paths.get("run_dir")
+        if isinstance(manifest_run_dir, str) and manifest_run_dir != "":
+            if Path(manifest_run_dir).name != path.name:
+                raise QARuntimeCleanupRefusal(
+                    f"matching run manifest points at another run: {manifest_path}"
+                )
+
+
+def cleanup_completed_qa_runtime_dirs(
+    *,
+    repo: str,
+    log_root: Path,
+    active_run_dirs: tuple[Path, ...] = (),
+) -> tuple[QARuntimeCleanupAction, ...]:
+    repo_runtime_root = default_qa_runtime_repo_root(repo)
+    if not repo_runtime_root.exists():
+        return ()
+    actions: list[QARuntimeCleanupAction] = []
+    for path in sorted(repo_runtime_root.iterdir(), key=lambda item: item.name):
+        try:
+            validate_qa_runtime_cleanup_target(
+                path,
+                repo=repo,
+                log_root=log_root,
+                active_run_dirs=active_run_dirs,
+            )
+        except QARuntimeCleanupRefusal as error:
+            actions.append(
+                QARuntimeCleanupAction(path=path, status="skipped", reason=str(error))
+            )
+            continue
+        shutil.rmtree(path)
+        actions.append(
+            QARuntimeCleanupAction(
+                path=path,
+                status="removed",
+                reason="matching run manifest succeeded",
+            )
+        )
+    return tuple(actions)
+
+
+def qa_runtime_disk_preflight(
+    *,
+    repo: str,
+    run_dir: Path,
+    log_root: Path,
+    label: str,
+    base_env: dict[str, str] | None = None,
+    active_run_dirs: tuple[Path, ...] = (),
+    capacity_reader: Callable[[Path], QARuntimeCapacity] = qa_runtime_capacity,
+) -> QARuntimePreflightResult:
+    qa_runtime_env = resolve_qa_runtime_env(
+        repo=repo,
+        run_dir=run_dir,
+        base_env=base_env,
+        create_default_dirs=False,
+    )
+    thresholds = qa_runtime_disk_thresholds(base_env)
+    runtime_root = default_qa_runtime_root(repo, run_dir)
+    repo_runtime_root = default_qa_runtime_repo_root(repo)
+    capacity_before = capacity_reader(repo_runtime_root)
+    cleanup_actions: tuple[QARuntimeCleanupAction, ...] = ()
+    if qa_runtime_env_uses_ralph_default(qa_runtime_env) and capacity_before.below(
+        thresholds
+    ):
+        cleanup_actions = cleanup_completed_qa_runtime_dirs(
+            repo=repo,
+            log_root=log_root,
+            active_run_dirs=(*active_run_dirs, run_dir),
+        )
+    capacity_after = capacity_reader(repo_runtime_root)
+    result = QARuntimePreflightResult(
+        label=label,
+        runtime_root=runtime_root,
+        repo_runtime_root=repo_runtime_root,
+        qa_runtime_env=qa_runtime_env,
+        thresholds=thresholds,
+        capacity_before=capacity_before,
+        capacity_after=capacity_after,
+        cleanup_actions=cleanup_actions,
+    )
+    if not qa_runtime_capacity_failed(result):
+        ensure_qa_runtime_default_dirs(qa_runtime_env)
+    return result
+
+
+def ensure_qa_runtime_disk_capacity(
+    *,
+    repo: str,
+    run_dir: Path,
+    log_root: Path,
+    label: str,
+    base_env: dict[str, str] | None = None,
+    active_run_dirs: tuple[Path, ...] = (),
+    capacity_reader: Callable[[Path], QARuntimeCapacity] = qa_runtime_capacity,
+) -> QARuntimePreflightResult:
+    result = qa_runtime_disk_preflight(
+        repo=repo,
+        run_dir=run_dir,
+        log_root=log_root,
+        label=label,
+        base_env=base_env,
+        active_run_dirs=active_run_dirs,
+        capacity_reader=capacity_reader,
+    )
+    raise_if_qa_runtime_capacity_failed(
+        result,
+        next_action="rerun the Operator command or targeted Ralph run",
+    )
+    return result
+
+
+def qa_runtime_capacity_failed(result: QARuntimePreflightResult) -> bool:
+    return qa_runtime_env_uses_ralph_default(result.qa_runtime_env) and bool(
+        result.failed_signals
+    )
+
+
+def raise_if_qa_runtime_capacity_failed(
+    result: QARuntimePreflightResult,
+    *,
+    next_action: str,
+) -> None:
+    if not qa_runtime_capacity_failed(result):
+        return
+    raise EnvironmentFailure(
+        qa_runtime_capacity_failure_message(result, next_action=next_action),
+        failure_type="qa_runtime_disk_capacity",
+        recovery_guidance=qa_runtime_capacity_recovery_guidance(
+            result,
+            next_action=next_action,
+        ),
+    )
+
+
+def qa_runtime_preflight_manifest_payload(
+    result: QARuntimePreflightResult,
+) -> dict[str, Any]:
+    return {
+        "label": result.label,
+        "runtime_root": str(result.runtime_root),
+        "repo_runtime_root": str(result.repo_runtime_root),
+        "capacity_before": qa_runtime_capacity_payload(result.capacity_before),
+        "capacity_after": qa_runtime_capacity_payload(result.capacity_after),
+        "thresholds": {
+            "min_free_bytes": result.thresholds.min_free_bytes,
+            "min_free_inodes": result.thresholds.min_free_inodes,
+        },
+        "variables": result.qa_runtime_env.metadata,
+        "cleanup_actions": [
+            {
+                "path": str(action.path),
+                "status": action.status,
+                "reason": action.reason,
+            }
+            for action in result.cleanup_actions
+        ],
+    }
+
+
+def qa_runtime_capacity_payload(capacity: QARuntimeCapacity) -> dict[str, Any]:
+    return {
+        "path": str(capacity.path),
+        "free_bytes": capacity.free_bytes,
+        "free_inodes": capacity.free_inodes,
+    }
+
+
+def qa_runtime_preflight_lines(result: QARuntimePreflightResult) -> list[str]:
+    lines = [
+        (
+            f"QA runtime disk preflight ({result.label}): "
+            f"{result.repo_runtime_root} has "
+            f"{format_bytes(result.capacity_after.free_bytes)} free and "
+            f"{result.capacity_after.free_inodes} free inodes "
+            f"(minimum {format_bytes(result.thresholds.min_free_bytes)} and "
+            f"{result.thresholds.min_free_inodes} inodes)."
+        )
+    ]
+    for name in QA_RUNTIME_ENV_DIRS:
+        variable_metadata = result.qa_runtime_env.metadata[name]
+        lines.append(
+            "QA runtime "
+            f"{name}: {variable_metadata['source']} -> {variable_metadata['value']}"
+        )
+    if result.cleanup_actions:
+        removed = sum(
+            1 for action in result.cleanup_actions if action.status == "removed"
+        )
+        skipped = sum(
+            1 for action in result.cleanup_actions if action.status == "skipped"
+        )
+        lines.append(
+            "QA runtime cleanup: "
+            f"removed {removed} completed run-scoped director"
+            f"{'y' if removed == 1 else 'ies'}; skipped {skipped}."
+        )
+    return lines
+
+
+def format_bytes(value: int) -> str:
+    units = ("B", "KiB", "MiB", "GiB", "TiB")
+    amount = float(value)
+    for unit in units:
+        if amount < 1024 or unit == units[-1]:
+            if unit == "B":
+                return f"{int(amount)} {unit}"
+            return f"{amount:.1f} {unit}"
+        amount /= 1024
+    return f"{value} B"
+
+
+def qa_runtime_capacity_failure_message(
+    result: QARuntimePreflightResult,
+    *,
+    next_action: str,
+) -> str:
+    signals = ", ".join(result.failed_signals)
+    return (
+        f"QA runtime disk capacity preflight failed for {result.repo_runtime_root}: "
+        f"{signals} below configured high-water mark after safe cleanup. "
+        f"Next action: free disk capacity or move operator-provided cache paths, then "
+        f"{next_action}."
+    )
+
+
+def qa_runtime_capacity_recovery_guidance(
+    result: QARuntimePreflightResult,
+    *,
+    next_action: str,
+) -> str:
+    return (
+        f"Free capacity for `{result.repo_runtime_root}` or set operator-provided "
+        "`DAGSTER_HOME`, `XDG_CACHE_HOME`, and `UV_CACHE_DIR` outside the full "
+        "filesystem. Ralph cleaned only succeeded run-scoped directories under the "
+        "default QA runtime root and preserved active, failed, missing-manifest, and "
+        "operator-provided paths. "
+        f"Observed {format_bytes(result.capacity_after.free_bytes)} free bytes and "
+        f"{result.capacity_after.free_inodes} free inodes; required at least "
+        f"{format_bytes(result.thresholds.min_free_bytes)} and "
+        f"{result.thresholds.min_free_inodes} inodes. Next action: {next_action}."
+    )
+
+
+def is_no_space_left_failure(error: CommandFailure) -> bool:
+    output = f"{error.stdout}\n{error.stderr}".lower()
+    return "no space left on device" in output
+
+
+def no_space_failure_path(error: CommandFailure) -> Path | None:
+    for line in f"{error.stdout}\n{error.stderr}".splitlines():
+        if "no space left on device" not in line.lower():
+            continue
+        quoted_path = re.search(r"""['"](?P<path>/[^'"]+)['"]""", line)
+        if quoted_path is not None:
+            return Path(quoted_path.group("path"))
+        bare_path = re.search(r"(?P<path>/[^\s:]+)", line)
+        if bare_path is not None:
+            return Path(bare_path.group("path"))
+    return None
+
+
+def qa_runtime_failure_capacity_path(
+    failure_path: Path | None,
+    *,
+    qa_runtime_env: QARuntimeEnv,
+    default_runtime_root: Path,
+) -> Path:
+    if failure_path is None:
+        return no_space_fallback_path(
+            qa_runtime_env,
+            default_runtime_root=default_runtime_root,
+        )
+    for env_path_text in qa_runtime_env.values.values():
+        env_path = Path(env_path_text)
+        if path_is_at_or_below(failure_path, env_path):
+            return env_path
+    if path_is_at_or_below(failure_path, default_runtime_root):
+        return default_runtime_root
+    return failure_path
+
+
+def no_space_fallback_path(
+    qa_runtime_env: QARuntimeEnv,
+    *,
+    default_runtime_root: Path,
+) -> Path:
+    uv_cache_metadata = qa_runtime_env.metadata.get("UV_CACHE_DIR", {})
+    if uv_cache_metadata.get("source") == "operator":
+        return Path(qa_runtime_env.values["UV_CACHE_DIR"])
+    return default_runtime_root
+
+
+def path_is_at_or_below(path: Path, parent: Path) -> bool:
+    resolved_path = path.resolve()
+    resolved_parent = parent.resolve()
+    return resolved_path == resolved_parent or resolved_path.is_relative_to(
+        resolved_parent
+    )
+
+
+def no_space_environment_failure(
+    error: CommandFailure,
+    *,
+    repo: str,
+    run_dir: Path,
+    log_root: Path,
+    qa_runtime_env: QARuntimeEnv,
+    next_action: str,
+) -> EnvironmentFailure:
+    repo_runtime_root = default_qa_runtime_repo_root(repo)
+    default_runtime_root = default_qa_runtime_root(repo, run_dir)
+    failure_path = no_space_failure_path(error)
+    capacity_path = qa_runtime_failure_capacity_path(
+        failure_path,
+        qa_runtime_env=qa_runtime_env,
+        default_runtime_root=default_runtime_root,
+    )
+    thresholds = qa_runtime_disk_thresholds()
+    capacity_before = qa_runtime_capacity_existing_path(capacity_path)
+    repo_capacity_before = (
+        capacity_before
+        if capacity_path == repo_runtime_root
+        else qa_runtime_capacity_existing_path(repo_runtime_root)
+    )
+    cleanup_actions: tuple[QARuntimeCleanupAction, ...] = ()
+    if qa_runtime_env_uses_ralph_default(qa_runtime_env) and repo_capacity_before.below(
+        thresholds
+    ):
+        cleanup_actions = cleanup_completed_qa_runtime_dirs(
+            repo=repo,
+            log_root=log_root,
+            active_run_dirs=(run_dir,),
+        )
+    capacity_after = qa_runtime_capacity_existing_path(capacity_path)
+    result = QARuntimePreflightResult(
+        label="command failure",
+        runtime_root=failure_path or capacity_path,
+        repo_runtime_root=capacity_path,
+        qa_runtime_env=qa_runtime_env,
+        thresholds=thresholds,
+        capacity_before=capacity_before,
+        capacity_after=capacity_after,
+        cleanup_actions=cleanup_actions,
+    )
+    signal = ", ".join(result.failed_signals) or "No space left on device"
+    guidance = qa_runtime_capacity_recovery_guidance(result, next_action=next_action)
+    return EnvironmentFailure(
+        (
+            "Environment failure: command reported `No space left on device` while "
+            f"using QA runtime path {result.runtime_root}. Capacity signal: {signal}. "
+            f"Next action: {next_action}."
+        ),
+        log_path=error.log_path,
+        failure_type="qa_runtime_no_space_left",
+        recovery_guidance=guidance,
+    )
 
 
 def resolve_qa_runtime_env(
@@ -1122,6 +1710,7 @@ def resolve_qa_runtime_env(
     repo: str,
     run_dir: Path,
     base_env: dict[str, str] | None = None,
+    create_default_dirs: bool = True,
 ) -> QARuntimeEnv:
     source_env = os.environ if base_env is None else base_env
     runtime_root = default_qa_runtime_root(repo, run_dir)
@@ -1135,10 +1724,29 @@ def resolve_qa_runtime_env(
             continue
 
         runtime_path = runtime_root / directory_name
-        runtime_path.mkdir(parents=True, exist_ok=True)
         values[name] = str(runtime_path)
         metadata[name] = {"value": str(runtime_path), "source": "ralph_default"}
+        if create_default_dirs:
+            create_qa_runtime_default_dir(runtime_path, name=name)
     return QARuntimeEnv(values=values, metadata=metadata)
+
+
+def ensure_qa_runtime_default_dirs(qa_runtime_env: QARuntimeEnv) -> None:
+    for name, variable_metadata in qa_runtime_env.metadata.items():
+        if variable_metadata.get("source") != "ralph_default":
+            continue
+        create_qa_runtime_default_dir(Path(qa_runtime_env.values[name]), name=name)
+
+
+def create_qa_runtime_default_dir(path: Path, *, name: str) -> None:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        raise qa_runtime_filesystem_environment_failure(
+            path,
+            error,
+            action=f"create default {name} directory",
+        ) from error
 
 
 def env_with_qa_runtime(qa_runtime_env: QARuntimeEnv) -> dict[str, str]:
@@ -1311,6 +1919,23 @@ def context_anchor_paths(markdown: str) -> tuple[ContextAnchorPath, ...]:
 def context_anchor_targets_agent_workflow(anchor: ContextAnchorPath) -> bool:
     return anchor.path == AGENT_WORKFLOW_CONTEXT_PREFIX or anchor.path.startswith(
         f"{AGENT_WORKFLOW_CONTEXT_PREFIX}/"
+    )
+
+
+def context_anchor_targets_ralph_loop_self_update(
+    anchor: ContextAnchorPath,
+) -> bool:
+    return (
+        anchor.path == RALPH_SCRIPT_PATH
+        or anchor.path == RALPH_LOOP_PREFIX.rstrip("/")
+        or anchor.path.startswith(RALPH_LOOP_PREFIX)
+    )
+
+
+def issue_declares_ralph_loop_self_update(issue: Issue) -> bool:
+    return any(
+        context_anchor_targets_ralph_loop_self_update(anchor)
+        for anchor in context_anchor_paths(issue.body)
     )
 
 

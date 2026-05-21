@@ -104,8 +104,39 @@ def test_refresh_command_uses_configurable_defaults(
         archive_bucket=DEFAULT_ARCHIVE_SEED_BUCKET,
         raw_latest_count=DEFAULT_RAW_LATEST_COUNT,
         zip_latest_count=DEFAULT_ZIP_LATEST_COUNT,
+        allow_empty_source_table_seed=False,
     )
     assert json.loads(capsys.readouterr().out)["status"] == "success"
+
+
+def test_refresh_command_can_allow_empty_source_table_seed(
+    tmp_path: Path,
+    mocker: MockerFixture,
+) -> None:
+    s3_client = MagicMock()
+    refresh_archive_seed = mocker.patch.object(
+        cli,
+        "refresh_archive_seed",
+        return_value=_manifest(tmp_path),
+    )
+    mocker.patch.object(cli, "_default_spec", return_value=_seed_spec())
+    mocker.patch.object(cli, "make_s3_client", return_value=s3_client)
+
+    assert (
+        cli.main(
+            [
+                "refresh",
+                "--seed-root",
+                str(tmp_path),
+                "--allow-empty-source-table-seed",
+            ]
+        )
+        == 0
+    )
+
+    assert (
+        refresh_archive_seed.call_args.kwargs["allow_empty_source_table_seed"] is True
+    )
 
 
 def test_load_localstack_command_uses_landing_bucket(

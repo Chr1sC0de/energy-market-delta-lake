@@ -153,11 +153,27 @@ the shared bounded loader and session cache, then filters and summarizes loaded
 schedule rows without changing schedule ETL, source ingestion, scheduling
 semantics, or asset schemas.
 
+The scheduled quantities dashboard stays inside the same boundary. It reads the
+curated `silver.gas_model.silver_gas_fact_scheduled_quantity` Parquet output
+through the shared bounded loader and session cache, then filters and
+summarizes loaded quantity rows with schedule-run link context without changing
+scheduled quantity ETL, source ingestion, scheduling semantics, or asset
+schemas.
+
 The settlement activity dashboard stays inside the same boundary. It reads the
 curated `silver.gas_model.silver_gas_fact_settlement_activity` Parquet output
 through the shared bounded loader and session cache, then filters and
 summarizes loaded settlement activity rows without changing settlement ETL,
 source ingestion, settlement semantics, or asset schemas.
+
+The STTM capacity settlement dashboard stays inside the same boundary. It
+reads the curated
+`silver.gas_model.silver_gas_fact_sttm_capacity_settlement` Parquet output
+through the shared bounded loader and session cache, then filters and
+summarizes loaded settlement run, stage, MOS/capacity component, Hub / Zone,
+Facility, Gas Day, quantity, and source coverage rows without changing
+capacity settlement ETL, source ingestion, MOS/allocation modeling, or
+settlement semantics.
 
 The customer transfer and retail activity dashboard stays inside the same
 boundary. It reads the curated
@@ -172,11 +188,26 @@ shared bounded loader and session cache, then filters and summarizes loaded bid
 stack rows without changing bid stack ETL, source ingestion, participant or
 facility modeling, or market semantics.
 
+The capacity auction dashboard stays inside the same boundary. It reads the
+curated `silver.gas_model.silver_gas_fact_capacity_auction` Parquet output
+through the shared bounded loader and session cache, then filters and
+summarizes loaded auction rows by auction date, Hub / Zone, capacity period,
+metric, quantity, and price without changing capacity auction ETL, source
+ingestion, auction semantics, or asset schemas.
+
 The gas quality and composition dashboard stays inside the same boundary. It
 reads the curated `silver.gas_model.silver_gas_fact_gas_quality` Parquet output
 through the shared bounded loader and session cache, then filters and
 summarizes loaded quality and composition rows without changing gas quality ETL,
 schemas, source ingestion, or quality calculations.
+
+The heating value and SCADA pressure dashboard stays inside the same boundary.
+It reads the curated `silver.gas_model.silver_gas_fact_heating_value` and
+`silver.gas_model.silver_gas_fact_scada_pressure` Parquet outputs through the
+shared bounded loader and session cache, then filters and summarizes loaded
+heating value and pressure rows without changing ETL schemas, pressure or
+heating-value calculations, source ingestion, or conformed dimension
+relationships.
 
 The source coverage matrix dashboard stays inside the same boundary. It reads
 bounded rows from registry-backed `silver.gas_model` facts and dimensions,
@@ -217,6 +248,16 @@ chunk metadata, then reads bounded recent samples from
 recent/sample flow measures without changing ETL flow modeling, generated
 glossary files, asset schemas, or AWS infrastructure.
 
+The Operational Meter Flow dashboard stays inside the same boundary. It renders
+the registry-backed Operational Meter Flow context panel from copied
+generated-gold path and source chunk metadata, then reads bounded recent samples
+from `silver_gas_fact_operational_meter_flow`,
+`silver_gas_dim_operational_point`, `silver_gas_dim_zone`, and
+`silver_gas_dim_pipeline_segment` to show VICGAS meter-flow quantity, gas
+interval, point type, flow direction, source point fields, and explicit
+dimension relationship gaps without changing ETL relationship modeling,
+generated glossary files, asset schemas, or AWS infrastructure.
+
 The Facility flow and storage dashboard stays inside the same boundary. It
 renders copied Facility, Flow, and Capacity context metadata from the Marimo
 registry, then reads bounded recent samples from
@@ -224,6 +265,13 @@ registry, then reads bounded recent samples from
 transfer, storage, source-system coverage, source-table coverage, and latest
 Gas Day without changing ETL flow/storage modeling, generated glossary files,
 asset schemas, or AWS infrastructure.
+
+The forecast-vs-actual dashboard stays inside the same boundary. It reads
+bounded recent samples from `silver_gas_fact_nomination_forecast` and
+`silver_gas_fact_facility_flow_storage`, joins only loaded rows with matching
+Gas Day and source facility/location identifiers, and shows forecast-only or
+actual-only groups when one input is unavailable without changing ETL grain,
+forecast semantics, actual-flow modeling, or AWS infrastructure.
 
 Static asset optimization stays limited to immutable HTTP caching for
 content-hashed Marimo package assets. Extra preload changes, pre-serving
@@ -271,19 +319,27 @@ browser evidence shows a specific cold-start bottleneck.
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/gas_scheduled_quantities.py`
   - `backend-services/marimo/notebooks/facility_explainer.py`
   - `backend-services/marimo/notebooks/participant_explainer.py`
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/connection_point_explainer.py`
   - `backend-services/marimo/notebooks/flow_operations.py`
+  - `backend-services/marimo/notebooks/operational_meter_flow.py`
+  - `backend-services/marimo/notebooks/pipeline_connection_operations.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
+  - `backend-services/marimo/notebooks/gas_sttm_market_settlement.py`
+  - `backend-services/marimo/notebooks/gas_sttm_capacity_settlement.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/facility_flow_storage.py`
   - `backend-services/marimo/notebooks/capacity_outlook.py`
+  - `backend-services/marimo/notebooks/capacity_auction.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
+  - `backend-services/marimo/notebooks/forecast_vs_actual.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
+  - `backend-services/marimo/notebooks/heating_value_pressure.py`
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`
   - `backend-services/marimo/tests/component/test_main.py`
   - `backend-services/marimo/tests/component/test_local_image_split.py`

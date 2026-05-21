@@ -16,6 +16,7 @@ from aemo_etl.maintenance.e2e_archive_seed import (
     SeedCoverageError,
     SourceTableSeedSpec,
     ZipDomainSeedSpec,
+    _synthetic_empty_source_table_key,
     _zip_domain_seed_spec,
     build_default_gas_model_archive_seed_spec,
     cache_path_for_key,
@@ -141,6 +142,89 @@ def test_refresh_archive_seed_writes_failure_manifest_for_shortfall(
     assert manifest_payload["status"] == "failed"
     assert manifest_payload["shortfalls"][0]["shortfall"] == 1
     s3_client.download_file.assert_not_called()
+
+
+def test_refresh_archive_seed_can_write_empty_source_table_seed(
+    tmp_path: Path,
+) -> None:
+    s3_client = _s3_client_with_objects(
+        [
+            {"Key": "bronze/gbb/publicrpts_20240101.zip", "Size": 20},
+        ]
+    )
+
+    def download_file(_: str, key: str, filename: str) -> None:
+        Path(filename).write_text(key, encoding="utf-8")
+
+    s3_client.download_file.side_effect = download_file
+
+    manifest = refresh_archive_seed(
+        s3_client,
+        seed_root=tmp_path,
+        spec=_seed_spec(),
+        archive_bucket="archive",
+        raw_latest_count=1,
+        zip_latest_count=1,
+        allow_empty_source_table_seed=True,
+        current_time=dt.datetime(2024, 1, 1, tzinfo=dt.UTC),
+    )
+
+    empty_seed_key = "bronze/gbb/table___empty_seed__.csv"
+    empty_seed_path = cache_path_for_key(tmp_path, empty_seed_key)
+    assert manifest.status == "success"
+    assert manifest.shortfalls == ()
+    assert manifest.source_table_coverage[0].available_count == 0
+    assert manifest.source_table_coverage[0].synthetic_empty_object_keys == (
+        empty_seed_key,
+    )
+    assert empty_seed_path.exists()
+    assert empty_seed_path.read_bytes() == b""
+    assert (
+        cache_path_for_key(tmp_path, "bronze/gbb/publicrpts_20240101.zip").read_text(
+            encoding="utf-8"
+        )
+        == "bronze/gbb/publicrpts_20240101.zip"
+    )
+    assert s3_client.download_file.call_count == 1
+    payload = json.loads(seed_run_manifest_path(tmp_path).read_text())
+    assert payload["source_table_coverage"][0]["synthetic_empty_object_count"] == 1
+    assert payload["selected_object_count"] == 2
+
+
+def test_refresh_archive_seed_still_fails_zip_shortfall_with_empty_source_table_seed(
+    tmp_path: Path,
+) -> None:
+    s3_client = _s3_client_with_objects(
+        [
+            {"Key": "bronze/gbb/table_20240101.csv", "Size": 10},
+        ]
+    )
+
+    with pytest.raises(SeedCoverageError) as error_info:
+        refresh_archive_seed(
+            s3_client,
+            seed_root=tmp_path,
+            spec=_seed_spec(),
+            archive_bucket="archive",
+            raw_latest_count=1,
+            zip_latest_count=1,
+            allow_empty_source_table_seed=True,
+            current_time=dt.datetime(2024, 1, 1, tzinfo=dt.UTC),
+        )
+
+    assert [entry.name for entry in error_info.value.manifest.shortfalls] == ["gbb"]
+    s3_client.download_file.assert_not_called()
+
+
+def test_synthetic_empty_source_table_key_adds_csv_suffix_for_plain_glob() -> None:
+    assert (
+        _synthetic_empty_source_table_key(
+            archive_prefix="bronze/sttm",
+            glob_pattern="int681_v1_daily_provisional_capacity_data_rpt_1",
+            index=1,
+        )
+        == "bronze/sttm/int681_v1_daily_provisional_capacity_data_rpt_1__empty_seed__.csv"
+    )
 
 
 def test_refresh_archive_seed_downloads_latest_slice_and_manifest(

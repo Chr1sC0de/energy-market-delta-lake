@@ -401,6 +401,8 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_dim_location",
             "silver.gas_model.silver_gas_dim_connection_point",
             "silver.gas_model.silver_gas_dim_zone",
+            "silver.gas_model.silver_gas_dim_pipeline_segment",
+            "silver.gas_model.silver_gas_dim_operational_point",
             "silver.gas_model.silver_gas_participant_market_membership",
             "silver.gas_model.silver_gas_fact_market_price",
             "silver.gas_model.silver_gas_fact_schedule_run",
@@ -421,6 +423,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_sttm_allocation_limit",
             "silver.gas_model.silver_gas_fact_sttm_default_allocation_notice",
             "silver.gas_model.silver_gas_fact_settlement_activity",
+            "silver.gas_model.silver_gas_fact_sttm_market_settlement",
             "silver.gas_model.silver_gas_fact_sttm_mos_stack",
             "silver.gas_model.silver_gas_fact_system_notice",
             "silver.gas_model.silver_gas_fact_gas_quality",
@@ -450,6 +453,8 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_dim_location",
             "silver.gas_model.silver_gas_dim_connection_point",
             "silver.gas_model.silver_gas_dim_zone",
+            "silver.gas_model.silver_gas_dim_pipeline_segment",
+            "silver.gas_model.silver_gas_dim_operational_point",
             "silver.gas_model.silver_gas_participant_market_membership",
             "silver.gas_model.silver_gas_fact_market_price",
             "silver.gas_model.silver_gas_fact_schedule_run",
@@ -470,6 +475,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_sttm_allocation_limit",
             "silver.gas_model.silver_gas_fact_sttm_default_allocation_notice",
             "silver.gas_model.silver_gas_fact_settlement_activity",
+            "silver.gas_model.silver_gas_fact_sttm_market_settlement",
             "silver.gas_model.silver_gas_fact_sttm_mos_stack",
             "silver.gas_model.silver_gas_fact_system_notice",
             "silver.gas_model.silver_gas_fact_gas_quality",
@@ -485,8 +491,9 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "title": "Gas Market Prices",
         "description": (
             "Available analytical dashboard for gas market price types, source "
-            "systems, source tables, latest gas dates, available price measures, "
-            "and Schedule context links from the curated market price fact."
+            "systems, source tables, gas-date filters, available price "
+            "measures, bounded trend diagnostics, exception candidates, and "
+            "Schedule context links from the curated market price fact."
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
@@ -524,6 +531,32 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "chunk-sttm-procedures-spa-outputs",
             "chunk-dwgm-operations-glossary-schedule",
             "chunk-sttm-procedures-settlement-terms",
+        ),
+    },
+    {
+        "concept_id": "gas-scheduled-quantities",
+        "title": "Gas Scheduled Quantities",
+        "description": (
+            "Available analytical dashboard for quantity types, schedule "
+            "types, source points, quantity, volume, amount, source coverage, "
+            "and schedule-run link context from the curated scheduled "
+            "quantity fact."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "gas_scheduled_quantities",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_scheduled_quantity",),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-gbb-guide-gas-day",
+            "chunk-sttm-procedures-spa-requirements",
+            "chunk-sttm-procedures-spa-outputs",
+            "chunk-dwgm-operations-glossary-schedule",
+            "chunk-gbb-procedures-scheduled-flow",
         ),
     },
     {
@@ -609,6 +642,35 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "source_chunk_ids": (
             "chunk-gbb-guide-flow-report",
             "chunk-gbb-procedures-scheduled-flow",
+            "chunk-gbb-guide-nodes-facilities",
+            "chunk-gbb-guide-gas-day",
+        ),
+    },
+    {
+        "concept_id": "forecast-vs-actual",
+        "title": "Forecast Vs Actual Flow And Storage",
+        "description": (
+            "Available analytical dashboard comparing bounded nomination or "
+            "demand forecasts against actual facility flow/storage observations "
+            "where the loaded facts share Gas Day and source facility/location "
+            "identifiers."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "forecast_vs_actual",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_fact_nomination_forecast",
+            "silver.gas_model.silver_gas_fact_facility_flow_storage",
+        ),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-gbb-guide-flow-report",
+            "chunk-gbb-procedures-scheduled-flow",
+            "chunk-gbb-procedures-daily-flow-storage",
             "chunk-gbb-guide-nodes-facilities",
             "chunk-gbb-guide-gas-day",
         ),
@@ -834,6 +896,25 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "source_chunk_ids": (),
     },
     {
+        "concept_id": "heating-value-pressure",
+        "title": "Heating Value And SCADA Pressure",
+        "description": (
+            "Available analytical dashboard for heating value and SCADA "
+            "pressure observations, source-qualified zone and node "
+            "identifiers, gas dates, measurement timestamps, and source "
+            "coverage from the curated quality/status facts."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "heating_value_pressure",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_fact_heating_value",
+            "silver.gas_model.silver_gas_fact_scada_pressure",
+        ),
+        "generated_gold_paths": (),
+        "source_chunk_ids": (),
+    },
+    {
         "concept_id": "gas-customer-transfer-activity",
         "title": "Customer Transfer And Retail Activity",
         "description": (
@@ -987,6 +1068,68 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
     },
     {
+        "concept_id": "pipeline-connection-operations",
+        "title": "Pipeline and Connection Operations",
+        "description": (
+            "Available operational dashboard linking Connection Point, "
+            "Facility, Flow, Capacity, pipeline segment metadata, and visible "
+            "relationship gaps without changing gas_model relationship "
+            "modeling."
+        ),
+        "audiences": ("operator", "analyst", "data-engineer"),
+        "status": "available",
+        "notebook_name": "pipeline_connection_operations",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_dim_connection_point",
+            "silver.gas_model.silver_gas_dim_facility",
+            "silver.gas_model.silver_gas_dim_pipeline_segment",
+            "silver.gas_model.silver_gas_dim_zone",
+            "silver.gas_model.silver_gas_fact_connection_point_flow",
+            "silver.gas_model.silver_gas_fact_operational_meter_flow",
+            "silver.gas_model.silver_gas_fact_capacity_outlook",
+        ),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-gbb-guide-connection-point-identifiers",
+            "chunk-gbb-guide-flow-report",
+            "chunk-gbb-procedures-capacity-outlooks",
+            "chunk-gbb-guide-nameplate-capacity",
+            "chunk-gbb-procedures-facility-nameplate",
+        ),
+    },
+    {
+        "concept_id": "operational-meter-flow",
+        "title": "Operational Meter Flow",
+        "description": (
+            "Available operational dashboard for VICGAS operational meter "
+            "flow quantities, gas intervals, point identifiers, direction, "
+            "and explicit Operational Point, Hub / Zone, and Pipeline segment "
+            "relationship gaps."
+        ),
+        "audiences": ("operator", "analyst", "data-engineer"),
+        "status": "available",
+        "notebook_name": "operational_meter_flow",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_fact_operational_meter_flow",
+            "silver.gas_model.silver_gas_dim_operational_point",
+            "silver.gas_model.silver_gas_dim_zone",
+            "silver.gas_model.silver_gas_dim_pipeline_segment",
+        ),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-gbb-guide-flow-report",
+            "chunk-gbb-procedures-scheduled-flow",
+            "chunk-sttm-procedures-settlement-terms",
+        ),
+    },
+    {
         "concept_id": "schedule-context",
         "title": "Schedule Context",
         "description": (
@@ -1030,6 +1173,26 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "chunk-sttm-procedures-contingency-gas-bids",
             "chunk-dwgm-operations-glossary-schedule",
         ),
+    },
+    {
+        "concept_id": "sttm-contingency-gas",
+        "title": "STTM Contingency Gas",
+        "description": (
+            "Available analytical dashboard for STTM contingency gas calls, "
+            "accepted contingency grains, quantity types, hubs, facilities, "
+            "participants, Bid / Offer identifiers, price steps, approvals, "
+            "and source lineage from the curated contingency gas call fact."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "gas_sttm_contingency_gas",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_fact_sttm_contingency_gas_call",
+        ),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/bid-offer.md",
+        ),
+        "source_chunk_ids": ("chunk-sttm-procedures-contingency-gas-bids",),
     },
     {
         "concept_id": "allocation-context",
@@ -1078,6 +1241,71 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
     },
     {
+        "concept_id": "sttm-market-settlement",
+        "title": "STTM Market Settlement",
+        "description": (
+            "Available analytical dashboard for STTM market settlement rows, "
+            "settlement runs, settlement stages, components, Hub / Zone and "
+            "Facility identifiers, Gas Day and settlement-period filters, "
+            "quantities, amounts, and source coverage from the curated STTM "
+            "market settlement fact."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "gas_sttm_market_settlement",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_sttm_market_settlement",),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/allocation.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-gbb-guide-gas-day",
+            "chunk-gbb-guide-nodes-facilities",
+            "chunk-sttm-procedures-definitions",
+            "chunk-sttm-procedures-settlement-terms",
+            "chunk-sttm-procedures-settlement-amounts",
+            "chunk-sttm-procedures-shortfall-settlement",
+            "chunk-sttm-procedures-capacity-settlement",
+        ),
+    },
+    {
+        "concept_id": "sttm-capacity-settlement",
+        "title": "STTM Capacity Settlement",
+        "description": (
+            "Available analytical dashboard for STTM capacity settlement rows, "
+            "settlement runs, settlement stages, MOS and capacity components, "
+            "Hub / Zone and Facility identifiers, Gas Day filters, quantities, "
+            "and source coverage from the curated STTM capacity settlement fact."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "gas_sttm_capacity_settlement",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_fact_sttm_capacity_settlement",
+        ),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/mos.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/allocation.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-gbb-guide-gas-day",
+            "chunk-gbb-guide-nodes-facilities",
+            "chunk-sttm-procedures-definitions",
+            "chunk-sttm-procedures-settlement-terms",
+            "chunk-sttm-procedures-mos-estimates",
+            "chunk-sttm-procedures-mos-settlement",
+            "chunk-sttm-procedures-capacity-settlement",
+        ),
+    },
+    {
         "concept_id": "capacity-context",
         "title": "Capacity Context",
         "description": (
@@ -1097,6 +1325,30 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "chunk-gbb-guide-nameplate-capacity",
             "chunk-sttm-procedures-definitions",
             "chunk-dwgm-operations-capacity-certificates-purpose",
+        ),
+    },
+    {
+        "concept_id": "capacity-auctions",
+        "title": "Capacity Auctions",
+        "description": (
+            "Available analytical dashboard for capacity auction observations, "
+            "auction dates, Hub / Zone values, capacity periods, quantities, "
+            "prices, auction metrics, and related Capacity and market-analysis "
+            "context."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "capacity_auction",
+        "backing_assets": ("silver.gas_model.silver_gas_fact_capacity_auction",),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-sttm-procedures-definitions",
+            "chunk-sttm-procedures-capacity-settlement",
+            "chunk-dwgm-operations-capacity-certificates-purpose",
+            "chunk-dwgm-operations-capacity-certificates-modelling",
         ),
     },
     {

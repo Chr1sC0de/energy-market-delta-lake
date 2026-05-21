@@ -60,7 +60,7 @@ services:
   # LocalStack — mocked AWS S3 (and any other AWS services needed locally)
   # -------------------------------------------------------------------------
   localstack:
-    # image: docker.io/localstack/localstack:latest
+    # image: docker.io/localstack/localstack:4.8.1
     build:
       context: ./localstack/
     container_name: localstack

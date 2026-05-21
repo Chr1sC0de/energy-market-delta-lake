@@ -28,8 +28,11 @@ Marimo-Codex research workspace image.
 - [Hub / Zone explainer dashboard](#hub--zone-explainer-dashboard)
 - [Connection Point explainer dashboard](#connection-point-explainer-dashboard)
 - [Flow operations dashboard](#flow-operations-dashboard)
+- [Pipeline and Connection operations dashboard](#pipeline-and-connection-operations-dashboard)
 - [Capacity outlook dashboard](#capacity-outlook-dashboard)
+- [Capacity auction dashboard](#capacity-auction-dashboard)
 - [Nomination and demand forecast dashboard](#nomination-and-demand-forecast-dashboard)
+- [Forecast-vs-actual dashboard](#forecast-vs-actual-dashboard)
 - [Gas market dashboard](#gas-market-dashboard)
 - [Market prices dashboard](#market-prices-dashboard)
 - [Schedule runs dashboard](#schedule-runs-dashboard)
@@ -40,6 +43,7 @@ Marimo-Codex research workspace image.
 - [Bid-Offer stack dashboard](#bid-offer-stack-dashboard)
 - [System notices dashboard](#system-notices-dashboard)
 - [Gas quality and composition dashboard](#gas-quality-and-composition-dashboard)
+- [Heating value and SCADA pressure dashboard](#heating-value-and-scada-pressure-dashboard)
 - [GBB interactive map](#gbb-interactive-map)
 - [Local usage](#local-usage)
 - [Validation](#validation)
@@ -525,6 +529,51 @@ operational meter quantities into recent/sample observations. Missing tables,
 unavailable Parquet prefixes, empty reads, and missing columns render designed
 empty states with the checked assets, read policy, and refresh action.
 
+## Operational Meter Flow dashboard
+
+[notebooks/operational_meter_flow.py](notebooks/operational_meter_flow.py) is
+an operational dashboard for VICGAS meter flow observations. It renders the
+registry-backed Operational Meter Flow context panel and context links to Flow,
+Pipeline and Connection, Hub / Zone, source coverage, and table explorer
+surfaces, then loads bounded recent samples from
+`silver.gas_model.silver_gas_fact_operational_meter_flow`,
+`silver.gas_model.silver_gas_dim_operational_point`,
+`silver.gas_model.silver_gas_dim_zone`, and
+`silver.gas_model.silver_gas_dim_pipeline_segment` through the shared gas model
+loader.
+
+The dashboard summarizes quantity, gas interval, point type, source point
+identifier, source table, flow direction, and current Operational Point
+dimension context. Its relationship gap view keeps missing
+`operational_point_key`, `zone_key`, and `pipeline_segment_key` links visible at
+both fact and Operational Point levels so unresolved model coverage is explicit
+without changing ETL relationship modeling.
+
+## Pipeline and Connection operations dashboard
+
+[notebooks/pipeline_connection_operations.py](notebooks/pipeline_connection_operations.py)
+is an operational dashboard that links Connection Point, Facility, Flow,
+Capacity, Hub / Zone, GBB map, source coverage, and table explorer context. It
+loads bounded recent samples from
+`silver.gas_model.silver_gas_dim_connection_point`,
+`silver.gas_model.silver_gas_dim_facility`,
+`silver.gas_model.silver_gas_dim_pipeline_segment`,
+`silver.gas_model.silver_gas_dim_zone`,
+`silver.gas_model.silver_gas_fact_connection_point_flow`,
+`silver.gas_model.silver_gas_fact_operational_meter_flow`, and
+`silver.gas_model.silver_gas_fact_capacity_outlook` through the shared gas
+model loader.
+
+The dashboard summarizes Connection Point flow beside available connection and
+pipeline segment metadata, including operational status fields such as
+Connection Point exemption and effective dates, pipeline reverse-flow and
+compressor flags, segment dates, and source update timestamps. Its relationship
+gap view keeps missing conformed identifiers visible, including absent
+`connection_point_key`, unmatched capacity-to-Connection Point comparisons,
+missing `pipeline_segment_key`, and missing pipeline segment `zone_key` values.
+It does not change ETL relationship modeling, conformed identifiers, or
+source-qualified dimensions.
+
 ## Capacity outlook dashboard
 
 [notebooks/capacity_outlook.py](notebooks/capacity_outlook.py) is an
@@ -541,6 +590,23 @@ connection-point nameplate source coverage from the loaded `source_table` and
 `source_tables` values where present. Missing tables, unavailable Parquet
 prefixes, empty reads, filter misses, and missing columns render designed empty
 states with the checked asset, read policy, and refresh action.
+
+## Capacity auction dashboard
+
+[notebooks/capacity_auction.py](notebooks/capacity_auction.py) is an
+analytical dashboard over
+`silver.gas_model.silver_gas_fact_capacity_auction`. It renders the
+registry-backed Capacity Auctions context panel and links to Capacity, Hub /
+Zone, gas market overview, source coverage, source lineage, and table explorer
+surfaces, then loads bounded recent samples through the shared gas model
+loader.
+
+The dashboard summarizes auction ID, `auction_date`, Hub / Zone, capacity
+period, `auction_metric`, `quantity_gj`, and `price` fields. It filters the
+bounded read by auction date, Hub / Zone, capacity period, auction metric, and
+source system. Missing tables, unavailable Parquet prefixes, empty reads,
+filter misses, and missing columns render designed empty states with the
+checked asset, read policy, and refresh action.
 
 ## Nomination and demand forecast dashboard
 
@@ -561,6 +627,26 @@ from the Marimo registry. Historical actuals are intentionally outside this
 forecast-only view; missing nomination forecast data, unavailable Parquet
 prefixes, and filter combinations with no matches render dashboard empty states
 with the checked table, read policy, and refresh action.
+
+## Forecast-vs-actual dashboard
+
+[notebooks/forecast_vs_actual.py](notebooks/forecast_vs_actual.py) is an
+analytical dashboard comparing bounded nomination or demand forecast rows from
+`silver.gas_model.silver_gas_fact_nomination_forecast` with available actual
+facility flow/storage observations from
+`silver.gas_model.silver_gas_fact_facility_flow_storage`. It uses the shared
+bounded gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+joins only loaded rows that share Gas Day, `source_facility_id`, and
+`source_location_id`.
+
+The dashboard shows first-viewport data health, AWS sampled/recent-only bounded
+read messaging, matched facility-day counts, forecast-only and actual-only
+groups, flow measure deltas after converting actual TJ fields to GJ, and
+actual storage observations with forecast coverage status. Missing forecast
+data, missing actual data, unavailable Parquet prefixes, and filter
+combinations with no matches render dashboard empty states with the checked
+tables, read policy, and refresh action.
 
 ## Gas market dashboard
 
@@ -619,15 +705,18 @@ analytical dashboard over
 `silver.gas_model.silver_gas_fact_market_price`. It uses the shared bounded gas
 model loader and session cache from
 [src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
-filters the loaded bounded preview by `price_type`, `source_system`, and
-`source_table`.
+filters the loaded bounded preview by Gas Day, `price_type`, `source_system`,
+and `source_table`.
 
 The dashboard shows loaded price KPIs, latest `gas_date`, price-type and source
-summaries, available price measure columns, a recent loaded trend table,
+summaries, available price measure columns, bounded per-measure trend
+diagnostics, recent/sample exception candidates for missing measures,
+non-positive values, and bounded range edges, a recent loaded trend table,
 bounded observation previews, and Market price plus Schedule context links from
-the Marimo registry. Missing market-price data, unavailable Parquet prefixes,
-and filter combinations with no matches render dashboard empty states with the
-checked table, read policy, and refresh action.
+the Marimo registry. AWS mode labels these trend and exception views as
+sampled/recent-only bounded reads. Missing market-price data, unavailable
+Parquet prefixes, and filter combinations with no matches render dashboard
+empty states with the checked table, read policy, and refresh action.
 
 ## Schedule runs dashboard
 
@@ -647,6 +736,26 @@ context links from the Marimo registry. Missing schedule-run data, unavailable
 Parquet prefixes, and filter combinations with no matches render dashboard
 empty states with the checked table, read policy, and refresh action.
 
+## Scheduled quantities dashboard
+
+[notebooks/gas_scheduled_quantities.py](notebooks/gas_scheduled_quantities.py)
+is an analytical dashboard over
+`silver.gas_model.silver_gas_fact_scheduled_quantity`. It uses the shared
+bounded gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by Gas Day, `source_system`, and
+`schedule_type_id`.
+
+The dashboard shows loaded scheduled-quantity KPIs, quantity-type and schedule
+type summaries, source point totals, quantity, volume, and amount coverage,
+schedule-run link context through Gas Day, source system, schedule type, and
+transmission identifiers, source coverage by source system and source table,
+bounded row previews, and Scheduled quantity, Schedule run, Gas Day, Flow, and
+table explorer context links from the Marimo registry. Missing scheduled
+quantity data, unavailable Parquet prefixes, and filter combinations with no
+matches render dashboard empty states with the checked table, read policy, and
+refresh action.
+
 ## Settlement activity dashboard
 
 [notebooks/gas_settlement_activity.py](notebooks/gas_settlement_activity.py) is
@@ -665,6 +774,44 @@ Schedule context links from the Marimo registry. Missing settlement activity
 data, unavailable Parquet prefixes, and filter combinations with no matches
 render dashboard empty states with the checked table, read policy, and refresh
 action.
+
+## STTM market settlement dashboard
+
+[notebooks/gas_sttm_market_settlement.py](notebooks/gas_sttm_market_settlement.py)
+is an analytical dashboard over
+`silver.gas_model.silver_gas_fact_sttm_market_settlement`. It uses the shared
+bounded gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by Gas Day, settlement period,
+`settlement_stage`, and `settlement_component`.
+
+The dashboard shows loaded STTM market settlement KPIs, settlement run, stage,
+component, Hub / Zone, Facility, Gas Day, settlement-period, quantity, and
+amount summaries, source coverage by source system and source table, bounded
+row previews, and Settlement, Allocation, Hub / Zone, Facility, Gas Day, and
+table explorer context links from the Marimo registry. Missing STTM settlement
+data, unavailable Parquet prefixes, and filter combinations with no matches
+render dashboard empty states with the checked table, read policy, and refresh
+action.
+
+## STTM capacity settlement dashboard
+
+[notebooks/gas_sttm_capacity_settlement.py](notebooks/gas_sttm_capacity_settlement.py)
+is an analytical dashboard over
+`silver.gas_model.silver_gas_fact_sttm_capacity_settlement`. It uses the shared
+bounded gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by Gas Day, `settlement_stage`,
+`capacity_settlement_component`, Hub / Zone, and Facility.
+
+The dashboard shows loaded STTM capacity settlement KPIs, settlement run,
+stage, MOS/capacity component, Hub / Zone, Facility, Gas Day, quantity, and
+source coverage summaries, bounded row previews, and Capacity, Settlement,
+STTM market settlement, MOS, Allocation, Facility, Hub / Zone, and table
+explorer context links from the Marimo registry. Missing STTM capacity
+settlement data, unavailable Parquet prefixes, and filter combinations with no
+matches render dashboard empty states with the checked table, read policy, and
+refresh action.
 
 ## Customer transfer and retail activity dashboard
 
@@ -739,6 +886,24 @@ Schedule context links from the Marimo registry. Missing bid-stack data,
 unavailable Parquet prefixes, and filter combinations with no matches render
 dashboard empty states with the checked table, read policy, and refresh action.
 
+## STTM contingency gas dashboard
+
+[notebooks/gas_sttm_contingency_gas.py](notebooks/gas_sttm_contingency_gas.py)
+is an analytical dashboard over
+`silver.gas_model.silver_gas_fact_sttm_contingency_gas_call`. It uses the
+shared bounded gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by contingency grain, quantity type, hub,
+and `source_system`.
+
+The dashboard shows loaded STTM contingency gas KPIs, accepted contingency grain
+and quantity summaries, Bid / Offer identifier and step context where current
+fact fields support it, source-system and source-table coverage, bounded row
+previews, and Bid / Offer, Schedule, Settlement, Gas Day, and table explorer
+context links from the Marimo registry. Missing contingency gas data,
+unavailable Parquet prefixes, and filter combinations with no matches render
+dashboard empty states with the checked table, read policy, and refresh action.
+
 ## System notices dashboard
 
 [notebooks/system_notices.py](notebooks/system_notices.py) is an operational
@@ -769,6 +934,26 @@ gas dates, gas intervals, source points, quantities, source-system fields, and
 source coverage by source system and source table. Missing gas-quality data,
 unavailable Parquet prefixes, and filter combinations with no matches render
 dashboard empty states with the checked table, read policy, and refresh action.
+
+## Heating value and SCADA pressure dashboard
+
+[notebooks/heating_value_pressure.py](notebooks/heating_value_pressure.py)
+is an analytical dashboard over
+`silver.gas_model.silver_gas_fact_heating_value` and
+`silver.gas_model.silver_gas_fact_scada_pressure`. It uses the shared bounded
+gas model loader and session cache from
+[src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py), then
+filters the loaded bounded preview by `source_system`, `source_table`, and
+source-qualified zone or node identifier.
+
+The dashboard shows loaded observation KPIs, heating value field coverage,
+SCADA pressure field coverage, Gas Day and measurement timestamp coverage,
+source-qualified identifier coverage, source coverage by fact, source system,
+and source table, and bounded row previews. It labels `source_zone_id` and
+`source_node_id` as source-qualified identifiers because these facts do not
+currently carry conformed dimension keys. Missing data, unavailable Parquet
+prefixes, and filter combinations with no matches render dashboard empty states
+with the checked tables, read policy, and refresh action.
 
 ## GBB interactive map
 
@@ -847,11 +1032,14 @@ Caddy and choose an available card such as `data_readiness_overview`,
 `citation_chain_explorer`, `table_explorer`, `source_coverage_matrix`,
 `source_table_lineage_explorer`, `sample_energy_market`, `gas_market_prices`,
 `gas_schedule_runs`,
-`system_notices`, `gas_settlement_activity`,
+`gas_scheduled_quantities`, `system_notices`, `gas_settlement_activity`,
+`gas_sttm_market_settlement`,
+`gas_sttm_capacity_settlement`,
 `gas_customer_transfer_activity`, `facility_flow_storage`,
-`gas_bid_offer_stack`, `gas_quality_composition`, `facility_explainer`,
-`participant_explainer`, `hub_zone_explainer`, `connection_point_explainer`,
-`flow_operations`, `capacity_outlook`, or `gbb_interactive_map`:
+`forecast_vs_actual`, `gas_bid_offer_stack`, `gas_sttm_contingency_gas`,
+`gas_quality_composition`, `facility_explainer`, `participant_explainer`,
+`hub_zone_explainer`, `connection_point_explainer`, `flow_operations`,
+`capacity_outlook`, or `gbb_interactive_map`:
 
 ```text
 http://localhost/marimo
@@ -992,6 +1180,20 @@ cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/flow_operations.py
 ```
 
+Use the same pattern for the Operational Meter Flow dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/operational_meter_flow.py
+```
+
+Use the same pattern for the Pipeline and Connection operations dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/pipeline_connection_operations.py
+```
+
 Use the same pattern for the system notices dashboard:
 
 ```bash
@@ -1013,11 +1215,32 @@ cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_schedule_runs.py
 ```
 
+Use the same pattern for the scheduled quantities dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_scheduled_quantities.py
+```
+
 Use the same pattern for the settlement activity dashboard:
 
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_settlement_activity.py
+```
+
+Use the same pattern for the STTM market settlement dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_sttm_market_settlement.py
+```
+
+Use the same pattern for the STTM capacity settlement dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_sttm_capacity_settlement.py
 ```
 
 Use the same pattern for the customer transfer and retail activity dashboard:
@@ -1034,6 +1257,13 @@ cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/facility_flow_storage.py
 ```
 
+Use the same pattern for the forecast-vs-actual dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/forecast_vs_actual.py
+```
+
 Use the same pattern for the capacity outlook dashboard:
 
 ```bash
@@ -1041,11 +1271,25 @@ cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/capacity_outlook.py
 ```
 
+Use the same pattern for the capacity auction dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/capacity_auction.py
+```
+
 Use the same pattern for the Bid / Offer stack dashboard:
 
 ```bash
 cd backend-services/marimo
 AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_bid_offer_stack.py
+```
+
+Use the same pattern for the STTM contingency gas dashboard:
+
+```bash
+cd backend-services/marimo
+AWS_ENDPOINT_URL=http://localhost:4566 uv run marimo edit notebooks/gas_sttm_contingency_gas.py
 ```
 
 Use the same pattern for the gas quality and composition dashboard:
@@ -1085,6 +1329,62 @@ materialized table data.
 
 Materialize the `gas_model` assets in Dagster, or seed LocalStack with curated
 outputs, then use **Refresh data** in the dashboard to see populated sections.
+
+### Browser review for promoted dashboards
+
+Use
+[scripts/review_promoted_dashboards.py](scripts/review_promoted_dashboards.py)
+for a repeatable Playwright development review of promoted dashboards that need
+browser evidence. The helper opens each target route at a desktop viewport
+(`1440x1100`) and a narrow viewport (`390x900`), verifies the dashboard brief
+and required first-screen text, and exercises the declared refresh/filter
+controls where the dashboard has them.
+
+Start the FastAPI-mounted dashboard server from this Subproject:
+
+```bash
+cd backend-services/marimo
+MARIMO_NOTEBOOKS_DIR=notebooks AWS_ENDPOINT_URL=http://localhost:4566 \
+  AWS_MAX_ATTEMPTS=1 AWS_DEFAULT_REGION=ap-southeast-2 \
+  AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
+  uv run uvicorn marimoserver.main:app --host 127.0.0.1 --port 8000
+```
+
+Inspect the review plan without installing Playwright:
+
+```bash
+cd backend-services/marimo
+uv run python scripts/review_promoted_dashboards.py --print-plan
+```
+
+Install Chromium for the current Playwright cache when needed, then run the
+review:
+
+```bash
+cd backend-services/marimo
+uv run --with playwright playwright install chromium
+uv run --with playwright python scripts/review_promoted_dashboards.py \
+  --base-url http://127.0.0.1:8000
+```
+
+The default promoted-dashboard route set is:
+
+- `/marimo/data_readiness_overview/`
+- `/marimo/glossary_explorer/`
+- `/marimo/system_notices/`
+- `/marimo/gas_market_prices/`
+- `/marimo/gas_bid_offer_stack/`
+
+Screenshots are off by default. When durable local review artifacts are useful,
+write them outside the repository:
+
+```bash
+cd backend-services/marimo
+uv run --with playwright python scripts/review_promoted_dashboards.py \
+  --base-url http://127.0.0.1:8000 \
+  --screenshots \
+  --artifact-dir /tmp/marimo-dashboard-review
+```
 
 ## Validation
 
@@ -1140,6 +1440,7 @@ prek run -a
   - `backend-services/marimo/pyproject.toml`
   - `backend-services/marimo/Dockerfile`
   - `backend-services/marimo/docs/dashboard-standard.md`
+  - `backend-services/marimo/scripts/review_promoted_dashboards.py`
   - `backend-services/marimo/scripts/sync-gbb-map-s3-to-localstack.sh`
   - `backend-services/marimo/research-workspace/AGENTS.md`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
@@ -1173,19 +1474,28 @@ prek run -a
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/gas_scheduled_quantities.py`
   - `backend-services/marimo/notebooks/facility_explainer.py`
   - `backend-services/marimo/notebooks/participant_explainer.py`
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/connection_point_explainer.py`
   - `backend-services/marimo/notebooks/flow_operations.py`
+  - `backend-services/marimo/notebooks/operational_meter_flow.py`
+  - `backend-services/marimo/notebooks/pipeline_connection_operations.py`
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
+  - `backend-services/marimo/notebooks/gas_sttm_market_settlement.py`
+  - `backend-services/marimo/notebooks/gas_sttm_capacity_settlement.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/facility_flow_storage.py`
+  - `backend-services/marimo/notebooks/forecast_vs_actual.py`
   - `backend-services/marimo/notebooks/capacity_outlook.py`
+  - `backend-services/marimo/notebooks/capacity_auction.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
+  - `backend-services/marimo/notebooks/gas_sttm_contingency_gas.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
+  - `backend-services/marimo/notebooks/heating_value_pressure.py`
   - `backend-services/marimo/tests/component/conftest.py`
   - `backend-services/marimo/tests/component/test_dashboard_registry.py`
   - `backend-services/marimo/tests/component/test_main.py`
@@ -1193,6 +1503,7 @@ prek run -a
   - `backend-services/marimo/tests/component/dashboard_smoke_harness.py`
   - `backend-services/marimo/tests/component/test_dashboard_smoke.py`
   - `backend-services/marimo/tests/component/test_gas_dashboard.py`
+  - `backend-services/marimo/tests/component/test_promoted_dashboard_browser_review.py`
   - `backend-services/marimo/tests/component/test_data_dictionary_explorer.py`
   - `backend-services/marimo/tests/component/test_table_explorer.py`
   - `backend-services/marimo/tests/component/test_glossary_explorer.py`

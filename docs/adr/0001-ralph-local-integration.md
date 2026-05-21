@@ -47,8 +47,14 @@ verifies the recorded **Local integration** commit or Exploratory handoff commit
 is reachable from the expected **Integration target**. Ralph also blocks live
 implementation and **Promotion** runs on a dirty root worktree unless the
 operator passes `--allow-dirty-worktree`; dry-run remains available for queue
-inspection without issue or branch mutation. After a successful issue **Local
-integration** or Exploratory handoff, **Ready issue refresh** reconciles
+inspection without issue or branch mutation. Failed implementation runs that
+passed QA and **Issue completion review** before any recorded
+`integration_commit` or **Integration target** push may use Ralph-owned
+pre-push requeue recovery instead: Ralph preserves a local implementation
+backup ref, cleans only manifest-derived Ralph worktrees and issue branches,
+comments the evidence, and returns the issue to `ready-for-agent` without
+creating or pushing a **Local integration** commit. After a successful issue
+**Local integration** or Exploratory handoff, **Ready issue refresh** reconciles
 follow-on GitHub Issues before Ralph schedules further issue attempts so the
 queue reflects the updated **Integration target**. Parallel drain may still let
 already active Exploratory workers finish. Ralph records the first step as a

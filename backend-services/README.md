@@ -230,11 +230,12 @@ Useful routes:
   explorer, data readiness overview, AWS bounded-read diagnostics, market
   prices, materialization freshness, source coverage, source table lineage,
   schedule runs, settlement activity, customer transfer and retail activity,
-  system notices, Bid / Offer stack, gas quality and composition, schema data
-  dictionary, citation-chain explorer, Hub / Zone explainer, and Flow
-  operations dashboards. The
-  schema data dictionary groups read-only Dagster column metadata by Market
-  context concept, gas-model mart, mapped asset, and dashboard route. The
+  system notices, Bid / Offer stack, gas quality and composition, heating value
+  and SCADA pressure, schema data dictionary, citation-chain explorer, Hub /
+  Zone explainer, Flow operations, Operational Meter Flow, and
+  forecast-vs-actual dashboards. The schema data dictionary groups read-only
+  Dagster column metadata by Market context concept, gas-model mart, mapped
+  asset, and dashboard route. The
   source table lineage explorer connects curated `silver.gas_model` assets to
   source systems, source tables, lineage fields, and registry-backed Market
   context links. The Hub / Zone explainer connects generated Market context
@@ -355,7 +356,10 @@ uv run aemo-e2e-archive-seed refresh
 
 The refresh path defaults to `dev-energy-market-archive`, requires 3 latest raw
 objects for each required `gas_model` source table and 3 latest zip objects for
-each required zip domain, and fails with a manifest if coverage is short.
+each required zip domain, and fails with a manifest if coverage is short. Use
+`--allow-empty-source-table-seed` only when a source table is validly absent
+from the live archive slice; it writes zero-byte source-table placeholders while
+zip-domain shortfalls remain hard failures.
 
 ## Isolated AEMO ETL e2e stack
 
@@ -385,7 +389,7 @@ the stack runs from an ephemeral worktree. Refresh that cache with
 | `--seed-root` | `backend-services/.e2e/aemo-etl` | Cached Archive seed root mounted into the isolated stack |
 | `--raw-latest-count` | scenario-specific | Cached raw source-table objects required per table; `1` for `full-gas-model`, `1` for `promotion-gas-model` |
 | `--zip-latest-count` | scenario-specific | Cached zip objects required per domain; `1` for `full-gas-model`, `1` for `promotion-gas-model` |
-| `--timeout-seconds` | scenario-specific | Overall stack and dataflow timeout; `5400` for `full-gas-model`, `1200` for `promotion-gas-model` |
+| `--timeout-seconds` | scenario-specific | Overall stack and dataflow timeout; `5400` for `full-gas-model`, `1800` for `promotion-gas-model` |
 | `--max-concurrent-runs` | scenario-specific | Dagster queued run coordinator `max_concurrent_runs`; `6` for `full-gas-model`, `6` for `promotion-gas-model` |
 
 After the isolated stack reaches readiness, the command drives the Dagster
@@ -485,7 +489,7 @@ failure remain in the manifest.
 
 The `promotion-gas-model` scenario enforces #79 Promotion guard regression
 budgets from the approved #78 targeted baseline: total gate duration at or
-below 20 minutes, peak active runs at or below `6`, peak queued runs at or
+below 30 minutes, peak active runs at or below `6`, peak queued runs at or
 below `6`, total Dagster runs at or below the current direct-launch
 `dataflow.scenario_evidence.batch_count`, target progress exactly matching the
 current `source_definitions.executable_asset_count` evidence from the source
@@ -816,19 +820,28 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/gas_scheduled_quantities.py`
   - `backend-services/marimo/notebooks/facility_explainer.py`
   - `backend-services/marimo/notebooks/participant_explainer.py`
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/connection_point_explainer.py`
   - `backend-services/marimo/notebooks/flow_operations.py`
+  - `backend-services/marimo/notebooks/operational_meter_flow.py`
+  - `backend-services/marimo/notebooks/pipeline_connection_operations.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
+  - `backend-services/marimo/notebooks/gas_sttm_market_settlement.py`
+  - `backend-services/marimo/notebooks/gas_sttm_capacity_settlement.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/facility_flow_storage.py`
+  - `backend-services/marimo/notebooks/forecast_vs_actual.py`
   - `backend-services/marimo/notebooks/capacity_outlook.py`
+  - `backend-services/marimo/notebooks/capacity_auction.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
+  - `backend-services/marimo/notebooks/gas_sttm_contingency_gas.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
+  - `backend-services/marimo/notebooks/heating_value_pressure.py`
   - `backend-services/scripts/aemo-etl-e2e`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`

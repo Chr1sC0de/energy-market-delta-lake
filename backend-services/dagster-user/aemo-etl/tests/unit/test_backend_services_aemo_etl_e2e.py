@@ -407,7 +407,7 @@ def test_run_parser_defaults_to_full_dataflow_timeout_and_concurrency() -> None:
     )
     assert getattr(promotion_options, "raw_latest_count") == 1
     assert getattr(promotion_options, "zip_latest_count") == 1
-    assert getattr(promotion_options, "timeout_seconds") == 20 * 60
+    assert getattr(promotion_options, "timeout_seconds") == 30 * 60
     assert getattr(promotion_options, "max_concurrent_runs") == 6
     assert getattr(promotion_options, "launch_mode") == "direct-upstream-asset-launch"
 
@@ -2385,7 +2385,7 @@ def test_e2e_promotion_regression_budgets_pass_for_current_launch_plan() -> None
     )
     assert "E2E Promotion guard regression budgets (passed):" in report
     assert "run manifest: /tmp/run-manifest.json" in report
-    assert "7m55s; threshold <= 20m00s" in report
+    assert "7m55s; threshold <= 30m00s" in report
     assert (
         "total Dagster runs: observed 67; "
         "threshold <= 67 from dataflow.scenario_evidence.batch_count" in report
@@ -2413,7 +2413,7 @@ def test_e2e_promotion_regression_budgets_fail_duration_and_run_counts() -> None
         },
     )
     telemetry = {
-        "total_gate_duration_seconds": 20 * 60 + 1,
+        "total_gate_duration_seconds": 30 * 60 + 1,
         "dagster_dataflow": {
             "peak_active_run_count": 7,
             "peak_queued_run_count": 7,
@@ -2439,14 +2439,14 @@ def test_e2e_promotion_regression_budgets_fail_duration_and_run_counts() -> None
     failures = e2e_budget_failures(telemetry, budgets)
 
     assert "E2E Promotion guard regression budgets (failed):" in report
-    assert "total gate duration observed 20m01s; threshold <= 20m00s" in failures
+    assert "total gate duration observed 30m01s; threshold <= 30m00s" in failures
     assert "peak active runs observed 7; threshold <= 6" in failures
     assert "peak queued runs observed 7; threshold <= 6" in failures
     assert (
         "total Dagster runs observed 49; "
         "threshold <= 48 from dataflow.scenario_evidence.batch_count" in failures
     )
-    assert "total gate duration observed 20m01s; threshold <= 20m00s" in report
+    assert "total gate duration observed 30m01s; threshold <= 30m00s" in report
     assert (
         "total Dagster runs observed 49; "
         "threshold <= 48 from dataflow.scenario_evidence.batch_count" in report
@@ -2797,7 +2797,7 @@ def test_e2e_promotion_regression_budgets_fail_missing_telemetry() -> None:
     failures = e2e_budget_failures({}, budgets)
 
     assert "run manifest: /tmp/run-manifest.json" in report
-    assert "total gate duration unavailable; threshold <= 20m00s" in failures
+    assert "total gate duration unavailable; threshold <= 30m00s" in failures
     assert "peak active runs unavailable; threshold <= 6" in failures
     assert (
         "total Dagster run budget unavailable from "
@@ -2810,7 +2810,7 @@ def test_e2e_promotion_regression_budgets_fail_missing_telemetry() -> None:
         "cannot validate target progress" in failures
     )
     assert "failed target asset checks unavailable; threshold <= 0" in failures
-    assert "total gate duration unavailable; threshold <= 20m00s" in report
+    assert "total gate duration unavailable; threshold <= 30m00s" in report
 
 
 def test_monitor_records_telemetry_before_failed_run_error() -> None:

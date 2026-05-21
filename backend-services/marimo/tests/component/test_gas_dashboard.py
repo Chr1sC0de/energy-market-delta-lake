@@ -27,6 +27,12 @@ from marimoserver.gas_dashboard import (
     BID_STACK_TABLE_NAME,
     BID_STACK_TABLE_SPEC,
     BID_STACK_ZONE_FILTER_ALL,
+    STTM_CONTINGENCY_GAS_GRAIN_FILTER_ALL,
+    STTM_CONTINGENCY_GAS_HUB_FILTER_ALL,
+    STTM_CONTINGENCY_GAS_QUANTITY_TYPE_FILTER_ALL,
+    STTM_CONTINGENCY_GAS_SOURCE_SYSTEM_FILTER_ALL,
+    STTM_CONTINGENCY_GAS_TABLE_NAME,
+    STTM_CONTINGENCY_GAS_TABLE_SPEC,
     CUSTOMER_TRANSFER_GAS_DATE_FILTER_ALL,
     CUSTOMER_TRANSFER_MARKET_CODE_FILTER_ALL,
     CUSTOMER_TRANSFER_SOURCE_SYSTEM_FILTER_ALL,
@@ -37,6 +43,10 @@ from marimoserver.gas_dashboard import (
     CONNECTION_POINT_FLOW_TABLE_NAME,
     CONNECTION_POINT_TABLE_SPECS,
     CAPACITY_CONTEXT_ID,
+    CAPACITY_AUCTION_CONTEXT_ID,
+    CAPACITY_AUCTION_SOURCE_SYSTEM_FILTER_ALL,
+    CAPACITY_AUCTION_TABLE_NAME,
+    CAPACITY_AUCTION_TABLE_SPEC,
     CAPACITY_OUTLOOK_FACILITY_FILTER_ALL,
     CAPACITY_OUTLOOK_SOURCE_SYSTEM_FILTER_ALL,
     CAPACITY_OUTLOOK_TABLE_NAME,
@@ -47,6 +57,12 @@ from marimoserver.gas_dashboard import (
     GAS_QUALITY_SOURCE_POINT_FILTER_ALL,
     GAS_QUALITY_TABLE_NAME,
     GAS_QUALITY_TABLE_SPEC,
+    HEATING_VALUE_PRESSURE_CONTEXT_ID,
+    HEATING_VALUE_PRESSURE_IDENTIFIER_FILTER_ALL,
+    HEATING_VALUE_PRESSURE_SOURCE_SYSTEM_FILTER_ALL,
+    HEATING_VALUE_PRESSURE_SOURCE_TABLE_FILTER_ALL,
+    HEATING_VALUE_TABLE_NAME,
+    HEATING_VALUE_TABLE_SPEC,
     HUB_ZONE_CONTEXT_ID,
     HUB_ZONE_DIM_TABLE_NAME,
     HUB_ZONE_TABLE_SPECS,
@@ -68,9 +84,15 @@ from marimoserver.gas_dashboard import (
     FACILITY_FLOW_STORAGE_SOURCE_SYSTEM_FILTER_ALL,
     FACILITY_FLOW_STORAGE_TABLE_NAME,
     FACILITY_FLOW_STORAGE_TABLE_SPEC,
+    FORECAST_ACTUAL_CONTEXT_ID,
+    FORECAST_ACTUAL_FACILITY_FILTER_ALL,
+    FORECAST_ACTUAL_GAS_DATE_FILTER_ALL,
+    FORECAST_ACTUAL_SOURCE_SYSTEM_FILTER_ALL,
+    FORECAST_ACTUAL_TABLE_SPECS,
     FACILITY_TABLE_SPECS,
     FLOW_CONTEXT_ID,
     FLOW_TABLE_SPECS,
+    MARKET_PRICE_GAS_DATE_FILTER_ALL,
     MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
     MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
     MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
@@ -83,20 +105,46 @@ from marimoserver.gas_dashboard import (
     NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL,
     NOMINATION_FORECAST_TABLE_NAME,
     NOMINATION_FORECAST_TABLE_SPEC,
+    OPERATIONAL_METER_FLOW_CONTEXT_ID,
+    OPERATIONAL_METER_FLOW_TABLE_SPECS,
     OPERATIONAL_METER_FLOW_TABLE_NAME,
+    OPERATIONAL_POINT_DIM_TABLE_NAME,
     PARTICIPANT_CONTEXT_ID,
     PARTICIPANT_DIM_TABLE_NAME,
     PARTICIPANT_MARKET_MEMBERSHIP_TABLE_NAME,
     PARTICIPANT_TABLE_SPECS,
+    PIPELINE_CONNECTION_OPERATIONS_CONTEXT_ID,
+    PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS,
+    PIPELINE_SEGMENT_DIM_TABLE_NAME,
     SCHEDULE_RUN_GAS_DATE_FILTER_ALL,
     SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL,
     SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL,
     SCHEDULE_RUN_TABLE_SPEC,
+    SCHEDULED_QUANTITY_GAS_DATE_FILTER_ALL,
+    SCHEDULED_QUANTITY_SCHEDULE_TYPE_FILTER_ALL,
+    SCHEDULED_QUANTITY_SOURCE_SYSTEM_FILTER_ALL,
+    SCHEDULED_QUANTITY_TABLE_NAME,
+    SCHEDULED_QUANTITY_TABLE_SPEC,
+    SCADA_PRESSURE_TABLE_NAME,
+    SCADA_PRESSURE_TABLE_SPEC,
     SETTLEMENT_ACTIVITY_ACTIVITY_TYPE_FILTER_ALL,
     SETTLEMENT_ACTIVITY_GAS_DATE_FILTER_ALL,
     SETTLEMENT_ACTIVITY_SOURCE_SYSTEM_FILTER_ALL,
     SETTLEMENT_ACTIVITY_TABLE_NAME,
     SETTLEMENT_ACTIVITY_TABLE_SPEC,
+    STTM_CAPACITY_SETTLEMENT_COMPONENT_FILTER_ALL,
+    STTM_CAPACITY_SETTLEMENT_FACILITY_FILTER_ALL,
+    STTM_CAPACITY_SETTLEMENT_GAS_DATE_FILTER_ALL,
+    STTM_CAPACITY_SETTLEMENT_HUB_FILTER_ALL,
+    STTM_CAPACITY_SETTLEMENT_STAGE_FILTER_ALL,
+    STTM_CAPACITY_SETTLEMENT_TABLE_NAME,
+    STTM_CAPACITY_SETTLEMENT_TABLE_SPEC,
+    STTM_MARKET_SETTLEMENT_COMPONENT_FILTER_ALL,
+    STTM_MARKET_SETTLEMENT_GAS_DATE_FILTER_ALL,
+    STTM_MARKET_SETTLEMENT_PERIOD_FILTER_ALL,
+    STTM_MARKET_SETTLEMENT_STAGE_FILTER_ALL,
+    STTM_MARKET_SETTLEMENT_TABLE_NAME,
+    STTM_MARKET_SETTLEMENT_TABLE_SPEC,
     SOURCE_COVERAGE_STATE_COVERED,
     SOURCE_COVERAGE_STATE_EMPTY,
     SOURCE_COVERAGE_STATE_GAP,
@@ -123,21 +171,30 @@ from marimoserver.gas_dashboard import (
     bid_stack_zone_options,
     cached_load_customer_transfer_table,
     cached_load_bid_stack_table,
+    cached_load_capacity_auction_table,
     cached_load_capacity_outlook_table,
+    cached_load_sttm_contingency_gas_table,
     cached_load_connection_point_context_tables,
     cached_load_facility_context_tables,
     cached_load_facility_flow_storage_table,
+    cached_load_forecast_actual_tables,
     cached_load_flow_context_tables,
     cached_load_gas_day_tables,
     cached_load_hub_zone_context_tables,
     cached_load_gas_quality_table,
+    cached_load_heating_value_pressure_tables,
     cached_load_linepack_table,
     cached_load_gas_model_tables,
     cached_load_market_price_table,
     cached_load_nomination_forecast_table,
+    cached_load_operational_meter_flow_tables,
     cached_load_participant_context_tables,
+    cached_load_pipeline_connection_operations_tables,
     cached_load_schedule_run_table,
+    cached_load_scheduled_quantity_table,
     cached_load_settlement_activity_table,
+    cached_load_sttm_capacity_settlement_table,
+    cached_load_sttm_market_settlement_table,
     cached_load_source_coverage_tables,
     cached_load_system_notice_table,
     customer_transfer_daily_frame,
@@ -149,6 +206,16 @@ from marimoserver.gas_dashboard import (
     customer_transfer_source_coverage_frame,
     customer_transfer_source_system_options,
     customer_transfer_summary_frame,
+    capacity_auction_auction_date_options,
+    capacity_auction_capacity_period_options,
+    capacity_auction_empty_state_markdown,
+    capacity_auction_kpi_frame,
+    capacity_auction_metric_frame,
+    capacity_auction_metric_options,
+    capacity_auction_observation_frame,
+    capacity_auction_source_system_options,
+    capacity_auction_summary_frame,
+    capacity_auction_zone_options,
     capacity_outlook_capacity_type_options,
     capacity_outlook_date_range_options,
     capacity_outlook_direction_options,
@@ -181,6 +248,14 @@ from marimoserver.gas_dashboard import (
     facility_flow_storage_summary_frame,
     facility_relationship_frame,
     facility_table_specs,
+    forecast_actual_bounded_scope_markdown,
+    forecast_actual_comparison_frame,
+    forecast_actual_empty_state_markdown,
+    forecast_actual_facility_options,
+    forecast_actual_gas_date_options,
+    forecast_actual_kpi_frame,
+    forecast_actual_source_system_options,
+    forecast_actual_storage_frame,
     flow_context_empty_state_markdown,
     flow_kpi_frame,
     flow_recent_observation_frame,
@@ -193,6 +268,15 @@ from marimoserver.gas_dashboard import (
     gas_quality_source_coverage_frame,
     gas_quality_source_point_options,
     gas_quality_type_summary_frame,
+    heating_value_observation_frame,
+    heating_value_pressure_empty_state_markdown,
+    heating_value_pressure_field_summary_frame,
+    heating_value_pressure_identifier_frame,
+    heating_value_pressure_identifier_options,
+    heating_value_pressure_kpi_frame,
+    heating_value_pressure_source_coverage_frame,
+    heating_value_pressure_source_system_options,
+    heating_value_pressure_source_table_options,
     gas_day_bounded_examples_frame,
     gas_day_examples_empty_state_markdown,
     gas_day_field_discovery_frame,
@@ -207,29 +291,42 @@ from marimoserver.gas_dashboard import (
     hub_zone_table_specs,
     load_market_price_table,
     load_bid_stack_table,
+    load_capacity_auction_table,
     load_capacity_outlook_table,
+    load_sttm_contingency_gas_table,
     load_connection_point_context_tables,
     load_customer_transfer_table,
     load_facility_context_tables,
     load_facility_flow_storage_table,
+    load_forecast_actual_tables,
     load_flow_context_tables,
     load_gas_day_tables,
     load_hub_zone_context_tables,
     load_gas_quality_table,
+    load_heating_value_pressure_tables,
     load_linepack_table,
     load_gas_model_tables,
     load_nomination_forecast_table,
+    load_operational_meter_flow_tables,
     load_participant_context_tables,
+    load_pipeline_connection_operations_tables,
     load_source_coverage_tables,
     load_schedule_run_table,
+    load_scheduled_quantity_table,
     load_settlement_activity_table,
+    load_sttm_capacity_settlement_table,
+    load_sttm_market_settlement_table,
     load_system_notice_table,
+    market_price_bounded_scope_markdown,
     market_price_empty_state_markdown,
+    market_price_exception_frame,
+    market_price_gas_date_options,
     market_price_kpi_frame,
     market_price_observation_frame,
     market_price_price_type_options,
     market_price_source_system_options,
     market_price_source_table_options,
+    market_price_trend_diagnostic_frame,
     market_price_trend_frame,
     market_price_type_summary_frame,
     linepack_adequacy_flag_options,
@@ -252,6 +349,12 @@ from marimoserver.gas_dashboard import (
     nomination_forecast_source_coverage_frame,
     nomination_forecast_source_system_options,
     nomination_forecast_summary_frame,
+    operational_meter_flow_empty_state_markdown,
+    operational_meter_flow_kpi_frame,
+    operational_meter_flow_point_context_frame,
+    operational_meter_flow_relationship_gap_frame,
+    operational_meter_flow_summary_frame,
+    operational_meter_flow_table_specs,
     participant_context_empty_state_markdown,
     participant_dimension_coverage_frame,
     participant_dimension_preview_frame,
@@ -259,9 +362,16 @@ from marimoserver.gas_dashboard import (
     participant_membership_preview_frame,
     participant_related_market_fact_frame,
     participant_table_specs,
+    pipeline_connection_flow_summary_frame,
+    pipeline_connection_metadata_frame,
+    pipeline_connection_operations_empty_state_markdown,
+    pipeline_connection_operations_kpi_frame,
+    pipeline_connection_operations_table_specs,
+    pipeline_connection_relationship_gap_frame,
     read_parquet_table,
     render_dashboard_context_panel,
     render_bid_stack_context_links,
+    render_capacity_auction_context_links,
     render_capacity_outlook_context_links,
     render_connection_point_context_links,
     render_customer_transfer_context_links,
@@ -269,13 +379,22 @@ from marimoserver.gas_dashboard import (
     render_nomination_forecast_context_links,
     render_facility_context_links,
     render_facility_flow_storage_context_links,
+    render_forecast_actual_context_links,
     render_flow_context_links,
+    render_heating_value_pressure_context_links,
     render_hub_zone_context_links,
     render_linepack_context_links,
+    render_operational_meter_flow_context_links,
     render_participant_context_links,
+    render_pipeline_connection_operations_context_links,
     render_schedule_run_context_links,
+    render_scheduled_quantity_context_links,
     render_settlement_activity_context_links,
+    render_sttm_capacity_settlement_context_links,
+    render_sttm_contingency_gas_context_links,
+    render_sttm_market_settlement_context_links,
     render_source_coverage_matrix_html,
+    scada_pressure_observation_frame,
     schedule_run_empty_state_markdown,
     schedule_run_gas_date_options,
     schedule_run_kpi_frame,
@@ -285,6 +404,16 @@ from marimoserver.gas_dashboard import (
     schedule_run_source_system_options,
     schedule_run_timestamp_summary_frame,
     schedule_run_type_summary_frame,
+    scheduled_quantity_empty_state_markdown,
+    scheduled_quantity_gas_date_options,
+    scheduled_quantity_kpi_frame,
+    scheduled_quantity_observation_frame,
+    scheduled_quantity_schedule_context_frame,
+    scheduled_quantity_schedule_type_options,
+    scheduled_quantity_source_coverage_frame,
+    scheduled_quantity_source_point_frame,
+    scheduled_quantity_source_system_options,
+    scheduled_quantity_type_summary_frame,
     settlement_activity_activity_type_options,
     settlement_activity_empty_state_markdown,
     settlement_activity_gas_date_options,
@@ -293,16 +422,48 @@ from marimoserver.gas_dashboard import (
     settlement_activity_source_coverage_frame,
     settlement_activity_source_system_options,
     settlement_activity_summary_frame,
+    sttm_capacity_settlement_component_options,
+    sttm_capacity_settlement_empty_state_markdown,
+    sttm_capacity_settlement_facility_options,
+    sttm_capacity_settlement_gas_date_options,
+    sttm_capacity_settlement_hub_options,
+    sttm_capacity_settlement_kpi_frame,
+    sttm_capacity_settlement_observation_frame,
+    sttm_capacity_settlement_source_coverage_frame,
+    sttm_capacity_settlement_stage_options,
+    sttm_capacity_settlement_summary_frame,
+    sttm_market_settlement_component_options,
+    sttm_market_settlement_empty_state_markdown,
+    sttm_market_settlement_gas_date_options,
+    sttm_market_settlement_kpi_frame,
+    sttm_market_settlement_observation_frame,
+    sttm_market_settlement_period_options,
+    sttm_market_settlement_source_coverage_frame,
+    sttm_market_settlement_stage_options,
+    sttm_market_settlement_summary_frame,
     source_coverage_empty_state_markdown,
     source_coverage_kpi_frame,
     source_coverage_matrix_frame,
     source_coverage_table_specs_from_catalogue,
     source_coverage_table_specs,
+    sttm_contingency_gas_bid_offer_summary_frame,
+    sttm_contingency_gas_empty_state_markdown,
+    sttm_contingency_gas_grain_options,
+    sttm_contingency_gas_grain_summary_frame,
+    sttm_contingency_gas_hub_options,
+    sttm_contingency_gas_kpi_frame,
+    sttm_contingency_gas_observation_frame,
+    sttm_contingency_gas_quantity_type_options,
+    sttm_contingency_gas_source_summary_frame,
+    sttm_contingency_gas_source_system_options,
     system_notice_empty_state_markdown,
     system_notice_kpi_frame,
     system_notice_source_coverage_frame,
     system_notice_summary_frame,
     table_load_by_name,
+    _dataframe_min_value,
+    _latest_datetime,
+    _optional_float,
 )
 from marimoserver.dashboard_registry import (
     DashboardAudience,
@@ -516,6 +677,29 @@ def test_dashboard_read_behavior_frame_renders_per_dashboard_policy() -> None:
     )
     assert rows["Gas Market Prices"]["view"] == "Recent-only bounded view"
     assert rows["Gas Market Prices"]["row policy"] == ("Bounded preview: 42 rows max")
+    assert rows["Forecast Vs Actual Flow And Storage"]["read behavior"] == (
+        "Focused gas_model dashboard table read"
+    )
+    assert rows["Forecast Vs Actual Flow And Storage"]["view"] == (
+        "Recent-only bounded view"
+    )
+    assert rows["Forecast Vs Actual Flow And Storage"]["row policy"] == (
+        "Bounded preview: 42 rows max"
+    )
+    assert rows["STTM Contingency Gas"]["read behavior"] == (
+        "Focused gas_model dashboard table read"
+    )
+    assert rows["STTM Contingency Gas"]["view"] == "Recent-only bounded view"
+    assert rows["STTM Contingency Gas"]["row policy"] == (
+        "Bounded preview: 42 rows max"
+    )
+    assert rows["STTM Market Settlement"]["read behavior"] == (
+        "Focused gas_model dashboard table read"
+    )
+    assert rows["STTM Market Settlement"]["view"] == "Recent-only bounded view"
+    assert rows["STTM Market Settlement"]["row policy"] == (
+        "Bounded preview: 42 rows max"
+    )
     assert rows["Source Coverage Matrix"]["view"] == "Forced bounded sample"
     assert rows["Source Coverage Matrix"]["row policy"] == (
         "Bounded preview: 42 rows max"
@@ -1021,6 +1205,11 @@ def test_market_price_summaries_filters_and_context_links() -> None:
         source_table_filter=vicgas_table,
     )
 
+    assert market_price_gas_date_options(load) == (
+        MARKET_PRICE_GAS_DATE_FILTER_ALL,
+        "2024-01-02",
+        "2024-01-01",
+    )
     assert market_price_price_type_options(load) == (
         MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
         "ex_ante_market_price",
@@ -1119,10 +1308,138 @@ def test_market_price_summaries_filters_and_context_links() -> None:
         ],
     }
     assert vicgas_observations["source table"].to_list() == [vicgas_table]
+    assert market_price_kpi_frame(load, gas_date_filter="2024-01-01").row(
+        0,
+        named=True,
+    ) == {
+        "metric": "Loaded price rows",
+        "value": "1",
+        "detail": "Full table scan",
+    }
     assert 'href="/marimo/gas_market_prices/"' in context_links
     assert 'href="/marimo/sample_energy_market/"' in context_links
     assert "Schedule Context" in context_links
     assert "Planned dashboard" in context_links
+
+
+def test_market_price_bounded_trend_and_exception_helpers_label_scope() -> None:
+    sttm_table = "silver.sttm.silver_int651_v1_ex_ante_market_price_rpt_1"
+    vicgas_table = "silver.vicgas.silver_int042_v4_weighted_average_daily_prices_1"
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "MARIMO_MAX_PREVIEW_ROWS": "7",
+        }
+    )
+    load = _market_price_load(
+        pl.DataFrame(
+            {
+                "gas_date": [
+                    "2024-01-01",
+                    "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-04",
+                    "2024-01-03",
+                ],
+                "source_system": ["STTM", "STTM", "STTM", "STTM", "VICGAS"],
+                "source_table": [
+                    sttm_table,
+                    sttm_table,
+                    sttm_table,
+                    sttm_table,
+                    vicgas_table,
+                ],
+                "price_type": [
+                    "ex_ante_market_price",
+                    "ex_ante_market_price",
+                    "ex_ante_market_price",
+                    "ex_ante_market_price",
+                    "weighted_average_daily",
+                ],
+                "price_value_gst_ex": [10.0, 12.0, -4.0, None, None],
+                "weighted_average_price_gst_ex": [None, None, None, None, 0.0],
+            }
+        ),
+        row_limit=7,
+    )
+
+    bounded_scope = market_price_bounded_scope_markdown(config, load)
+    diagnostics = market_price_trend_diagnostic_frame(load)
+    exception_candidates = market_price_exception_frame(load)
+    missing_measure_candidates = market_price_exception_frame(
+        load,
+        gas_date_filter="2024-01-04",
+    )
+
+    assert "AWS mode uses sampled/recent-only bounded reads" in bounded_scope
+    assert "Bounded preview reads are capped at `7` rows per table" in bounded_scope
+    assert diagnostics.select(
+        "source system",
+        "source table",
+        "price type",
+        "measure",
+        "gas days",
+        "observations",
+        "first gas date",
+        "latest gas date",
+        "first avg price",
+        "latest avg price",
+        "bounded change",
+        "bounded change %",
+        "min observed price",
+        "max observed price",
+    ).head(1).to_dict(as_series=False) == {
+        "source system": ["STTM"],
+        "source table": [sttm_table],
+        "price type": ["ex_ante_market_price"],
+        "measure": ["price_value_gst_ex"],
+        "gas days": [3],
+        "observations": [3],
+        "first gas date": [date(2024, 1, 1)],
+        "latest gas date": [date(2024, 1, 3)],
+        "first avg price": [10.0],
+        "latest avg price": [-4.0],
+        "bounded change": [-14.0],
+        "bounded change %": [-140.0],
+        "min observed price": [-4.0],
+        "max observed price": [12.0],
+    }
+    assert exception_candidates.select(
+        "candidate",
+        "gas date",
+        "source system",
+        "price type",
+        "measure",
+        "value",
+    ).head(3).to_dict(as_series=False) == {
+        "candidate": [
+            "Negative price value",
+            "Missing price measures",
+            "Zero price value",
+        ],
+        "gas date": [date(2024, 1, 3), date(2024, 1, 4), date(2024, 1, 3)],
+        "source system": ["STTM", "STTM", "VICGAS"],
+        "price type": [
+            "ex_ante_market_price",
+            "ex_ante_market_price",
+            "weighted_average_daily",
+        ],
+        "measure": [
+            "price_value_gst_ex",
+            "none",
+            "weighted_average_price_gst_ex",
+        ],
+        "value": [-4.0, None, 0.0],
+    }
+    assert missing_measure_candidates.select(
+        "candidate",
+        "measure",
+        "bounded comparison",
+    ).to_dict(as_series=False) == {
+        "candidate": ["Missing price measures"],
+        "measure": ["none"],
+        "bounded comparison": ["No populated price measure columns"],
+    }
 
 
 def test_market_price_helpers_cover_missing_data_and_filter_empty_state() -> None:
@@ -1174,10 +1491,17 @@ def test_market_price_helpers_cover_missing_data_and_filter_empty_state() -> Non
     assert market_price_kpi_frame(empty_load).is_empty()
     assert market_price_type_summary_frame(empty_load).is_empty()
     assert market_price_trend_frame(empty_load).is_empty()
+    assert market_price_trend_diagnostic_frame(empty_load).is_empty()
+    assert market_price_exception_frame(empty_load).is_empty()
     assert market_price_observation_frame(empty_load).is_empty()
+    assert market_price_gas_date_options(empty_load) == (
+        MARKET_PRICE_GAS_DATE_FILTER_ALL,
+    )
     assert market_price_price_type_options(empty_load) == (
         MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
     )
+    assert market_price_trend_diagnostic_frame(no_measure_load).is_empty()
+    assert market_price_exception_frame(populated_load).is_empty()
     assert market_price_kpi_frame(
         populated_load,
         source_system_filter="VICGAS",
@@ -1197,6 +1521,10 @@ def test_market_price_helpers_cover_missing_data_and_filter_empty_state() -> Non
     error_markdown = market_price_empty_state_markdown(error_load)
     filtered_markdown = market_price_empty_state_markdown(populated_load)
     missing_load_markdown = market_price_empty_state_markdown(None)
+    local_scope_markdown = market_price_bounded_scope_markdown(
+        _dashboard_config(),
+        populated_load,
+    )
     empty_context_links = render_market_price_context_links(entries=())
     unmounted_entry = DashboardRegistryEntry(
         concept_id="gas-market-prices",
@@ -1219,6 +1547,9 @@ def test_market_price_helpers_cover_missing_data_and_filter_empty_state() -> Non
     assert "FileNotFoundError: no parquet files found" in error_markdown
     assert "current filters do not match" in filtered_markdown
     assert "did not receive a market price load result" in missing_load_markdown
+    assert "Local mode uses the configured gas dashboard read policy" in (
+        local_scope_markdown
+    )
     assert "No Market price or Schedule context entries" in empty_context_links
     assert "Unavailable dashboard" in unmounted_context_links
 
@@ -1560,6 +1891,392 @@ def test_schedule_run_helpers_cover_missing_data_and_filter_empty_state() -> Non
     assert "current filters do not match" in filtered_markdown
     assert "did not receive a schedule run load result" in missing_load_markdown
     assert "No Schedule, Gas Day, or Settlement context entries" in empty_context_links
+    assert "Unavailable dashboard" in unmounted_context_links
+
+
+def test_scheduled_quantity_table_loader_uses_bounded_recent_view() -> None:
+    captured: list[int | None] = []
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "8",
+        }
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append(row_limit)
+        assert uri == (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_scheduled_quantity"
+        )
+        assert storage_options == config.storage_options()
+        return pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 1), date(2024, 1, 3)],
+                "quantity_type": ["older_quantity", "newer_quantity"],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 1, 6),
+                    datetime(2024, 1, 3, 6),
+                ],
+            }
+        )
+
+    load = load_scheduled_quantity_table(config, reader=reader)
+
+    assert captured == [8]
+    assert load.spec == SCHEDULED_QUANTITY_TABLE_SPEC
+    assert load.row_limit == 8
+    assert load.dataframe is not None
+    assert load.dataframe["quantity_type"].to_list() == [
+        "newer_quantity",
+        "older_quantity",
+    ]
+
+
+def test_cached_scheduled_quantity_table_loader_reuses_session_cache() -> None:
+    calls: list[int] = []
+    config = _dashboard_config()
+    cache: GasModelSessionCache = {}
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        calls.append(len(calls) + 1)
+        return pl.DataFrame({"quantity_type": [f"quantity-{calls[-1]}"]})
+
+    first_load = cached_load_scheduled_quantity_table(config, cache, reader=reader)
+    cached_load = cached_load_scheduled_quantity_table(config, cache, reader=reader)
+    refreshed_load = cached_load_scheduled_quantity_table(
+        config,
+        cache,
+        reader=reader,
+        refresh_token=1,
+    )
+
+    assert calls == [1, 2]
+    assert not first_load.cache_hit
+    assert cached_load.cache_hit
+    assert not refreshed_load.cache_hit
+    assert cached_load.dataframe is not None
+    assert cached_load.dataframe["quantity_type"].to_list() == ["quantity-1"]
+    assert refreshed_load.dataframe is not None
+    assert refreshed_load.dataframe["quantity_type"].to_list() == ["quantity-2"]
+
+
+def test_scheduled_quantity_summaries_filters_and_context_links() -> None:
+    sttm_table = "silver.sttm.silver_int652_v1_ex_ante_schedule_quantity_rpt_1"
+    vicgas_table = "silver.vicgas.silver_int316_v4_operational_gas_1"
+    load = _scheduled_quantity_load(
+        pl.DataFrame(
+            {
+                "gas_date": [
+                    "2024-01-03",
+                    "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-03",
+                ],
+                "source_system": ["STTM", "STTM", "VICGAS", "VICGAS"],
+                "source_table": [sttm_table, sttm_table, vicgas_table, vicgas_table],
+                "quantity_type": [
+                    "sttm_ex_ante_scheduled_qty",
+                    "sttm_provisional_scheduled_qty",
+                    "operational_gas",
+                    "out_of_merit_gas",
+                ],
+                "schedule_type_id": ["ex_ante", "provisional", "pricing", "pricing"],
+                "transmission_id": ["S-2", "S-1", "V-1", "V-2"],
+                "transmission_doc_id": ["SDOC-2", "SDOC-1", "VDOC-1", "VDOC-2"],
+                "source_point_id": ["FAC-A", "FAC-A", "HV-ZONE", None],
+                "quantity_gj": [100.0, 50.0, 11.5, 7.0],
+                "volume_kscm": [None, None, 1.25, None],
+                "amount_gst_ex": [None, None, None, 99.5],
+                "source_last_updated_timestamp": [
+                    "2024-01-02 15:00:00",
+                    "2024-01-01 15:00:00",
+                    "2024-01-03 10:00:00",
+                    "2024-01-03 11:00:00",
+                ],
+                "source_surrogate_key": ["src-2", "src-1", "src-v1", "src-v2"],
+                "source_file": ["sttm-2.csv", "sttm-1.csv", "vic-1.csv", "vic-2.csv"],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 16),
+                    datetime(2024, 1, 1, 16),
+                    datetime(2024, 1, 3, 12),
+                    datetime(2024, 1, 3, 13),
+                ],
+            }
+        )
+    )
+
+    observations = scheduled_quantity_observation_frame(
+        load,
+        "2024-01-03",
+        "STTM",
+        "ex_ante",
+    )
+    kpis = scheduled_quantity_kpi_frame(load)
+    type_summary = scheduled_quantity_type_summary_frame(load)
+    source_points = scheduled_quantity_source_point_frame(load)
+    schedule_context = scheduled_quantity_schedule_context_frame(
+        load,
+        "2024-01-03",
+        "STTM",
+        "ex_ante",
+    )
+    source_coverage = scheduled_quantity_source_coverage_frame(load)
+    context_links = render_scheduled_quantity_context_links()
+
+    assert scheduled_quantity_gas_date_options(load) == (
+        SCHEDULED_QUANTITY_GAS_DATE_FILTER_ALL,
+        "2024-01-03",
+        "2024-01-02",
+    )
+    assert scheduled_quantity_source_system_options(load) == (
+        SCHEDULED_QUANTITY_SOURCE_SYSTEM_FILTER_ALL,
+        "STTM",
+        "VICGAS",
+    )
+    assert scheduled_quantity_schedule_type_options(load) == (
+        SCHEDULED_QUANTITY_SCHEDULE_TYPE_FILTER_ALL,
+        "ex_ante",
+        "pricing",
+        "provisional",
+    )
+    assert kpis.to_dict(as_series=False) == {
+        "metric": [
+            "Loaded scheduled quantity rows",
+            "Quantity types",
+            "Schedule types",
+            "Source systems",
+            "Source points",
+            "Transmissions",
+            "Total quantity_gj",
+            "Total volume_kscm",
+            "Total amount_gst_ex",
+            "Latest gas date",
+        ],
+        "value": [
+            "4",
+            "4",
+            "3",
+            "2",
+            "2",
+            "4",
+            "168.5",
+            "1.25",
+            "99.5",
+            "2024-01-03",
+        ],
+        "detail": [
+            "Full table scan",
+            "Distinct quantity_type values in the current view",
+            "Distinct schedule_type_id values in the current view",
+            "Distinct source_system values in the current view",
+            "Distinct source_point_id values in the current view",
+            "Distinct transmission_id values linkable to schedule runs",
+            "4 rows with populated quantity_gj",
+            "1 rows with populated volume_kscm",
+            "1 rows with populated amount_gst_ex",
+            "Maximum gas_date in the loaded bounded rows",
+        ],
+    }
+    assert observations.select(
+        "gas date",
+        "source system",
+        "source table",
+        "quantity type",
+        "schedule type",
+        "transmission",
+        "source point",
+        "quantity_gj",
+    ).to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 3)],
+        "source system": ["STTM"],
+        "source table": [sttm_table],
+        "quantity type": ["sttm_ex_ante_scheduled_qty"],
+        "schedule type": ["ex_ante"],
+        "transmission": ["S-2"],
+        "source point": ["FAC-A"],
+        "quantity_gj": [100.0],
+    }
+    assert type_summary.select(
+        "source system",
+        "quantity type",
+        "schedule type",
+        "source points",
+        "total quantity_gj",
+        "total volume_kscm",
+        "total amount_gst_ex",
+        "latest gas date",
+    ).head(4).to_dict(as_series=False) == {
+        "source system": ["STTM", "VICGAS", "VICGAS", "STTM"],
+        "quantity type": [
+            "sttm_ex_ante_scheduled_qty",
+            "operational_gas",
+            "out_of_merit_gas",
+            "sttm_provisional_scheduled_qty",
+        ],
+        "schedule type": ["ex_ante", "pricing", "pricing", "provisional"],
+        "source points": [1, 1, 0, 1],
+        "total quantity_gj": [100.0, 11.5, 7.0, 50.0],
+        "total volume_kscm": [0.0, 1.25, 0.0, 0.0],
+        "total amount_gst_ex": [0.0, 0.0, 99.5, 0.0],
+        "latest gas date": [
+            date(2024, 1, 3),
+            date(2024, 1, 3),
+            date(2024, 1, 3),
+            date(2024, 1, 2),
+        ],
+    }
+    assert source_points.select(
+        "source point",
+        "source system",
+        "schedule type",
+        "rows",
+        "total quantity_gj",
+    ).head(2).to_dict(as_series=False) == {
+        "source point": ["FAC-A", "HV-ZONE"],
+        "source system": ["STTM", "VICGAS"],
+        "schedule type": ["ex_ante", "pricing"],
+        "rows": [1, 1],
+        "total quantity_gj": [100.0, 11.5],
+    }
+    assert schedule_context.select(
+        "gas date",
+        "source system",
+        "schedule type",
+        "transmission",
+        "transmission document",
+        "quantity rows",
+        "total quantity_gj",
+    ).to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 3)],
+        "source system": ["STTM"],
+        "schedule type": ["ex_ante"],
+        "transmission": ["S-2"],
+        "transmission document": ["SDOC-2"],
+        "quantity rows": [1],
+        "total quantity_gj": [100.0],
+    }
+    assert source_coverage.select(
+        "source system",
+        "source table",
+        "rows",
+        "quantity types",
+        "schedule types",
+        "source points",
+        "gas days",
+    ).to_dict(as_series=False) == {
+        "source system": ["STTM", "VICGAS"],
+        "source table": [sttm_table, vicgas_table],
+        "rows": [2, 2],
+        "quantity types": [2, 2],
+        "schedule types": [2, 1],
+        "source points": [1, 1],
+        "gas days": [2, 1],
+    }
+    assert 'href="/marimo/gas_scheduled_quantities/"' in context_links
+    assert 'href="/marimo/gas_schedule_runs/"' in context_links
+    assert "Schedule Context" in context_links
+    assert "Gas Day Context" in context_links
+    assert "Flow Context" in context_links
+
+
+def test_scheduled_quantity_helpers_cover_missing_data_and_filter_empty_state() -> None:
+    empty_load = _scheduled_quantity_load(pl.DataFrame(), row_limit=6)
+    populated_load = _scheduled_quantity_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3)],
+                "source_system": ["STTM"],
+                "source_table": ["silver.sttm.schedule_quantity"],
+                "quantity_type": ["sttm_ex_ante_scheduled_qty"],
+                "schedule_type_id": ["ex_ante"],
+                "source_point_id": ["FAC-A"],
+                "quantity_gj": [100.0],
+            }
+        )
+    )
+    missing_date_load = _scheduled_quantity_load(
+        pl.DataFrame(
+            {
+                "source_system": ["STTM"],
+                "source_table": ["silver.sttm.schedule_quantity"],
+                "quantity_type": ["sttm_ex_ante_scheduled_qty"],
+            }
+        )
+    )
+    error_load = GasTableLoad(
+        spec=SCHEDULED_QUANTITY_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_scheduled_quantity",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=6,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert scheduled_quantity_kpi_frame(empty_load).is_empty()
+    assert scheduled_quantity_type_summary_frame(empty_load).is_empty()
+    assert scheduled_quantity_source_point_frame(empty_load).is_empty()
+    assert scheduled_quantity_schedule_context_frame(empty_load).is_empty()
+    assert scheduled_quantity_source_coverage_frame(empty_load).is_empty()
+    assert scheduled_quantity_observation_frame(empty_load).is_empty()
+    assert scheduled_quantity_gas_date_options(empty_load) == (
+        SCHEDULED_QUANTITY_GAS_DATE_FILTER_ALL,
+    )
+    assert scheduled_quantity_source_system_options(empty_load) == (
+        SCHEDULED_QUANTITY_SOURCE_SYSTEM_FILTER_ALL,
+    )
+    assert scheduled_quantity_schedule_type_options(empty_load) == (
+        SCHEDULED_QUANTITY_SCHEDULE_TYPE_FILTER_ALL,
+    )
+    assert scheduled_quantity_kpi_frame(
+        populated_load,
+        gas_date_filter="2024-01-04",
+    ).is_empty()
+    assert scheduled_quantity_kpi_frame(missing_date_load).row(9, named=True) == {
+        "metric": "Latest gas date",
+        "value": "unknown",
+        "detail": "Maximum gas_date in the loaded bounded rows",
+    }
+
+    empty_markdown = scheduled_quantity_empty_state_markdown(empty_load)
+    error_markdown = scheduled_quantity_empty_state_markdown(error_load)
+    filtered_markdown = scheduled_quantity_empty_state_markdown(populated_load)
+    missing_load_markdown = scheduled_quantity_empty_state_markdown(None)
+    empty_context_links = render_scheduled_quantity_context_links(entries=())
+    unmounted_entry = DashboardRegistryEntry(
+        concept_id="gas-scheduled-quantities",
+        title="Unmounted Scheduled Quantities",
+        description="Available entry without a mounted notebook route.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_scheduled_quantity",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+    unmounted_context_links = render_scheduled_quantity_context_links(
+        entries=(unmounted_entry,)
+    )
+
+    assert "No scheduled quantity data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_scheduled_quantity" in empty_markdown
+    assert "Bounded preview reads are capped at `6` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a scheduled quantity load result" in missing_load_markdown
+    assert "No Scheduled quantity, Schedule run, Gas Day, or Flow context" in (
+        empty_context_links
+    )
     assert "Unavailable dashboard" in unmounted_context_links
 
 
@@ -1923,6 +2640,932 @@ def test_settlement_activity_helpers_cover_missing_data_and_filter_empty_state()
     assert "No Settlement, Allocation, Participant, Gas Day, or Schedule" in (
         empty_context_links
     )
+    assert "Unavailable dashboard" in unmounted_context_links
+
+
+def test_sttm_market_settlement_table_loader_uses_bounded_recent_view() -> None:
+    captured: list[int | None] = []
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "12",
+        }
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append(row_limit)
+        assert uri == (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_sttm_market_settlement"
+        )
+        assert storage_options == config.storage_options()
+        return pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 1), date(2024, 1, 3)],
+                "settlement_component": ["older", "newer"],
+            }
+        )
+
+    load = load_sttm_market_settlement_table(config, reader=reader)
+
+    assert captured == [12]
+    assert load.spec == STTM_MARKET_SETTLEMENT_TABLE_SPEC
+    assert load.row_limit == 12
+    assert load.dataframe is not None
+    assert load.dataframe["settlement_component"].to_list() == ["newer", "older"]
+
+
+def test_cached_sttm_market_settlement_table_loader_reuses_session_cache() -> None:
+    calls: list[int] = []
+    config = _dashboard_config()
+    cache: GasModelSessionCache = {}
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        calls.append(len(calls) + 1)
+        return pl.DataFrame({"settlement_component": [f"component-{calls[-1]}"]})
+
+    first_load = cached_load_sttm_market_settlement_table(
+        config,
+        cache,
+        reader=reader,
+    )
+    cached_load = cached_load_sttm_market_settlement_table(
+        config,
+        cache,
+        reader=reader,
+    )
+    refreshed_load = cached_load_sttm_market_settlement_table(
+        config,
+        cache,
+        reader=reader,
+        refresh_token=1,
+    )
+
+    assert calls == [1, 2]
+    assert not first_load.cache_hit
+    assert cached_load.cache_hit
+    assert not refreshed_load.cache_hit
+    assert cached_load.dataframe is not None
+    assert cached_load.dataframe["settlement_component"].to_list() == ["component-1"]
+    assert refreshed_load.dataframe is not None
+    assert refreshed_load.dataframe["settlement_component"].to_list() == ["component-2"]
+
+
+def test_sttm_market_settlement_summaries_filters_and_context_links() -> None:
+    int662_table = "silver.sttm.silver_int662_v1_provisional_deviation_rpt_1"
+    int678_table = "silver.sttm.silver_int678_v1_net_market_balance_daily_amounts_rpt_1"
+    int679_table = (
+        "silver.sttm.silver_int679_v1_net_market_balance_settlement_amounts_rpt_1"
+    )
+    period_label = "2024-01-01 to 2024-01-31"
+    load = _sttm_market_settlement_load(
+        pl.DataFrame(
+            {
+                "gas_date": ["2024-01-03", "2024-01-03", None, None],
+                "period_start_date": [None, None, "2024-01-01", "2024-01-01"],
+                "period_end_date": [None, None, "2024-01-31", "2024-01-31"],
+                "source_system": ["STTM", "STTM", "STTM", "STTM"],
+                "source_table": [
+                    int662_table,
+                    int662_table,
+                    int678_table,
+                    int679_table,
+                ],
+                "source_report_id": ["INT662", "INT662", "INT678", "INT679"],
+                "settlement_run_id": [None, None, None, "SET-1"],
+                "settlement_stage": [
+                    "provisional_deviation",
+                    "provisional_deviation",
+                    "nmb_daily_amounts",
+                    "nmb_settlement_amounts",
+                ],
+                "settlement_component": [
+                    "total_deviation_qty",
+                    "deviation_charge",
+                    "total_withdrawals",
+                    "net_market_balance",
+                ],
+                "source_hub_id": ["SYD", "SYD", "SYD", "BNE"],
+                "source_hub_name": ["Sydney", "Sydney", "Sydney", "Brisbane"],
+                "source_facility_id": ["FAC-1", "FAC-1", None, None],
+                "facility_name": ["Pipeline A", "Pipeline A", None, None],
+                "quantity_gj": [10.0, None, 50.0, None],
+                "amount": [None, 25.0, None, 100.0],
+                "source_last_updated_timestamp": [
+                    "2024-01-03 01:00:00",
+                    "2024-01-03 01:05:00",
+                    "2024-02-01 01:00:00",
+                    "2024-02-01 02:00:00",
+                ],
+                "source_surrogate_key": ["src-1", "src-2", "src-3", "src-4"],
+                "source_file": ["int662.csv", "int662.csv", "int678.csv", "int679.csv"],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 3, 2),
+                    datetime(2024, 1, 3, 2, 5),
+                    datetime(2024, 2, 1, 2),
+                    datetime(2024, 2, 1, 3),
+                ],
+            }
+        )
+    )
+
+    kpis = sttm_market_settlement_kpi_frame(load)
+    settlement_summary = sttm_market_settlement_summary_frame(load)
+    source_coverage = sttm_market_settlement_source_coverage_frame(load)
+    observations = sttm_market_settlement_observation_frame(
+        load,
+        STTM_MARKET_SETTLEMENT_GAS_DATE_FILTER_ALL,
+        period_label,
+        "nmb_settlement_amounts",
+        "net_market_balance",
+    )
+    daily_kpis = sttm_market_settlement_kpi_frame(
+        load,
+        "2024-01-03",
+        STTM_MARKET_SETTLEMENT_PERIOD_FILTER_ALL,
+        "provisional_deviation",
+        STTM_MARKET_SETTLEMENT_COMPONENT_FILTER_ALL,
+    )
+    context_links = render_sttm_market_settlement_context_links()
+
+    assert sttm_market_settlement_gas_date_options(load) == (
+        STTM_MARKET_SETTLEMENT_GAS_DATE_FILTER_ALL,
+        "2024-01-03",
+    )
+    assert sttm_market_settlement_period_options(load) == (
+        STTM_MARKET_SETTLEMENT_PERIOD_FILTER_ALL,
+        period_label,
+    )
+    assert sttm_market_settlement_stage_options(load) == (
+        STTM_MARKET_SETTLEMENT_STAGE_FILTER_ALL,
+        "nmb_daily_amounts",
+        "nmb_settlement_amounts",
+        "provisional_deviation",
+    )
+    assert sttm_market_settlement_component_options(load) == (
+        STTM_MARKET_SETTLEMENT_COMPONENT_FILTER_ALL,
+        "deviation_charge",
+        "net_market_balance",
+        "total_deviation_qty",
+        "total_withdrawals",
+    )
+    assert kpis.select("metric", "value", "detail").to_dict(as_series=False) == {
+        "metric": [
+            "Loaded STTM market settlement rows",
+            "Settlement runs",
+            "Settlement stages",
+            "Components",
+            "Hubs",
+            "Facilities",
+            "Gas Days",
+            "Settlement periods",
+            "Quantity",
+            "Quantity range",
+            "Amount",
+            "Amount range",
+            "Latest Gas Day",
+            "Latest settlement period end",
+            "Accepted source identifiers",
+        ],
+        "value": [
+            "4",
+            "1",
+            "3",
+            "4",
+            "2",
+            "1",
+            "1",
+            "1",
+            "60 GJ",
+            "10 to 50",
+            "125",
+            "25 to 100",
+            "2024-01-03",
+            "2024-01-31",
+            "4",
+        ],
+        "detail": [
+            "Full table scan",
+            "Distinct settlement_run_id values represented",
+            "Distinct settlement_stage values represented",
+            "Distinct settlement_component values represented",
+            "Distinct source_hub_id values represented",
+            "Distinct source_facility_id values represented",
+            "Distinct gas_date values represented",
+            "Distinct period_start_date to period_end_date spans",
+            "2 populated quantity_gj rows",
+            "Minimum and maximum quantity_gj in the current view",
+            "2 populated amount rows",
+            "Minimum and maximum amount in the current view",
+            "Maximum gas_date in the loaded bounded rows",
+            "Maximum period_end_date in the loaded bounded rows",
+            "Distinct source_surrogate_key values represented",
+        ],
+    }
+    assert daily_kpis.row(0, named=True) == {
+        "metric": "Loaded STTM market settlement rows",
+        "value": "2",
+        "detail": "Full table scan",
+    }
+    assert observations.select(
+        "gas date",
+        "period start",
+        "period end",
+        "settlement run",
+        "settlement stage",
+        "component",
+        "hub",
+        "facility",
+        "quantity_gj",
+        "amount",
+        "source report",
+        "accepted source identifier",
+    ).to_dict(as_series=False) == {
+        "gas date": [None],
+        "period start": [date(2024, 1, 1)],
+        "period end": [date(2024, 1, 31)],
+        "settlement run": ["SET-1"],
+        "settlement stage": ["nmb_settlement_amounts"],
+        "component": ["net_market_balance"],
+        "hub": ["BNE"],
+        "facility": [None],
+        "quantity_gj": [None],
+        "amount": [100.0],
+        "source report": ["INT679"],
+        "accepted source identifier": ["src-4"],
+    }
+    assert settlement_summary.sort(["source report", "component"]).select(
+        "settlement run",
+        "settlement stage",
+        "component",
+        "hub",
+        "facility",
+        "source report",
+        "period start",
+        "period end",
+        "rows",
+        "gas days",
+        "quantity rows",
+        "total quantity gj",
+        "amount rows",
+        "total amount",
+    ).to_dict(as_series=False) == {
+        "settlement run": [None, None, None, "SET-1"],
+        "settlement stage": [
+            "provisional_deviation",
+            "provisional_deviation",
+            "nmb_daily_amounts",
+            "nmb_settlement_amounts",
+        ],
+        "component": [
+            "deviation_charge",
+            "total_deviation_qty",
+            "total_withdrawals",
+            "net_market_balance",
+        ],
+        "hub": ["SYD", "SYD", "SYD", "BNE"],
+        "facility": ["FAC-1", "FAC-1", None, None],
+        "source report": ["INT662", "INT662", "INT678", "INT679"],
+        "period start": [None, None, date(2024, 1, 1), date(2024, 1, 1)],
+        "period end": [None, None, date(2024, 1, 31), date(2024, 1, 31)],
+        "rows": [1, 1, 1, 1],
+        "gas days": [1, 1, 0, 0],
+        "quantity rows": [0, 1, 1, 0],
+        "total quantity gj": [0.0, 10.0, 50.0, 0.0],
+        "amount rows": [1, 0, 0, 1],
+        "total amount": [25.0, 0.0, 0.0, 100.0],
+    }
+    assert source_coverage.select(
+        "source system",
+        "source table",
+        "source report",
+        "rows",
+        "settlement runs",
+        "settlement stages",
+        "components",
+        "hubs",
+        "facilities",
+        "gas days",
+        "periods",
+        "quantity rows",
+        "amount rows",
+        "source identifiers",
+    ).to_dict(as_series=False) == {
+        "source system": ["STTM", "STTM", "STTM"],
+        "source table": [int662_table, int678_table, int679_table],
+        "source report": ["INT662", "INT678", "INT679"],
+        "rows": [2, 1, 1],
+        "settlement runs": [0, 0, 1],
+        "settlement stages": [1, 1, 1],
+        "components": [2, 1, 1],
+        "hubs": [1, 1, 1],
+        "facilities": [1, 0, 0],
+        "gas days": [1, 0, 0],
+        "periods": [0, 1, 1],
+        "quantity rows": [1, 1, 0],
+        "amount rows": [1, 0, 1],
+        "source identifiers": [2, 1, 1],
+    }
+    assert 'href="/marimo/gas_sttm_market_settlement/"' in context_links
+    assert "Settlement Context" in context_links
+    assert "Allocation Context" in context_links
+    assert "Hub / Zone Context" in context_links
+    assert "Facility Context" in context_links
+    assert "Gas Day Context" in context_links
+
+
+def test_sttm_market_settlement_helpers_cover_missing_data_and_filter_empty_state() -> (
+    None
+):
+    empty_load = _sttm_market_settlement_load(pl.DataFrame(), row_limit=5)
+    populated_load = _sttm_market_settlement_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3)],
+                "source_system": ["STTM"],
+                "source_table": ["silver.sttm.market_settlement"],
+                "source_report_id": ["INT662"],
+                "settlement_stage": ["provisional_deviation"],
+                "settlement_component": ["total_deviation_qty"],
+                "source_hub_id": ["SYD"],
+                "quantity_gj": [10.0],
+            }
+        )
+    )
+    missing_date_load = _sttm_market_settlement_load(
+        pl.DataFrame(
+            {
+                "period_start_date": [date(2024, 1, 1)],
+                "period_end_date": [date(2024, 1, 31)],
+                "source_system": ["STTM"],
+                "settlement_stage": ["nmb_settlement_amounts"],
+                "settlement_component": ["net_market_balance"],
+                "source_hub_id": ["SYD"],
+                "amount": [100.0],
+            }
+        )
+    )
+    no_measure_load = _sttm_market_settlement_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3)],
+                "source_system": ["STTM"],
+                "settlement_stage": ["provisional_deviation"],
+                "settlement_component": ["total_deviation_qty"],
+                "source_hub_id": ["SYD"],
+            }
+        )
+    )
+    error_load = GasTableLoad(
+        spec=STTM_MARKET_SETTLEMENT_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_sttm_market_settlement",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=5,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert sttm_market_settlement_kpi_frame(empty_load).is_empty()
+    assert sttm_market_settlement_summary_frame(empty_load).is_empty()
+    assert sttm_market_settlement_source_coverage_frame(empty_load).is_empty()
+    assert sttm_market_settlement_observation_frame(empty_load).is_empty()
+    assert sttm_market_settlement_gas_date_options(empty_load) == (
+        STTM_MARKET_SETTLEMENT_GAS_DATE_FILTER_ALL,
+    )
+    assert sttm_market_settlement_period_options(empty_load) == (
+        STTM_MARKET_SETTLEMENT_PERIOD_FILTER_ALL,
+    )
+    assert sttm_market_settlement_stage_options(empty_load) == (
+        STTM_MARKET_SETTLEMENT_STAGE_FILTER_ALL,
+    )
+    assert sttm_market_settlement_component_options(empty_load) == (
+        STTM_MARKET_SETTLEMENT_COMPONENT_FILTER_ALL,
+    )
+    assert sttm_market_settlement_kpi_frame(
+        populated_load,
+        settlement_stage_filter="missing-stage",
+    ).is_empty()
+    assert sttm_market_settlement_kpi_frame(missing_date_load).row(
+        12,
+        named=True,
+    ) == {
+        "metric": "Latest Gas Day",
+        "value": "unknown",
+        "detail": "Maximum gas_date in the loaded bounded rows",
+    }
+    assert sttm_market_settlement_kpi_frame(no_measure_load).row(8, named=True) == {
+        "metric": "Quantity",
+        "value": "unknown",
+        "detail": "0 populated quantity_gj rows",
+    }
+
+    empty_markdown = sttm_market_settlement_empty_state_markdown(empty_load)
+    error_markdown = sttm_market_settlement_empty_state_markdown(error_load)
+    filtered_markdown = sttm_market_settlement_empty_state_markdown(populated_load)
+    missing_load_markdown = sttm_market_settlement_empty_state_markdown(None)
+    empty_context_links = render_sttm_market_settlement_context_links(entries=())
+    unmounted_entry = DashboardRegistryEntry(
+        concept_id="sttm-market-settlement",
+        title="Unmounted STTM Market Settlement",
+        description="Available entry without a mounted notebook route.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_sttm_market_settlement",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+    unmounted_context_links = render_sttm_market_settlement_context_links(
+        entries=(unmounted_entry,)
+    )
+
+    assert "No STTM market settlement data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_sttm_market_settlement" in (empty_markdown)
+    assert "Bounded preview reads are capped at `5` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert (
+        "did not receive an STTM market settlement load result" in missing_load_markdown
+    )
+    assert "No STTM market settlement, Settlement, Allocation" in empty_context_links
+    assert "Unavailable dashboard" in unmounted_context_links
+
+
+def test_sttm_capacity_settlement_table_loader_uses_bounded_recent_view() -> None:
+    captured: list[int | None] = []
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "12",
+        }
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append(row_limit)
+        assert uri == (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_sttm_capacity_settlement"
+        )
+        assert storage_options == config.storage_options()
+        return pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 1), date(2024, 1, 3)],
+                "capacity_settlement_component": ["older", "newer"],
+            }
+        )
+
+    load = load_sttm_capacity_settlement_table(config, reader=reader)
+
+    assert captured == [12]
+    assert load.spec == STTM_CAPACITY_SETTLEMENT_TABLE_SPEC
+    assert load.row_limit == 12
+    assert load.dataframe is not None
+    assert load.dataframe["capacity_settlement_component"].to_list() == [
+        "newer",
+        "older",
+    ]
+
+
+def test_cached_sttm_capacity_settlement_table_loader_reuses_session_cache() -> None:
+    calls: list[int] = []
+    config = _dashboard_config()
+    cache: GasModelSessionCache = {}
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        calls.append(len(calls) + 1)
+        return pl.DataFrame(
+            {"capacity_settlement_component": [f"component-{calls[-1]}"]}
+        )
+
+    first_load = cached_load_sttm_capacity_settlement_table(
+        config,
+        cache,
+        reader=reader,
+    )
+    cached_load = cached_load_sttm_capacity_settlement_table(
+        config,
+        cache,
+        reader=reader,
+    )
+    refreshed_load = cached_load_sttm_capacity_settlement_table(
+        config,
+        cache,
+        reader=reader,
+        refresh_token=1,
+    )
+
+    assert calls == [1, 2]
+    assert not first_load.cache_hit
+    assert cached_load.cache_hit
+    assert not refreshed_load.cache_hit
+    assert cached_load.dataframe is not None
+    assert cached_load.dataframe["capacity_settlement_component"].to_list() == [
+        "component-1"
+    ]
+    assert refreshed_load.dataframe is not None
+    assert refreshed_load.dataframe["capacity_settlement_component"].to_list() == [
+        "component-2"
+    ]
+
+
+def test_sttm_capacity_settlement_summaries_filters_and_context_links() -> None:
+    int664_table = "silver.sttm.silver_int664_v1_daily_provisional_mos_allocation_rpt_1"
+    int681_table = "silver.sttm.silver_int681_v1_daily_provisional_capacity_data_rpt_1"
+    int682_table = "silver.sttm.silver_int682_v1_settlement_mos_and_capacity_data_rpt_1"
+    load = _sttm_capacity_settlement_load(
+        pl.DataFrame(
+            {
+                "gas_date": ["2024-01-03", "2024-01-03", "2024-01-04", None],
+                "source_system": ["STTM", "STTM", "STTM", "STTM"],
+                "source_table": [
+                    int664_table,
+                    int664_table,
+                    int681_table,
+                    int682_table,
+                ],
+                "source_report_id": ["INT664", "INT664", "INT681", "INT682"],
+                "settlement_run_id": [None, None, None, "SET-1"],
+                "settlement_stage": [
+                    "provisional_mos_allocation",
+                    "provisional_mos_allocation",
+                    "provisional_capacity",
+                    "settlement_mos_capacity",
+                ],
+                "capacity_settlement_component": [
+                    "mos_allocated_qty",
+                    "mos_overrun_qty",
+                    "firm_not_flowed",
+                    "as_available_flowed",
+                ],
+                "source_hub_id": ["SYD", "SYD", "BNE", "SYD"],
+                "source_hub_name": ["Sydney", "Sydney", "Brisbane", "Sydney"],
+                "source_facility_id": ["FAC-1", "FAC-1", "FAC-2", "FAC-1"],
+                "facility_name": [
+                    "Pipeline A",
+                    "Pipeline A",
+                    "Pipeline B",
+                    "Pipeline A",
+                ],
+                "quantity_gj": [10.0, 2.0, 5.0, 7.5],
+                "source_last_updated_timestamp": [
+                    "2024-01-03 01:00:00",
+                    "2024-01-03 01:05:00",
+                    "2024-01-04 01:00:00",
+                    "2024-02-01 02:00:00",
+                ],
+                "source_surrogate_key": ["src-1", "src-2", "src-3", "src-4"],
+                "source_file": [
+                    "int664.csv",
+                    "int664.csv",
+                    "int681.csv",
+                    "int682.csv",
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 3, 2),
+                    datetime(2024, 1, 3, 2, 5),
+                    datetime(2024, 1, 4, 2),
+                    datetime(2024, 2, 1, 3),
+                ],
+            }
+        )
+    )
+
+    kpis = sttm_capacity_settlement_kpi_frame(load)
+    settlement_summary = sttm_capacity_settlement_summary_frame(load)
+    source_coverage = sttm_capacity_settlement_source_coverage_frame(load)
+    observations = sttm_capacity_settlement_observation_frame(
+        load,
+        STTM_CAPACITY_SETTLEMENT_GAS_DATE_FILTER_ALL,
+        "settlement_mos_capacity",
+        "as_available_flowed",
+        "SYD",
+        "FAC-1",
+    )
+    daily_kpis = sttm_capacity_settlement_kpi_frame(
+        load,
+        "2024-01-03",
+        "provisional_mos_allocation",
+        STTM_CAPACITY_SETTLEMENT_COMPONENT_FILTER_ALL,
+        "SYD",
+        "FAC-1",
+    )
+    context_links = render_sttm_capacity_settlement_context_links()
+
+    assert sttm_capacity_settlement_gas_date_options(load) == (
+        STTM_CAPACITY_SETTLEMENT_GAS_DATE_FILTER_ALL,
+        "2024-01-04",
+        "2024-01-03",
+    )
+    assert sttm_capacity_settlement_stage_options(load) == (
+        STTM_CAPACITY_SETTLEMENT_STAGE_FILTER_ALL,
+        "provisional_capacity",
+        "provisional_mos_allocation",
+        "settlement_mos_capacity",
+    )
+    assert sttm_capacity_settlement_component_options(load) == (
+        STTM_CAPACITY_SETTLEMENT_COMPONENT_FILTER_ALL,
+        "as_available_flowed",
+        "firm_not_flowed",
+        "mos_allocated_qty",
+        "mos_overrun_qty",
+    )
+    assert sttm_capacity_settlement_hub_options(load) == (
+        STTM_CAPACITY_SETTLEMENT_HUB_FILTER_ALL,
+        "BNE",
+        "SYD",
+    )
+    assert sttm_capacity_settlement_facility_options(load) == (
+        STTM_CAPACITY_SETTLEMENT_FACILITY_FILTER_ALL,
+        "FAC-1",
+        "FAC-2",
+    )
+    assert kpis.select("metric", "value", "detail").to_dict(as_series=False) == {
+        "metric": [
+            "Loaded STTM capacity settlement rows",
+            "Settlement runs",
+            "Settlement stages",
+            "Capacity settlement components",
+            "Hubs",
+            "Facilities",
+            "Source reports",
+            "Gas Days",
+            "Quantity",
+            "Quantity range",
+            "Latest Gas Day",
+            "Accepted source identifiers",
+        ],
+        "value": [
+            "4",
+            "1",
+            "3",
+            "4",
+            "2",
+            "2",
+            "3",
+            "2",
+            "24.5 GJ",
+            "2 to 10",
+            "2024-01-04",
+            "4",
+        ],
+        "detail": [
+            "Full table scan",
+            "Distinct settlement_run_id values represented",
+            "Distinct settlement_stage values represented",
+            "Distinct capacity_settlement_component values represented",
+            "Distinct source_hub_id values represented",
+            "Distinct source_facility_id values represented",
+            "Distinct source_report_id values represented",
+            "Distinct gas_date values represented",
+            "4 populated quantity_gj rows",
+            "Minimum and maximum quantity_gj in the current view",
+            "Maximum gas_date in the loaded bounded rows",
+            "Distinct source_surrogate_key values represented",
+        ],
+    }
+    assert daily_kpis.row(0, named=True) == {
+        "metric": "Loaded STTM capacity settlement rows",
+        "value": "2",
+        "detail": "Full table scan",
+    }
+    assert observations.select(
+        "gas date",
+        "settlement run",
+        "settlement stage",
+        "capacity settlement component",
+        "hub",
+        "facility",
+        "quantity_gj",
+        "source report",
+        "accepted source identifier",
+    ).to_dict(as_series=False) == {
+        "gas date": [None],
+        "settlement run": ["SET-1"],
+        "settlement stage": ["settlement_mos_capacity"],
+        "capacity settlement component": ["as_available_flowed"],
+        "hub": ["SYD"],
+        "facility": ["FAC-1"],
+        "quantity_gj": [7.5],
+        "source report": ["INT682"],
+        "accepted source identifier": ["src-4"],
+    }
+    assert settlement_summary.sort(
+        ["source report", "capacity settlement component"]
+    ).select(
+        "settlement run",
+        "settlement stage",
+        "capacity settlement component",
+        "hub",
+        "facility",
+        "source report",
+        "rows",
+        "gas days",
+        "quantity rows",
+        "total quantity gj",
+        "min quantity gj",
+        "max quantity gj",
+    ).to_dict(as_series=False) == {
+        "settlement run": [None, None, None, "SET-1"],
+        "settlement stage": [
+            "provisional_mos_allocation",
+            "provisional_mos_allocation",
+            "provisional_capacity",
+            "settlement_mos_capacity",
+        ],
+        "capacity settlement component": [
+            "mos_allocated_qty",
+            "mos_overrun_qty",
+            "firm_not_flowed",
+            "as_available_flowed",
+        ],
+        "hub": ["SYD", "SYD", "BNE", "SYD"],
+        "facility": ["FAC-1", "FAC-1", "FAC-2", "FAC-1"],
+        "source report": ["INT664", "INT664", "INT681", "INT682"],
+        "rows": [1, 1, 1, 1],
+        "gas days": [1, 1, 1, 0],
+        "quantity rows": [1, 1, 1, 1],
+        "total quantity gj": [10.0, 2.0, 5.0, 7.5],
+        "min quantity gj": [10.0, 2.0, 5.0, 7.5],
+        "max quantity gj": [10.0, 2.0, 5.0, 7.5],
+    }
+    assert source_coverage.select(
+        "source system",
+        "source table",
+        "source report",
+        "rows",
+        "settlement runs",
+        "settlement stages",
+        "capacity settlement components",
+        "hubs",
+        "facilities",
+        "gas days",
+        "quantity rows",
+        "source identifiers",
+    ).to_dict(as_series=False) == {
+        "source system": ["STTM", "STTM", "STTM"],
+        "source table": [int664_table, int681_table, int682_table],
+        "source report": ["INT664", "INT681", "INT682"],
+        "rows": [2, 1, 1],
+        "settlement runs": [0, 0, 1],
+        "settlement stages": [1, 1, 1],
+        "capacity settlement components": [2, 1, 1],
+        "hubs": [1, 1, 1],
+        "facilities": [1, 1, 1],
+        "gas days": [1, 1, 0],
+        "quantity rows": [2, 1, 1],
+        "source identifiers": [2, 1, 1],
+    }
+    assert 'href="/marimo/gas_sttm_capacity_settlement/"' in context_links
+    assert 'href="/marimo/gas_sttm_market_settlement/"' in context_links
+    assert "Capacity Context" in context_links
+    assert "Settlement Context" in context_links
+    assert "MOS Context" in context_links
+    assert "Allocation Context" in context_links
+    assert "Facility Context" in context_links
+    assert "Hub / Zone Context" in context_links
+
+
+def test_sttm_capacity_settlement_helpers_cover_missing_data_and_filter_empty_state() -> (
+    None
+):
+    empty_load = _sttm_capacity_settlement_load(pl.DataFrame(), row_limit=5)
+    populated_load = _sttm_capacity_settlement_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3)],
+                "source_system": ["STTM"],
+                "source_table": ["silver.sttm.capacity_settlement"],
+                "source_report_id": ["INT664"],
+                "settlement_stage": ["provisional_mos_allocation"],
+                "capacity_settlement_component": ["mos_allocated_qty"],
+                "source_hub_id": ["SYD"],
+                "source_facility_id": ["FAC-1"],
+                "quantity_gj": [10.0],
+            }
+        )
+    )
+    missing_date_load = _sttm_capacity_settlement_load(
+        pl.DataFrame(
+            {
+                "source_system": ["STTM"],
+                "settlement_stage": ["settlement_mos_capacity"],
+                "capacity_settlement_component": ["as_available_flowed"],
+                "source_hub_id": ["SYD"],
+                "source_facility_id": ["FAC-1"],
+                "quantity_gj": [7.5],
+            }
+        )
+    )
+    no_measure_load = _sttm_capacity_settlement_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3)],
+                "source_system": ["STTM"],
+                "settlement_stage": ["provisional_mos_allocation"],
+                "capacity_settlement_component": ["mos_allocated_qty"],
+                "source_hub_id": ["SYD"],
+                "source_facility_id": ["FAC-1"],
+            }
+        )
+    )
+    error_load = GasTableLoad(
+        spec=STTM_CAPACITY_SETTLEMENT_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_sttm_capacity_settlement",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=5,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert sttm_capacity_settlement_kpi_frame(empty_load).is_empty()
+    assert sttm_capacity_settlement_summary_frame(empty_load).is_empty()
+    assert sttm_capacity_settlement_source_coverage_frame(empty_load).is_empty()
+    assert sttm_capacity_settlement_observation_frame(empty_load).is_empty()
+    assert sttm_capacity_settlement_gas_date_options(empty_load) == (
+        STTM_CAPACITY_SETTLEMENT_GAS_DATE_FILTER_ALL,
+    )
+    assert sttm_capacity_settlement_stage_options(empty_load) == (
+        STTM_CAPACITY_SETTLEMENT_STAGE_FILTER_ALL,
+    )
+    assert sttm_capacity_settlement_component_options(empty_load) == (
+        STTM_CAPACITY_SETTLEMENT_COMPONENT_FILTER_ALL,
+    )
+    assert sttm_capacity_settlement_hub_options(empty_load) == (
+        STTM_CAPACITY_SETTLEMENT_HUB_FILTER_ALL,
+    )
+    assert sttm_capacity_settlement_facility_options(empty_load) == (
+        STTM_CAPACITY_SETTLEMENT_FACILITY_FILTER_ALL,
+    )
+    assert sttm_capacity_settlement_kpi_frame(
+        populated_load,
+        settlement_stage_filter="missing-stage",
+    ).is_empty()
+    assert sttm_capacity_settlement_kpi_frame(missing_date_load).row(
+        10,
+        named=True,
+    ) == {
+        "metric": "Latest Gas Day",
+        "value": "unknown",
+        "detail": "Maximum gas_date in the loaded bounded rows",
+    }
+    assert sttm_capacity_settlement_kpi_frame(no_measure_load).row(8, named=True) == {
+        "metric": "Quantity",
+        "value": "unknown",
+        "detail": "0 populated quantity_gj rows",
+    }
+
+    empty_markdown = sttm_capacity_settlement_empty_state_markdown(empty_load)
+    error_markdown = sttm_capacity_settlement_empty_state_markdown(error_load)
+    filtered_markdown = sttm_capacity_settlement_empty_state_markdown(populated_load)
+    missing_load_markdown = sttm_capacity_settlement_empty_state_markdown(None)
+    empty_context_links = render_sttm_capacity_settlement_context_links(entries=())
+    unmounted_entry = DashboardRegistryEntry(
+        concept_id="sttm-capacity-settlement",
+        title="Unmounted STTM Capacity Settlement",
+        description="Available entry without a mounted notebook route.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_sttm_capacity_settlement",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+    unmounted_context_links = render_sttm_capacity_settlement_context_links(
+        entries=(unmounted_entry,)
+    )
+
+    assert "No STTM capacity settlement data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_sttm_capacity_settlement" in (
+        empty_markdown
+    )
+    assert "Bounded preview reads are capped at `5` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert (
+        "did not receive an STTM capacity settlement load result"
+        in missing_load_markdown
+    )
+    assert "No STTM capacity settlement, STTM market settlement" in empty_context_links
     assert "Unavailable dashboard" in unmounted_context_links
 
 
@@ -3094,6 +4737,321 @@ def test_context_links_render_planned_entries_without_routes() -> None:
     assert "<span>Capacity Context</span>" in connection_point_links
 
 
+def test_capacity_auction_metadata_and_loader_use_recent_bounded_rows() -> None:
+    entry = registry_entry_by_concept_id(CAPACITY_AUCTION_CONTEXT_ID)
+    html = render_dashboard_context_panel(CAPACITY_AUCTION_CONTEXT_ID)
+    context_links = render_capacity_auction_context_links()
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "13",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    load = load_capacity_auction_table(config, reader=reader)
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "capacity_auction"
+    assert entry.notebook_route == "/marimo/capacity_auction/"
+    assert entry.backing_assets == (
+        "silver.gas_model.silver_gas_fact_capacity_auction",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md"
+        in entry.generated_gold_paths
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md"
+        in entry.generated_gold_paths
+    )
+    assert "chunk-sttm-procedures-capacity-settlement" in entry.source_chunk_ids
+    assert "Capacity Auctions" in html
+    assert 'data-status="available"' in html
+    assert 'href="/marimo/capacity_auction/"' in context_links
+    assert 'href="/marimo/capacity_outlook/"' in context_links
+    assert "Hub / Zone Context" in context_links
+    assert "Gas Market Overview" in context_links
+    assert load.spec == CAPACITY_AUCTION_TABLE_SPEC
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_capacity_auction",
+            13,
+        )
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{CAPACITY_AUCTION_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 13
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["VICGAS"]})
+
+    first_cached = cached_load_capacity_auction_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_capacity_auction_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_capacity_auction_table(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached.cache_hit
+    assert second_cached.cache_hit
+    assert not refreshed.cache_hit
+
+
+def test_capacity_auction_helpers_summarize_filters_and_metrics() -> None:
+    load = _capacity_auction_load(
+        pl.DataFrame(
+            {
+                "source_system": ["VICGAS", "VICGAS", "VICGAS", "VICGAS"],
+                "source_tables": [
+                    ["silver.vicgas.silver_int339_v4_ccauction_bid_stack_1"],
+                    ["silver.vicgas.silver_int353_v4_ccauction_qty_won_1"],
+                    ["silver.vicgas.silver_int348_v4_cctransfer_1"],
+                    [],
+                ],
+                "source_table": [
+                    "silver.vicgas.silver_int339_v4_ccauction_bid_stack_1",
+                    "silver.vicgas.silver_int353_v4_ccauction_qty_won_1",
+                    "silver.vicgas.silver_int348_v4_cctransfer_1",
+                    None,
+                ],
+                "auction_id": ["A1", "A1", "A2", None],
+                "auction_date": [
+                    date(2024, 1, 1),
+                    date(2024, 1, 1),
+                    date(2024, 2, 1),
+                    None,
+                ],
+                "source_zone_id": ["Z1", "Z1", "Z2", None],
+                "zone_name": ["Sydney", "Sydney", "Brisbane", None],
+                "zone_type": ["STTM", "STTM", "STTM", None],
+                "capacity_period": ["Apr-2026", "Apr-2026", None, None],
+                "start_date": [
+                    None,
+                    date(2024, 4, 1),
+                    date(2024, 3, 1),
+                    None,
+                ],
+                "end_date": [
+                    None,
+                    date(2024, 4, 30),
+                    date(2024, 3, 31),
+                    None,
+                ],
+                "auction_metric": [
+                    "bid_stack",
+                    "quantity_won",
+                    "transfer",
+                    "zone_reference",
+                ],
+                "quantity_gj": [10.0, 20.0, 30.0, None],
+                "price": [1.0, 7.0, None, None],
+                "source_surrogate_key": ["src-1", "src-2", "src-3", "src-4"],
+                "source_file": ["capacity-auction.csv"] * 4,
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 3, 8),
+                    datetime(2024, 1, 4, 8),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 1, 9),
+                    datetime(2024, 1, 2, 9),
+                    datetime(2024, 1, 3, 9),
+                    datetime(2024, 1, 4, 9),
+                ],
+            }
+        ),
+        row_limit=4,
+    )
+
+    kpi_values = {
+        row["metric"]: row["value"]
+        for row in capacity_auction_kpi_frame(load).to_dicts()
+    }
+    filtered_summary = capacity_auction_summary_frame(
+        load,
+        auction_date_filter="2024-01-01",
+        zone_filter="Sydney (Z1)",
+        capacity_period_filter="Apr-2026",
+        metric_filter="quantity_won",
+        source_system_filter="VICGAS",
+    )
+    metric_summary = capacity_auction_metric_frame(load)
+    observations = capacity_auction_observation_frame(load, preview_rows=10)
+
+    assert kpi_values["Loaded auction rows"] == "4"
+    assert kpi_values["Auction IDs"] == "2"
+    assert kpi_values["Capacity periods"] == "3"
+    assert kpi_values["Quantity"] == "60 GJ"
+    assert kpi_values["Price range"] == "1 to 7"
+    assert "2024-01-01" in capacity_auction_auction_date_options(load)
+    assert "(missing)" in capacity_auction_auction_date_options(load)
+    assert "Sydney (Z1)" in capacity_auction_zone_options(load)
+    assert "(missing Hub / Zone)" in capacity_auction_zone_options(load)
+    assert "Apr-2026" in capacity_auction_capacity_period_options(load)
+    assert "2024-03-01 to 2024-03-31" in (
+        capacity_auction_capacity_period_options(load)
+    )
+    assert "quantity_won" in capacity_auction_metric_options(load)
+    assert capacity_auction_source_system_options(load) == (
+        CAPACITY_AUCTION_SOURCE_SYSTEM_FILTER_ALL,
+        "VICGAS",
+    )
+    assert filtered_summary.height == 1
+    assert filtered_summary.row(0, named=True)["auction metric"] == "quantity_won"
+    assert filtered_summary.row(0, named=True)["total quantity gj"] == 20.0
+    assert {row["auction metric"] for row in metric_summary.to_dicts()} == {
+        "bid_stack",
+        "quantity_won",
+        "transfer",
+        "zone_reference",
+    }
+    assert (
+        observations.select(
+            "auction id",
+            "auction date",
+            "zone",
+            "capacity period",
+            "auction metric",
+            "quantity_gj",
+            "price",
+        ).height
+        == 4
+    )
+
+
+def test_capacity_auction_helpers_cover_missing_data_and_empty_states() -> None:
+    missing_columns_load = _capacity_auction_load(
+        pl.DataFrame(
+            {
+                "source_system": ["VICGAS"],
+                "auction_metric": ["system_capability"],
+            }
+        ),
+        row_limit=4,
+    )
+    unavailable_load = GasTableLoad(
+        spec=CAPACITY_AUCTION_TABLE_SPEC,
+        uri="s3://bucket/silver/gas_model/silver_gas_fact_capacity_auction",
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=4,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+    empty_load = _capacity_auction_load(pl.DataFrame(), row_limit=4)
+    fallback_load = _capacity_auction_load(
+        pl.DataFrame(
+            [
+                {
+                    "source_system": "VICGAS",
+                    "zone_name": "Name Only",
+                    "auction_metric": "start_only",
+                    "start_date": date(2024, 5, 1),
+                },
+                {
+                    "source_system": "VICGAS",
+                    "source_zone_id": "Z9",
+                    "auction_metric": "end_only",
+                    "end_date": date(2024, 6, 1),
+                },
+            ]
+        )
+    )
+    planned_capacity_auction = DashboardRegistryEntry(
+        concept_id=CAPACITY_AUCTION_CONTEXT_ID,
+        title="Capacity Auctions",
+        description="Planned capacity auction dashboard.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.PLANNED,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_capacity_auction",),
+        generated_gold_paths=(
+            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+        ),
+        source_chunks=(),
+    )
+
+    kpis = capacity_auction_kpi_frame(missing_columns_load)
+    summary = capacity_auction_summary_frame(missing_columns_load)
+    observations = capacity_auction_observation_frame(missing_columns_load)
+    filtered = capacity_auction_metric_frame(
+        missing_columns_load,
+        zone_filter="missing",
+    )
+    unavailable_markdown = capacity_auction_empty_state_markdown(unavailable_load)
+    empty_markdown = capacity_auction_empty_state_markdown(empty_load)
+    filtered_markdown = capacity_auction_empty_state_markdown(missing_columns_load)
+    missing_load_markdown = capacity_auction_empty_state_markdown(None)
+    empty_context_links = render_capacity_auction_context_links(entries=())
+    planned_context_links = render_capacity_auction_context_links(
+        entries=(planned_capacity_auction,)
+    )
+    fallback_zone_options = capacity_auction_zone_options(fallback_load)
+    fallback_period_options = capacity_auction_capacity_period_options(fallback_load)
+
+    assert kpis.row(0, named=True)["value"] == "1"
+    assert summary.row(0, named=True)["auction metric"] == "system_capability"
+    assert summary.row(0, named=True)["zone"] == "(missing Hub / Zone)"
+    assert observations.row(0, named=True)["quantity_gj"] is None
+    assert filtered.is_empty()
+    assert capacity_auction_kpi_frame(empty_load).is_empty()
+    assert capacity_auction_summary_frame(empty_load).is_empty()
+    assert capacity_auction_observation_frame(empty_load).is_empty()
+    assert capacity_auction_zone_options(empty_load) == ("All zones",)
+    assert "Name Only" in fallback_zone_options
+    assert "Z9" in fallback_zone_options
+    assert "from 2024-05-01" in fallback_period_options
+    assert "to 2024-06-01" in fallback_period_options
+    assert "No capacity auction data is available" in unavailable_markdown
+    assert "FileNotFoundError: no parquet files found" in unavailable_markdown
+    assert "The table loaded successfully but returned no rows" in empty_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a capacity auction load" in missing_load_markdown
+    assert (
+        "No Capacity Auction, Capacity, Hub / Zone, market overview, "
+        "source coverage, source lineage, or table explorer entries are "
+        "registered."
+    ) in empty_context_links
+    assert 'data-dashboard-status="planned"' in planned_context_links
+    assert "<span>Capacity Auctions</span>" in planned_context_links
+
+
 def test_linepack_helpers_summarize_quantities_adequacy_and_sources() -> None:
     gbb_source_table = "silver.gbb.silver_gasbb_linepack_capacity_adequacy"
     vicgas_source_table = "silver.vicgas.silver_int128_v4_actual_linepack_1"
@@ -3772,6 +5730,352 @@ def test_nomination_forecast_helpers_cover_empty_state_behavior() -> None:
     ) in empty_context_links
 
 
+def test_forecast_actual_metadata_and_loader_use_recent_bounded_rows() -> None:
+    entry = registry_entry_by_concept_id(FORECAST_ACTUAL_CONTEXT_ID)
+    html = render_dashboard_context_panel(FORECAST_ACTUAL_CONTEXT_ID)
+    context_links = render_forecast_actual_context_links()
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "19",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    loads = load_forecast_actual_tables(config, reader=reader)
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "forecast_vs_actual"
+    assert entry.notebook_route == "/marimo/forecast_vs_actual/"
+    assert entry.backing_assets == (
+        "silver.gas_model.silver_gas_fact_nomination_forecast",
+        "silver.gas_model.silver_gas_fact_facility_flow_storage",
+    )
+    assert "Forecast Vs Actual Flow And Storage" in html
+    assert "chunk-gbb-procedures-daily-flow-storage" in html
+    assert 'href="/marimo/forecast_vs_actual/"' in context_links
+    assert "Nomination And Demand Forecast" in context_links
+    assert "Facility Flow And Storage" in context_links
+    assert [load.spec for load in loads] == list(FORECAST_ACTUAL_TABLE_SPECS)
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_nomination_forecast",
+            19,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_facility_flow_storage",
+            19,
+        ),
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert storage_options == config.storage_options()
+        assert row_limit == 19
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["GBB"]})
+
+    first_cached = cached_load_forecast_actual_tables(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_forecast_actual_tables(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_forecast_actual_tables(
+        config,
+        cache,
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 4
+    assert [load.cache_hit for load in first_cached] == [False, False]
+    assert [load.cache_hit for load in second_cached] == [True, True]
+    assert [load.cache_hit for load in refreshed] == [False, False]
+
+
+def test_forecast_actual_helpers_compare_matched_bounded_data() -> None:
+    forecast_load = _nomination_forecast_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB"],
+                "source_table": [
+                    "silver.gbb.silver_gasbb_nomination_and_forecast",
+                    "silver.gbb.silver_gasbb_nomination_and_forecast",
+                ],
+                "source_tables": [
+                    ["silver.gbb.silver_gasbb_nomination_and_forecast"],
+                    ["silver.gbb.silver_gasbb_nomination_and_forecast"],
+                ],
+                "gas_date": [date(2024, 1, 4), date(2024, 1, 4)],
+                "forecast_type": ["gbb_nomination_forecast", "gbb_nomination_forecast"],
+                "forecast_version": ["v1", "v1"],
+                "source_facility_id": ["F1", "F1"],
+                "source_location_id": ["L1", "L1"],
+                "demand_forecast_gj": [600.0, 400.0],
+                "supply_forecast_gj": [500.0, None],
+                "transfer_in_forecast_gj": [100.0, 50.0],
+                "transfer_out_forecast_gj": [20.0, 30.0],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 4, 5),
+                    datetime(2024, 1, 4, 6),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 4, 7),
+                    datetime(2024, 1, 4, 8),
+                ],
+            }
+        ),
+        row_limit=12,
+    )
+    actual_load = _facility_flow_storage_load(
+        pl.DataFrame(
+            {
+                "source_system": ["GBB"],
+                "source_tables": [["silver.gbb.silver_gasbb_actual_flow_storage"]],
+                "gas_date": [date(2024, 1, 4)],
+                "source_facility_id": ["F1"],
+                "source_location_id": ["L1"],
+                "demand_tj": [1.2],
+                "supply_tj": [0.4],
+                "transfer_in_tj": [0.1],
+                "transfer_out_tj": [0.05],
+                "held_in_storage_tj": [5.0],
+                "cushion_gas_storage_tj": [1.0],
+                "source_last_updated_timestamp": [datetime(2024, 1, 4, 9)],
+                "ingested_timestamp": [datetime(2024, 1, 4, 10)],
+            }
+        ),
+        row_limit=12,
+    )
+    loads = (forecast_load, actual_load)
+
+    kpis = forecast_actual_kpi_frame(loads, as_of_date=date(2024, 1, 4))
+    comparison = forecast_actual_comparison_frame(
+        loads,
+        as_of_date=date(2024, 1, 4),
+    )
+    storage = forecast_actual_storage_frame(loads, as_of_date=date(2024, 1, 4))
+    kpi_values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+    comparison_row = comparison.row(0, named=True)
+    storage_row = storage.row(0, named=True)
+
+    assert forecast_actual_gas_date_options(loads) == (
+        FORECAST_ACTUAL_GAS_DATE_FILTER_ALL,
+        "2024-01-04",
+    )
+    assert forecast_actual_facility_options(loads) == (
+        FORECAST_ACTUAL_FACILITY_FILTER_ALL,
+        "F1",
+    )
+    assert forecast_actual_source_system_options(loads) == (
+        FORECAST_ACTUAL_SOURCE_SYSTEM_FILTER_ALL,
+        "GBB",
+    )
+    assert kpi_values["Forecast rows"] == "2"
+    assert kpi_values["Actual rows"] == "1"
+    assert kpi_values["Matched facility days"] == "1"
+    assert kpi_values["Comparable flow measures"] == "4"
+    assert comparison_row["match status"] == "Matched forecast and actual"
+    assert comparison_row["forecast rows"] == 2
+    assert comparison_row["actual rows"] == 1
+    assert comparison_row["forecast demand gj"] == 1000.0
+    assert comparison_row["actual demand gj"] == 1200.0
+    assert comparison_row["demand delta gj"] == 200.0
+    assert comparison_row["demand delta pct"] == 20.0
+    assert comparison_row["forecast supply gj"] == 500.0
+    assert comparison_row["actual supply gj"] == 400.0
+    assert comparison_row["supply delta gj"] == -100.0
+    assert storage_row["forecast coverage"] == "Matched forecast row in bounded view"
+    assert storage_row["held in storage tj"] == 5.0
+    assert storage_row["cushion gas storage tj"] == 1.0
+    assert "loaded `2` bounded rows" in forecast_actual_empty_state_markdown(loads)
+
+
+def test_forecast_actual_helpers_degrade_with_missing_forecast_data() -> None:
+    loads = (
+        _nomination_forecast_load(pl.DataFrame(), row_limit=6),
+        _facility_flow_storage_load(
+            pl.DataFrame(
+                {
+                    "source_system": ["GBB"],
+                    "source_tables": [["silver.gbb.silver_gasbb_actual_flow_storage"]],
+                    "gas_date": [date(2024, 1, 5)],
+                    "source_facility_id": ["F2"],
+                    "source_location_id": ["L2"],
+                    "demand_tj": [2.0],
+                    "held_in_storage_tj": [7.0],
+                }
+            ),
+            row_limit=6,
+        ),
+    )
+
+    comparison = forecast_actual_comparison_frame(loads)
+    storage = forecast_actual_storage_frame(loads)
+    kpi_values = {
+        row["metric"]: row["value"]
+        for row in forecast_actual_kpi_frame(loads).to_dicts()
+    }
+
+    assert comparison.row(0, named=True)["match status"] == "Actual only"
+    assert comparison.row(0, named=True)["forecast rows"] == 0
+    assert comparison.row(0, named=True)["actual demand gj"] == 2000.0
+    assert storage.row(0, named=True)["forecast coverage"] == (
+        "No matching forecast row in bounded view"
+    )
+    assert kpi_values["Forecast rows"] == "0"
+    assert kpi_values["Actual-only groups"] == "1"
+
+
+def test_forecast_actual_helpers_degrade_with_missing_actual_data() -> None:
+    loads = (
+        _nomination_forecast_load(
+            pl.DataFrame(
+                {
+                    "source_system": ["VICGAS"],
+                    "source_table": [
+                        "silver.vicgas.silver_int153_v4_demand_forecast_rpt_1"
+                    ],
+                    "gas_date": [date(2024, 1, 6)],
+                    "forecast_type": ["interval_demand"],
+                    "forecast_version": ["42"],
+                    "source_facility_id": ["F3"],
+                    "source_location_id": ["L3"],
+                    "demand_forecast_gj": [900.0],
+                }
+            ),
+            row_limit=6,
+        ),
+        _facility_flow_storage_load(pl.DataFrame(), row_limit=6),
+    )
+
+    comparison = forecast_actual_comparison_frame(loads)
+    storage = forecast_actual_storage_frame(loads)
+    kpi_values = {
+        row["metric"]: row["value"]
+        for row in forecast_actual_kpi_frame(loads).to_dicts()
+    }
+
+    assert comparison.row(0, named=True)["match status"] == "Forecast only"
+    assert comparison.row(0, named=True)["forecast demand gj"] == 900.0
+    assert comparison.row(0, named=True)["actual demand gj"] is None
+    assert storage.is_empty()
+    assert kpi_values["Actual rows"] == "0"
+    assert kpi_values["Forecast-only groups"] == "1"
+
+
+def test_forecast_actual_helpers_make_bounded_messaging_explicit() -> None:
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "7",
+        }
+    )
+    loads = (
+        _nomination_forecast_load(pl.DataFrame(), row_limit=7),
+        _facility_flow_storage_load(pl.DataFrame(), row_limit=7),
+    )
+    local_config = discover_dashboard_config({})
+    unavailable_loads = (
+        GasTableLoad(
+            spec=NOMINATION_FORECAST_TABLE_SPEC,
+            uri=f"s3://bucket/silver/gas_model/{NOMINATION_FORECAST_TABLE_NAME}",
+            dataframe=None,
+            error="FileNotFoundError: no parquet files found",
+            row_limit=7,
+            load_duration_seconds=0.01,
+            cache_hit=False,
+        ),
+    )
+    unknown_date_loads = (
+        _nomination_forecast_load(
+            pl.DataFrame(
+                {
+                    "source_system": ["GBB"],
+                    "gas_date": [None],
+                    "demand_forecast_gj": [5.0],
+                }
+            ),
+            row_limit=7,
+        ),
+        _facility_flow_storage_load(pl.DataFrame(), row_limit=7),
+    )
+
+    bounded_markdown = forecast_actual_bounded_scope_markdown(config, loads)
+    local_markdown = forecast_actual_bounded_scope_markdown(local_config, ())
+    empty_markdown = forecast_actual_empty_state_markdown(loads)
+    missing_load_markdown = forecast_actual_empty_state_markdown(())
+    unavailable_markdown = forecast_actual_empty_state_markdown(unavailable_loads)
+    unknown_date_kpis = {
+        row["metric"]: row["value"]
+        for row in forecast_actual_kpi_frame(unknown_date_loads).to_dicts()
+    }
+
+    assert "AWS mode uses sampled/recent-only bounded reads" in bounded_markdown
+    assert "Bounded preview reads are capped at `7` rows per table" in bounded_markdown
+    assert "forecast-only or actual-only" in bounded_markdown
+    assert "Local mode uses the configured gas dashboard read policy" in local_markdown
+    assert forecast_actual_kpi_frame(loads).is_empty()
+    assert forecast_actual_comparison_frame(loads).is_empty()
+    assert forecast_actual_facility_options(loads) == (
+        FORECAST_ACTUAL_FACILITY_FILTER_ALL,
+    )
+    assert "No forecast-vs-actual" in render_forecast_actual_context_links(entries=())
+    assert "No forecast-vs-actual comparison rows are available" in empty_markdown
+    assert "silver_gas_fact_nomination_forecast" in empty_markdown
+    assert "silver_gas_fact_facility_flow_storage" in empty_markdown
+    assert "not requested by this dashboard run" in missing_load_markdown
+    assert "unavailable:" in unavailable_markdown
+    assert "FileNotFoundError: no parquet files found" in unavailable_markdown
+    assert unknown_date_kpis["Latest Gas Day"] == "unknown"
+
+
+def test_forecast_actual_numeric_and_timestamp_edges() -> None:
+    current = datetime(2024, 1, 5, 12)
+    older = datetime(2024, 1, 5, 11)
+    newer = datetime(2024, 1, 5, 13)
+
+    assert _optional_float(None) is None
+    assert _optional_float(True) is None
+    assert _optional_float(object()) is None
+    assert _optional_float("not-a-number") is None
+    assert _optional_float(float("nan")) is None
+    assert _optional_float("1.5") == 1.5
+    assert _latest_datetime(None, None) is None
+    assert _latest_datetime(None, current) == current
+    assert _latest_datetime(current, None) == current
+    assert _latest_datetime(current, older) == current
+    assert _latest_datetime(current, newer) == newer
+
+
 def test_bid_stack_table_loader_uses_bounded_recent_view() -> None:
     captured: list[int | None] = []
     config = discover_dashboard_config(
@@ -4125,6 +6429,459 @@ def test_bid_stack_helpers_cover_missing_data_and_filter_empty_state() -> None:
     assert "Unavailable dashboard" in unmounted_context_links
 
 
+def test_sttm_contingency_gas_table_loader_uses_bounded_recent_view() -> None:
+    captured: list[int | None] = []
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "13",
+        }
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append(row_limit)
+        assert uri == (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_sttm_contingency_gas_call"
+        )
+        assert storage_options == config.storage_options()
+        return pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 1), date(2024, 1, 3)],
+                "contingency_call_id": ["older", "newer"],
+            }
+        )
+
+    load = load_sttm_contingency_gas_table(config, reader=reader)
+
+    assert captured == [13]
+    assert load.spec == STTM_CONTINGENCY_GAS_TABLE_SPEC
+    assert load.row_limit == 13
+    assert load.dataframe is not None
+    assert load.dataframe["contingency_call_id"].to_list() == ["newer", "older"]
+
+
+def test_cached_sttm_contingency_gas_table_loader_reuses_session_cache() -> None:
+    calls: list[int] = []
+    config = _dashboard_config()
+    cache: GasModelSessionCache = {}
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        calls.append(len(calls) + 1)
+        return pl.DataFrame({"contingency_call_id": [f"call-{calls[-1]}"]})
+
+    first_load = cached_load_sttm_contingency_gas_table(config, cache, reader=reader)
+    cached_load = cached_load_sttm_contingency_gas_table(config, cache, reader=reader)
+    refreshed_load = cached_load_sttm_contingency_gas_table(
+        config,
+        cache,
+        reader=reader,
+        refresh_token=1,
+    )
+
+    assert calls == [1, 2]
+    assert not first_load.cache_hit
+    assert cached_load.cache_hit
+    assert not refreshed_load.cache_hit
+    assert cached_load.dataframe is not None
+    assert cached_load.dataframe["contingency_call_id"].to_list() == ["call-1"]
+    assert refreshed_load.dataframe is not None
+    assert refreshed_load.dataframe["contingency_call_id"].to_list() == ["call-2"]
+
+
+def test_sttm_contingency_gas_summaries_filters_and_context_links() -> None:
+    int661_table = (
+        "silver.sttm.silver_int661_v1_contingency_gas_called_scheduled_bid_offer_rpt_1"
+    )
+    int673_table = "silver.sttm.silver_int673_v1_total_contingency_bid_offer_rpt_1"
+    load = _sttm_contingency_gas_load(
+        pl.DataFrame(
+            {
+                "gas_date": ["2024-01-03", "2024-01-03", "2024-01-02"],
+                "source_system": ["STTM", "STTM", "STTM"],
+                "source_table": [int661_table, int661_table, int673_table],
+                "source_report_id": ["INT661", "INT661", "INT673"],
+                "contingency_grain": [
+                    "bid_offer_step",
+                    "bid_offer_step",
+                    "hub_total",
+                ],
+                "quantity_type": [
+                    "called_step_quantity",
+                    "confirmed_step_quantity",
+                    "total_contingency_gas_offer_qty",
+                ],
+                "source_hub_id": ["SYD", "SYD", "BNE"],
+                "source_hub_name": ["Sydney", "Sydney", "Brisbane"],
+                "source_facility_id": ["FAC1", "FAC1", None],
+                "facility_name": ["Pipeline A", "Pipeline A", None],
+                "flow_direction": ["inject", "inject", None],
+                "bid_offer_type": ["offer", "offer", "offer"],
+                "participant_id": ["P1", "P1", None],
+                "participant_name": ["Participant One", "Participant One", None],
+                "contingency_call_id": ["CALL-1", "CALL-1", None],
+                "contingency_bid_offer_id": ["CG-1", "CG-1", None],
+                "bid_step": [1, 2, None],
+                "bid_price": [18.5, 20.0, None],
+                "bid_qty_gj": [100.0, 120.0, None],
+                "quantity_gj": [40.0, 80.0, 300.0],
+                "approval_timestamp": [
+                    "2024-01-02 06:00:00",
+                    "2024-01-02 07:30:00",
+                    None,
+                ],
+                "source_last_updated_timestamp": [
+                    "2024-01-02 08:00:00",
+                    "2024-01-02 08:10:00",
+                    "2024-01-01 09:00:00",
+                ],
+                "source_surrogate_key": ["src-1", "src-2", "src-3"],
+                "source_file": ["int661.csv", "int661.csv", "int673.csv"],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 8),
+                    datetime(2024, 1, 2, 8, 10),
+                    datetime(2024, 1, 1, 9),
+                ],
+            }
+        )
+    )
+
+    kpis = sttm_contingency_gas_kpi_frame(load)
+    grain_summary = sttm_contingency_gas_grain_summary_frame(load)
+    bid_offer_summary = sttm_contingency_gas_bid_offer_summary_frame(
+        load,
+        "bid_offer_step",
+        STTM_CONTINGENCY_GAS_QUANTITY_TYPE_FILTER_ALL,
+        "SYD",
+        "STTM",
+    )
+    source_summary = sttm_contingency_gas_source_summary_frame(load)
+    observations = sttm_contingency_gas_observation_frame(
+        load,
+        "bid_offer_step",
+        STTM_CONTINGENCY_GAS_QUANTITY_TYPE_FILTER_ALL,
+        "SYD",
+        "STTM",
+    )
+    context_links = render_sttm_contingency_gas_context_links()
+
+    assert sttm_contingency_gas_grain_options(load) == (
+        STTM_CONTINGENCY_GAS_GRAIN_FILTER_ALL,
+        "bid_offer_step",
+        "hub_total",
+    )
+    assert sttm_contingency_gas_quantity_type_options(load) == (
+        STTM_CONTINGENCY_GAS_QUANTITY_TYPE_FILTER_ALL,
+        "called_step_quantity",
+        "confirmed_step_quantity",
+        "total_contingency_gas_offer_qty",
+    )
+    assert sttm_contingency_gas_hub_options(load) == (
+        STTM_CONTINGENCY_GAS_HUB_FILTER_ALL,
+        "BNE",
+        "SYD",
+    )
+    assert sttm_contingency_gas_source_system_options(load) == (
+        STTM_CONTINGENCY_GAS_SOURCE_SYSTEM_FILTER_ALL,
+        "STTM",
+    )
+    assert kpis.select("metric", "value", "detail").to_dict(as_series=False) == {
+        "metric": [
+            "Loaded contingency gas rows",
+            "Gas Days",
+            "Contingency grains",
+            "Quantity types",
+            "Hubs",
+            "Facilities",
+            "Participants",
+            "Bid / Offer identifiers",
+            "Rows with Bid / Offer context",
+            "Loaded contingency quantity",
+            "Contingency quantity range",
+            "Latest Gas Day",
+            "Latest approval",
+            "Accepted source identifiers",
+        ],
+        "value": [
+            "3",
+            "2",
+            "2",
+            "3",
+            "2",
+            "1",
+            "1",
+            "1",
+            "2",
+            "420 GJ",
+            "40 to 300",
+            "2024-01-03",
+            "2024-01-02 07:30:00",
+            "3",
+        ],
+        "detail": [
+            "Full table scan",
+            "Distinct gas_date values represented",
+            "Distinct contingency_grain values represented",
+            "Distinct quantity_type values represented",
+            "Distinct source_hub_id values represented",
+            "Distinct source_facility_id values represented",
+            "Distinct participant_id values represented",
+            "Distinct contingency_bid_offer_id values represented",
+            "Rows carrying bid/offer id, step, price, or quantity fields",
+            "Sum of quantity_gj in loaded bounded rows",
+            "Minimum and maximum quantity_gj in the current view",
+            "Maximum gas_date in the loaded bounded rows",
+            "Maximum approval_timestamp in the loaded bounded rows",
+            "Distinct source_surrogate_key values represented",
+        ],
+    }
+    assert grain_summary.sort(["contingency grain", "quantity type"]).select(
+        "contingency grain",
+        "quantity type",
+        "hub",
+        "rows",
+        "gas days",
+        "facilities",
+        "participants",
+        "bid/offer ids",
+        "total quantity gj",
+        "max quantity gj",
+        "latest gas date",
+    ).to_dict(as_series=False) == {
+        "contingency grain": [
+            "bid_offer_step",
+            "bid_offer_step",
+            "hub_total",
+        ],
+        "quantity type": [
+            "called_step_quantity",
+            "confirmed_step_quantity",
+            "total_contingency_gas_offer_qty",
+        ],
+        "hub": ["SYD", "SYD", "BNE"],
+        "rows": [1, 1, 1],
+        "gas days": [1, 1, 1],
+        "facilities": [1, 1, 0],
+        "participants": [1, 1, 0],
+        "bid/offer ids": [1, 1, 0],
+        "total quantity gj": [40.0, 80.0, 300.0],
+        "max quantity gj": [40.0, 80.0, 300.0],
+        "latest gas date": [date(2024, 1, 3), date(2024, 1, 3), date(2024, 1, 2)],
+    }
+    assert bid_offer_summary.select(
+        "gas date",
+        "hub",
+        "facility",
+        "participant",
+        "bid/offer type",
+        "bid/offer id",
+        "bid step",
+        "quantity type",
+        "bid price",
+        "bid quantity gj",
+        "contingency quantity gj",
+    ).to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 3), date(2024, 1, 3)],
+        "hub": ["SYD", "SYD"],
+        "facility": ["FAC1", "FAC1"],
+        "participant": ["P1", "P1"],
+        "bid/offer type": ["offer", "offer"],
+        "bid/offer id": ["CG-1", "CG-1"],
+        "bid step": [2, 1],
+        "quantity type": ["confirmed_step_quantity", "called_step_quantity"],
+        "bid price": [20.0, 18.5],
+        "bid quantity gj": [120.0, 100.0],
+        "contingency quantity gj": [80.0, 40.0],
+    }
+    assert source_summary.select(
+        "source system",
+        "source table",
+        "source report",
+        "rows",
+        "contingency grains",
+        "quantity types",
+        "hubs",
+        "source identifiers",
+        "source files",
+        "latest gas date",
+    ).to_dict(as_series=False) == {
+        "source system": ["STTM", "STTM"],
+        "source table": [int661_table, int673_table],
+        "source report": ["INT661", "INT673"],
+        "rows": [2, 1],
+        "contingency grains": [1, 1],
+        "quantity types": [2, 1],
+        "hubs": [1, 1],
+        "source identifiers": [2, 1],
+        "source files": [1, 1],
+        "latest gas date": [date(2024, 1, 3), date(2024, 1, 2)],
+    }
+    assert observations.select(
+        "gas date",
+        "source system",
+        "source table",
+        "contingency grain",
+        "quantity type",
+        "hub",
+        "facility",
+        "participant",
+        "bid/offer id",
+        "bid step",
+        "bid price",
+        "bid quantity gj",
+        "quantity gj",
+        "accepted source identifier",
+    ).to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 3), date(2024, 1, 3)],
+        "source system": ["STTM", "STTM"],
+        "source table": [int661_table, int661_table],
+        "contingency grain": ["bid_offer_step", "bid_offer_step"],
+        "quantity type": ["confirmed_step_quantity", "called_step_quantity"],
+        "hub": ["SYD", "SYD"],
+        "facility": ["FAC1", "FAC1"],
+        "participant": ["P1", "P1"],
+        "bid/offer id": ["CG-1", "CG-1"],
+        "bid step": [2, 1],
+        "bid price": [20.0, 18.5],
+        "bid quantity gj": [120.0, 100.0],
+        "quantity gj": [80.0, 40.0],
+        "accepted source identifier": ["src-2", "src-1"],
+    }
+    assert 'href="/marimo/gas_sttm_contingency_gas/"' in context_links
+    assert 'href="/marimo/gas_bid_offer_stack/"' in context_links
+    assert "Schedule Context" in context_links
+    assert 'href="/marimo/gas_settlement_activity/"' in context_links
+    assert 'href="/marimo/gas_day_explainer/"' in context_links
+
+
+def test_sttm_contingency_gas_helpers_cover_missing_data_and_filter_empty_state() -> (
+    None
+):
+    empty_load = _sttm_contingency_gas_load(pl.DataFrame(), row_limit=4)
+    populated_load = _sttm_contingency_gas_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3)],
+                "source_system": ["STTM"],
+                "contingency_grain": ["hub_total"],
+                "quantity_type": ["total_contingency_gas_offer_qty"],
+                "source_hub_id": ["SYD"],
+                "quantity_gj": [300.0],
+                "source_surrogate_key": ["src-1"],
+            }
+        )
+    )
+    no_bid_offer_context_load = _sttm_contingency_gas_load(
+        pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3)],
+                "source_system": ["STTM"],
+                "contingency_grain": ["hub_total"],
+                "quantity_type": ["total_contingency_gas_offer_qty"],
+                "source_hub_id": ["SYD"],
+                "quantity_gj": [300.0],
+            }
+        )
+    )
+    missing_date_load = _sttm_contingency_gas_load(
+        pl.DataFrame(
+            {
+                "source_system": ["STTM"],
+                "contingency_grain": ["hub_total"],
+                "quantity_type": ["total_contingency_gas_offer_qty"],
+                "source_hub_id": ["SYD"],
+                "quantity_gj": [300.0],
+            }
+        )
+    )
+    error_load = GasTableLoad(
+        spec=STTM_CONTINGENCY_GAS_TABLE_SPEC,
+        uri=("s3://bucket/silver/gas_model/silver_gas_fact_sttm_contingency_gas_call"),
+        dataframe=None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=4,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+    assert sttm_contingency_gas_kpi_frame(empty_load).is_empty()
+    assert sttm_contingency_gas_grain_summary_frame(empty_load).is_empty()
+    assert sttm_contingency_gas_bid_offer_summary_frame(empty_load).is_empty()
+    assert sttm_contingency_gas_source_summary_frame(empty_load).is_empty()
+    assert sttm_contingency_gas_observation_frame(empty_load).is_empty()
+    assert sttm_contingency_gas_grain_options(empty_load) == (
+        STTM_CONTINGENCY_GAS_GRAIN_FILTER_ALL,
+    )
+    assert sttm_contingency_gas_quantity_type_options(empty_load) == (
+        STTM_CONTINGENCY_GAS_QUANTITY_TYPE_FILTER_ALL,
+    )
+    assert sttm_contingency_gas_hub_options(empty_load) == (
+        STTM_CONTINGENCY_GAS_HUB_FILTER_ALL,
+    )
+    assert sttm_contingency_gas_source_system_options(empty_load) == (
+        STTM_CONTINGENCY_GAS_SOURCE_SYSTEM_FILTER_ALL,
+    )
+    assert sttm_contingency_gas_kpi_frame(
+        populated_load,
+        hub_filter="missing-hub",
+    ).is_empty()
+    assert (
+        sttm_contingency_gas_kpi_frame(
+            populated_load,
+            quantity_type_filter="total_contingency_gas_offer_qty",
+        ).height
+        == 14
+    )
+    assert sttm_contingency_gas_bid_offer_summary_frame(
+        no_bid_offer_context_load
+    ).is_empty()
+    assert sttm_contingency_gas_kpi_frame(missing_date_load).row(11, named=True) == {
+        "metric": "Latest Gas Day",
+        "value": "unknown",
+        "detail": "Maximum gas_date in the loaded bounded rows",
+    }
+
+    empty_markdown = sttm_contingency_gas_empty_state_markdown(empty_load)
+    error_markdown = sttm_contingency_gas_empty_state_markdown(error_load)
+    filtered_markdown = sttm_contingency_gas_empty_state_markdown(populated_load)
+    missing_load_markdown = sttm_contingency_gas_empty_state_markdown(None)
+    empty_context_links = render_sttm_contingency_gas_context_links(entries=())
+    unmounted_entry = DashboardRegistryEntry(
+        concept_id="sttm-contingency-gas",
+        title="Unmounted STTM Contingency Gas",
+        description="Available entry without a mounted notebook route.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_sttm_contingency_gas_call",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+    unmounted_context_links = render_sttm_contingency_gas_context_links(
+        entries=(unmounted_entry,)
+    )
+
+    assert "No STTM contingency gas data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_sttm_contingency_gas_call" in (
+        empty_markdown
+    )
+    assert "Bounded preview reads are capped at `4` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive a contingency gas load result" in missing_load_markdown
+    assert "No STTM contingency gas, Bid / Offer, Schedule" in empty_context_links
+    assert "Unavailable dashboard" in unmounted_context_links
+
+
 def test_gas_quality_table_loader_uses_bounded_recent_view() -> None:
     captured: list[int | None] = []
     config = discover_dashboard_config(
@@ -4377,6 +7134,421 @@ def test_gas_quality_helpers_cover_missing_data_and_filter_empty_state() -> None
     assert "FileNotFoundError: no parquet files found" in error_markdown
     assert "current filters do not match" in filtered_markdown
     assert "did not receive a gas quality load result" in missing_load_markdown
+
+
+def test_heating_value_pressure_metadata_and_loader_use_bounded_recent_rows() -> None:
+    entry = registry_entry_by_concept_id(HEATING_VALUE_PRESSURE_CONTEXT_ID)
+    html = render_dashboard_context_panel(HEATING_VALUE_PRESSURE_CONTEXT_ID)
+    context_links = render_heating_value_pressure_context_links()
+    captured: list[tuple[str, int | None]] = []
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "8",
+        }
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append((uri, row_limit))
+        assert storage_options == config.storage_options()
+        if uri.endswith(f"/{HEATING_VALUE_TABLE_NAME}"):
+            return pl.DataFrame(
+                {
+                    "gas_date": [date(2024, 1, 1), date(2024, 1, 3)],
+                    "source_zone_id": ["older", "newer"],
+                }
+            )
+        return pl.DataFrame(
+            {
+                "measurement_timestamp": [
+                    datetime(2024, 1, 2),
+                    datetime(2024, 1, 4),
+                ],
+                "source_node_id": ["older", "newer"],
+            }
+        )
+
+    loads = load_heating_value_pressure_tables(config, reader=reader)
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "heating_value_pressure"
+    assert entry.notebook_route == "/marimo/heating_value_pressure/"
+    assert entry.backing_assets == (
+        "silver.gas_model.silver_gas_fact_heating_value",
+        "silver.gas_model.silver_gas_fact_scada_pressure",
+    )
+    assert "Heating Value And SCADA Pressure" in html
+    assert "silver.gas_model.silver_gas_fact_heating_value" in html
+    assert 'href="/marimo/heating_value_pressure/"' in context_links
+    assert "Gas Quality And Composition" in context_links
+    assert "Gas System Notices" in context_links
+    assert [load.spec for load in loads] == [
+        HEATING_VALUE_TABLE_SPEC,
+        SCADA_PRESSURE_TABLE_SPEC,
+    ]
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_heating_value",
+            8,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_scada_pressure",
+            8,
+        ),
+    ]
+    assert loads[0].dataframe is not None
+    assert loads[0].dataframe["source_zone_id"].to_list() == ["newer", "older"]
+    assert loads[1].dataframe is not None
+    assert loads[1].dataframe["source_node_id"].to_list() == ["newer", "older"]
+
+
+def test_cached_heating_value_pressure_tables_reuse_session_cache() -> None:
+    calls: list[str] = []
+    config = _dashboard_config()
+    cache: GasModelSessionCache = {}
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        calls.append(uri.rsplit("/", maxsplit=1)[-1])
+        return pl.DataFrame({"source_system": [f"VICGAS-{len(calls)}"]})
+
+    first_loads = cached_load_heating_value_pressure_tables(
+        config, cache, reader=reader
+    )
+    cached_loads = cached_load_heating_value_pressure_tables(
+        config, cache, reader=reader
+    )
+    refreshed_loads = cached_load_heating_value_pressure_tables(
+        config,
+        cache,
+        reader=reader,
+        refresh_token=1,
+    )
+
+    assert calls == [
+        HEATING_VALUE_TABLE_NAME,
+        SCADA_PRESSURE_TABLE_NAME,
+        HEATING_VALUE_TABLE_NAME,
+        SCADA_PRESSURE_TABLE_NAME,
+    ]
+    assert all(not load.cache_hit for load in first_loads)
+    assert all(load.cache_hit for load in cached_loads)
+    assert all(not load.cache_hit for load in refreshed_loads)
+    assert cached_loads[0].dataframe is not None
+    assert cached_loads[0].dataframe["source_system"].to_list() == ["VICGAS-1"]
+    assert refreshed_loads[0].dataframe is not None
+    assert refreshed_loads[0].dataframe["source_system"].to_list() == ["VICGAS-3"]
+
+
+def test_heating_value_pressure_summaries_and_source_identifier_rendering() -> None:
+    loads = _heating_value_pressure_loads(
+        heating_dataframe=pl.DataFrame(
+            {
+                "gas_date": ["2024-01-02", "2024-01-01"],
+                "gas_interval": ["1", None],
+                "source_zone_id": ["400", "VIC"],
+                "zone_name": ["Dandenong", "Victoria"],
+                "heating_value": [39.2, 40.0],
+                "initial_heating_value": [38.9, None],
+                "heating_value_unit": ["GJ/1000m3", "declared"],
+                "source_system": ["VICGAS", "VICGAS"],
+                "source_table": [
+                    "silver.vicgas.silver_int047_v4_heating_values_1",
+                    "silver.vicgas.silver_int139_v4_declared_daily_state_"
+                    "heating_value_1",
+                ],
+                "source_last_updated_timestamp": [
+                    "2024-01-02 01:00:00",
+                    "2024-01-01 01:00:00",
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 3),
+                    datetime(2024, 1, 1, 3),
+                ],
+            }
+        ),
+        pressure_dataframe=pl.DataFrame(
+            {
+                "measurement_timestamp": [
+                    "2024-01-02 02:00:00",
+                    "2024-01-02 01:00:00",
+                ],
+                "pressure_offset_hour": [0, 1],
+                "source_node_id": ["MCE-A", "MCE-A"],
+                "node_name": ["Node A", "Node A"],
+                "pressure_kpa": [521.0, 519.0],
+                "source_system": ["VICGAS", "VICGAS"],
+                "source_table": [
+                    "silver.vicgas.silver_int276_v4_hourly_scada_pressures_at_"
+                    "mce_nodes_1",
+                    "silver.vicgas.silver_int276_v4_hourly_scada_pressures_at_"
+                    "mce_nodes_1",
+                ],
+                "source_last_updated_timestamp": [
+                    "2024-01-02 02:30:00",
+                    "2024-01-02 02:30:00",
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 2, 4),
+                    datetime(2024, 1, 2, 4),
+                ],
+            }
+        ),
+    )
+
+    kpis = heating_value_pressure_kpi_frame(loads)
+    field_summary = heating_value_pressure_field_summary_frame(loads)
+    identifiers = heating_value_pressure_identifier_frame(loads)
+    source_coverage = heating_value_pressure_source_coverage_frame(loads)
+    heating_observations = heating_value_observation_frame(
+        loads,
+        identifier_filter="Heating value zone 400",
+    )
+    heating_table_filter_observations = heating_value_observation_frame(
+        loads,
+        source_table_filter="silver.vicgas.silver_int047_v4_heating_values_1",
+    )
+    pressure_observations = scada_pressure_observation_frame(
+        loads,
+        identifier_filter="SCADA node MCE-A",
+    )
+    pressure_table_filter_observations = scada_pressure_observation_frame(
+        loads,
+        source_table_filter=(
+            "silver.vicgas.silver_int276_v4_hourly_scada_pressures_at_mce_nodes_1"
+        ),
+    )
+
+    assert heating_value_pressure_source_system_options(loads) == (
+        HEATING_VALUE_PRESSURE_SOURCE_SYSTEM_FILTER_ALL,
+        "VICGAS",
+    )
+    assert heating_value_pressure_identifier_options(loads) == (
+        HEATING_VALUE_PRESSURE_IDENTIFIER_FILTER_ALL,
+        "Heating value zone 400",
+        "Heating value zone VIC",
+        "SCADA node MCE-A",
+    )
+    assert kpis.to_dict(as_series=False) == {
+        "metric": [
+            "Loaded observations",
+            "Heating value observations",
+            "SCADA pressure observations",
+            "Source-qualified identifiers",
+            "Source tables",
+            "Latest gas date",
+            "Latest pressure measurement",
+            "Latest ingest",
+        ],
+        "value": [
+            "4",
+            "2",
+            "2",
+            "3",
+            "3",
+            "2024-01-02",
+            "2024-01-02 02:00:00",
+            "2024-01-02 04:00:00",
+        ],
+        "detail": [
+            "Bounded preview: 100 rows max",
+            "Rows from silver_gas_fact_heating_value",
+            "Rows from silver_gas_fact_scada_pressure",
+            "Distinct source zone and source node identifiers",
+            "Distinct source_table values represented",
+            "Maximum gas_date in loaded heating value rows",
+            "Maximum measurement_timestamp in loaded pressure rows",
+            "Latest ingested_timestamp across loaded rows",
+        ],
+    }
+    assert field_summary.select("field", "available rows").to_dict(as_series=False) == {
+        "field": [
+            "gas_date",
+            "gas_interval",
+            "source_zone_id",
+            "zone_name",
+            "heating_value",
+            "initial_heating_value",
+            "heating_value_unit",
+            "measurement_timestamp",
+            "pressure_offset_hour",
+            "source_node_id",
+            "node_name",
+            "pressure_kpa",
+        ],
+        "available rows": [2, 1, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2],
+    }
+    assert identifiers.select(
+        "fact",
+        "identifier role",
+        "source-qualified identifier",
+        "observations",
+        "relationship status",
+    ).to_dict(as_series=False) == {
+        "fact": ["Heating value", "Heating value", "SCADA pressure"],
+        "identifier role": ["source_zone_id", "source_zone_id", "source_node_id"],
+        "source-qualified identifier": ["400", "VIC", "MCE-A"],
+        "observations": [1, 1, 2],
+        "relationship status": [
+            "Source-qualified identifier only; no conformed dimension key in fact schema",
+            "Source-qualified identifier only; no conformed dimension key in fact schema",
+            "Source-qualified identifier only; no conformed dimension key in fact schema",
+        ],
+    }
+    assert source_coverage.select(
+        "fact",
+        "observations",
+        "source-qualified identifiers",
+        "measure values",
+    ).to_dict(as_series=False) == {
+        "fact": ["Heating value", "Heating value", "SCADA pressure"],
+        "observations": [1, 1, 2],
+        "source-qualified identifiers": [1, 1, 1],
+        "measure values": [1, 1, 2],
+    }
+    assert heating_observations.select(
+        "gas date",
+        "source-qualified zone id",
+        "heating value",
+        "relationship status",
+    ).to_dict(as_series=False) == {
+        "gas date": [date(2024, 1, 2)],
+        "source-qualified zone id": ["400"],
+        "heating value": [39.2],
+        "relationship status": [
+            "Source-qualified identifier only; no conformed dimension key in fact schema"
+        ],
+    }
+    assert heating_table_filter_observations["source-qualified zone id"].to_list() == [
+        "400"
+    ]
+    assert pressure_observations.select(
+        "measurement timestamp",
+        "source-qualified node id",
+        "pressure offset hour",
+        "pressure kpa",
+    ).to_dict(as_series=False) == {
+        "measurement timestamp": [
+            datetime(2024, 1, 2, 2),
+            datetime(2024, 1, 2, 1),
+        ],
+        "source-qualified node id": ["MCE-A", "MCE-A"],
+        "pressure offset hour": [0, 1],
+        "pressure kpa": [521.0, 519.0],
+    }
+    assert pressure_table_filter_observations["pressure offset hour"].to_list() == [
+        0,
+        1,
+    ]
+    assert heating_value_observation_frame(
+        loads,
+        source_system_filter="OTHER",
+    ).is_empty()
+    assert scada_pressure_observation_frame(
+        loads,
+        source_system_filter="OTHER",
+    ).is_empty()
+
+
+def test_heating_value_pressure_helpers_cover_missing_data_and_empty_states() -> None:
+    empty_loads = _heating_value_pressure_loads(
+        heating_dataframe=pl.DataFrame(),
+        pressure_dataframe=pl.DataFrame(),
+        row_limit=6,
+    )
+    populated_loads = _heating_value_pressure_loads(
+        heating_dataframe=pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 2)],
+                "source_zone_id": ["400"],
+                "heating_value": [39.2],
+            }
+        ),
+        pressure_dataframe=pl.DataFrame(),
+    )
+    error_loads = [
+        GasTableLoad(
+            spec=HEATING_VALUE_TABLE_SPEC,
+            uri=f"s3://bucket/silver/gas_model/{HEATING_VALUE_TABLE_NAME}",
+            dataframe=None,
+            error="FileNotFoundError: no parquet files found",
+            row_limit=6,
+            load_duration_seconds=0.01,
+            cache_hit=False,
+        ),
+        _scada_pressure_load(pl.DataFrame(), row_limit=6),
+    ]
+
+    assert heating_value_pressure_kpi_frame(empty_loads).is_empty()
+    assert heating_value_pressure_field_summary_frame(empty_loads).is_empty()
+    assert heating_value_pressure_identifier_frame(empty_loads).is_empty()
+    assert heating_value_pressure_source_coverage_frame(empty_loads).is_empty()
+    assert _dataframe_min_value(pl.DataFrame(), "missing") is None
+    assert heating_value_observation_frame(empty_loads).is_empty()
+    assert scada_pressure_observation_frame(empty_loads).is_empty()
+    assert heating_value_pressure_source_table_options(empty_loads) == (
+        HEATING_VALUE_PRESSURE_SOURCE_TABLE_FILTER_ALL,
+    )
+    assert heating_value_pressure_identifier_options(empty_loads) == (
+        HEATING_VALUE_PRESSURE_IDENTIFIER_FILTER_ALL,
+    )
+    assert heating_value_pressure_kpi_frame(populated_loads).row(6, named=True) == {
+        "metric": "Latest pressure measurement",
+        "value": "unknown",
+        "detail": "Maximum measurement_timestamp in loaded pressure rows",
+    }
+    populated_field_summary = heating_value_pressure_field_summary_frame(
+        populated_loads
+    )
+
+    empty_markdown = heating_value_pressure_empty_state_markdown(empty_loads)
+    error_markdown = heating_value_pressure_empty_state_markdown(error_loads)
+    filtered_markdown = heating_value_pressure_empty_state_markdown(populated_loads)
+    missing_load_markdown = heating_value_pressure_empty_state_markdown(None)
+    empty_context_links = render_heating_value_pressure_context_links(entries=())
+    unmounted_entry = DashboardRegistryEntry(
+        concept_id=HEATING_VALUE_PRESSURE_CONTEXT_ID,
+        title="Unmounted Heating Value And Pressure",
+        description="Available entry without a mounted notebook route.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_heating_value",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+    unmounted_context_links = render_heating_value_pressure_context_links(
+        entries=(unmounted_entry,)
+    )
+
+    assert (
+        populated_field_summary.filter(pl.col("field") == "pressure_kpa").row(
+            0, named=True
+        )["available rows"]
+        == 0
+    )
+    assert "No heating value or SCADA pressure data is available" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_heating_value" in empty_markdown
+    assert "silver.gas_model.silver_gas_fact_scada_pressure" in empty_markdown
+    assert "Bounded preview reads are capped at `6` rows per table" in empty_markdown
+    assert "source-qualified identifiers" in empty_markdown
+    assert "conformed dimension keys" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "did not receive heating value or SCADA pressure" in missing_load_markdown
+    assert "No Heating value, SCADA pressure, Gas Quality" in empty_context_links
+    assert "Unavailable dashboard" in unmounted_context_links
 
 
 def test_system_notice_summary_filters_critical_and_notice_windows() -> None:
@@ -6519,6 +9691,1005 @@ def test_flow_helpers_cover_missing_columns_and_empty_state_behavior() -> None:
     assert (
         "No Flow, Facility, Connection Point, Gas Day, schedule, capacity, map, "
         "or table explorer entries are registered."
+    ) in empty_context_links
+
+
+def test_operational_meter_flow_metadata_is_available_dashboard() -> None:
+    entry = registry_entry_by_concept_id(OPERATIONAL_METER_FLOW_CONTEXT_ID)
+    html = render_dashboard_context_panel(OPERATIONAL_METER_FLOW_CONTEXT_ID)
+    context_links = render_operational_meter_flow_context_links()
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "operational_meter_flow"
+    assert entry.notebook_route == "/marimo/operational_meter_flow/"
+    assert "silver.gas_model.silver_gas_fact_operational_meter_flow" in (
+        entry.backing_assets
+    )
+    assert "silver.gas_model.silver_gas_dim_operational_point" in (entry.backing_assets)
+    assert "silver.gas_model.silver_gas_dim_zone" in entry.backing_assets
+    assert "silver.gas_model.silver_gas_dim_pipeline_segment" in (entry.backing_assets)
+    assert "Operational Meter Flow" in html
+    assert "chunk-gbb-guide-flow-report" in html
+    assert 'data-status="available"' in html
+    assert 'href="/marimo/operational_meter_flow/"' in context_links
+    assert "Flow Context" in context_links
+    assert "Pipeline and Connection Operations" in context_links
+    assert "Hub / Zone Context" in context_links
+
+
+def test_operational_meter_flow_table_specs_and_loader_use_bounded_recent_samples() -> (
+    None
+):
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "13",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    specs = operational_meter_flow_table_specs()
+    loads = load_operational_meter_flow_tables(config, reader=reader)
+
+    assert specs == OPERATIONAL_METER_FLOW_TABLE_SPECS
+    assert tuple(spec.table_name for spec in specs) == (
+        OPERATIONAL_METER_FLOW_TABLE_NAME,
+        OPERATIONAL_POINT_DIM_TABLE_NAME,
+        HUB_ZONE_DIM_TABLE_NAME,
+        PIPELINE_SEGMENT_DIM_TABLE_NAME,
+    )
+    assert len(loads) == 4
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_operational_meter_flow",
+            13,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_dim_operational_point",
+            13,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_dim_zone",
+            13,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_dim_pipeline_segment",
+            13,
+        ),
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{OPERATIONAL_METER_FLOW_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 13
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["VICGAS"]})
+
+    first_cached = cached_load_operational_meter_flow_tables(
+        config,
+        cache,
+        specs=(OPERATIONAL_METER_FLOW_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_operational_meter_flow_tables(
+        config,
+        cache,
+        specs=(OPERATIONAL_METER_FLOW_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_operational_meter_flow_tables(
+        config,
+        cache,
+        specs=(OPERATIONAL_METER_FLOW_TABLE_SPECS[0],),
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached[0].cache_hit
+    assert second_cached[0].cache_hit
+    assert not refreshed[0].cache_hit
+
+
+def test_operational_meter_flow_helpers_summarize_relationship_gaps() -> None:
+    meter_flow_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "operational_point_key": ["op-key-1", None, "missing-key"],
+                "zone_key": ["zone-key-1", None, "zone-key-1"],
+                "pipeline_segment_key": ["pipe-key-1", None, "pipe-key-2"],
+                "source_system": ["VICGAS", "VICGAS", "VICGAS"],
+                "source_table": [
+                    "silver.vicgas.silver_int236_v4_operational_meter_readings_1",
+                    "silver.vicgas.silver_int313_v4_allocated_injections_withdrawals_1",
+                    "silver.vicgas.silver_int236_v4_operational_meter_readings_1",
+                ],
+                "gas_date": [
+                    date(2024, 1, 4),
+                    date(2024, 1, 4),
+                    date(2024, 1, 5),
+                ],
+                "gas_interval": ["13", "14", "15"],
+                "point_type": ["direction_code_name", "phy_mirn", "meter"],
+                "source_point_id": ["Dandenong", "MIRN-A", "Missing"],
+                "flow_direction": ["WITHDRAWAL", "INJECTION", "WITHDRAWAL"],
+                "quantity_gj": [70.0, 20.0, None],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 4, 7),
+                    datetime(2024, 1, 4, 8),
+                    datetime(2024, 1, 5, 8),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 4, 9),
+                    datetime(2024, 1, 4, 10),
+                    datetime(2024, 1, 5, 10),
+                ],
+            }
+        ),
+    )
+    operational_point_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["op-key-1", "op-key-2"],
+                "source_system": ["VICGAS", "VICGAS"],
+                "source_tables": [
+                    ["silver.vicgas.silver_int236_v4_operational_meter_readings_1"],
+                    [
+                        "silver.vicgas.silver_int313_v4_allocated_injections_withdrawals_1"
+                    ],
+                ],
+                "point_type": ["direction_code_name", "phy_mirn"],
+                "source_point_id": ["Dandenong", "MIRN-A"],
+                "point_name": ["Dandenong Meter", "MIRN Site"],
+                "source_zone_id": ["5", None],
+                "zone_key": ["zone-key-1", None],
+                "source_pipeline_id": ["VTS", None],
+                "source_pipeline_segment_id": ["77", None],
+                "pipeline_segment_key": ["pipe-key-1", None],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 4, 9),
+                    datetime(2024, 1, 4, 10),
+                ],
+            }
+        ),
+    )
+    zone_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[2],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["zone-key-1"],
+                "source_system": ["VICGAS"],
+                "zone_type": ["linepack_zone"],
+                "source_zone_id": ["5"],
+                "zone_name": ["Linepack 5"],
+            }
+        ),
+    )
+    pipeline_segment_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[3],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["pipe-key-1"],
+                "zone_key": ["zone-key-1"],
+                "source_system": ["VICGAS"],
+                "source_pipeline_id": ["VTS"],
+                "source_pipe_segment_id": ["77"],
+                "pipe_segment_name": ["Segment 77"],
+            }
+        ),
+    )
+    loads = (
+        meter_flow_load,
+        operational_point_load,
+        zone_load,
+        pipeline_segment_load,
+    )
+
+    kpis = operational_meter_flow_kpi_frame(loads)
+    summary = operational_meter_flow_summary_frame(loads)
+    point_context = operational_meter_flow_point_context_frame(loads)
+    gaps = operational_meter_flow_relationship_gap_frame(loads)
+    kpi_values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+    summary_rows = {
+        (row["point type"], row["source point id"]): row for row in summary.to_dicts()
+    }
+    point_rows = {
+        (row["point type"], row["source point id"]): row
+        for row in point_context.to_dicts()
+    }
+    gap_rows = {row["relationship"]: row for row in gaps.to_dicts()}
+
+    assert kpi_values["Operational tables checked"] == "4"
+    assert kpi_values["Loaded tables"] == "4"
+    assert kpi_values["Meter flow rows"] == "3"
+    assert kpi_values["Rows with quantity"] == "2"
+    assert kpi_values["Total quantity GJ"] == "90"
+    assert kpi_values["Operational points"] == "2"
+    assert kpi_values["Gas intervals"] == "3"
+    assert kpi_values["Relationship gap rows"] == "6"
+    assert kpi_values["Latest Gas Day"] == "2024-01-05"
+
+    dandenong = summary_rows[("direction_code_name", "Dandenong")]
+    assert dandenong["operational point"] == "Dandenong Meter"
+    assert dandenong["flow direction"] == "WITHDRAWAL"
+    assert dandenong["gas intervals"] == 1
+    assert dandenong["total quantity gj"] == 70.0
+    assert dandenong["zone"] == "Linepack 5 (5)"
+    assert dandenong["pipeline segment"] == "Segment 77 (77)"
+    assert dandenong["relationship status"] == "Conformed Operational Point match"
+    assert dandenong["coverage gap"] == "Covered"
+
+    mirn = summary_rows[("phy_mirn", "MIRN-A")]
+    assert mirn["relationship status"] == "Source-qualified Operational Point match"
+    assert mirn["coverage gap"] == "Missing operational_point_key"
+    assert mirn["total quantity gj"] == 20.0
+
+    missing = summary_rows[("meter", "Missing")]
+    assert missing["relationship status"] == "Relationship gap"
+    assert missing["coverage gap"] == "Unmatched operational_point_key"
+
+    assert (
+        point_rows[("direction_code_name", "Dandenong")]["relationship status"]
+        == "Operational dimensions available"
+    )
+    assert point_rows[("direction_code_name", "Dandenong")]["coverage gap"] == (
+        "Covered"
+    )
+    assert point_rows[("phy_mirn", "MIRN-A")]["coverage gap"] == (
+        "Missing zone_key, Missing pipeline_segment_key"
+    )
+
+    assert gap_rows["Operational meter flow -> Operational Point"]["gap rows"] == 1
+    assert gap_rows["Operational meter flow -> Zone"]["gap rows"] == 1
+    assert gap_rows["Operational meter flow -> Pipeline segment"]["gap rows"] == 2
+    assert gap_rows["Operational Point -> Zone"]["gap rows"] == 1
+    assert gap_rows["Operational Point -> Pipeline segment"]["gap rows"] == 1
+
+
+def test_operational_meter_flow_helpers_cover_gap_classification_branches() -> None:
+    meter_flow_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "operational_point_key": ["wrong-op-key", None],
+                "source_system": ["VICGAS", "VICGAS"],
+                "gas_date": [date(2024, 1, 6), date(2024, 1, 6)],
+                "point_type": ["meter", "meter"],
+                "source_point_id": ["OP1", "Missing"],
+                "flow_direction": ["WITHDRAWAL", "INJECTION"],
+                "quantity_gj": [5.0, 6.0],
+            }
+        ),
+    )
+    empty_meter_flow_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[0],
+        pl.DataFrame(),
+    )
+    operational_point_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["op-key-1", "op-key-2", "op-key-3", "op-key-4"],
+                "source_system": ["VICGAS", "VICGAS", "VICGAS", "VICGAS"],
+                "point_type": ["meter", "meter", "meter", "meter"],
+                "source_point_id": ["OP1", "OP2", "OP3", "OP4"],
+                "point_name": ["Point 1", "Point 2", "Point 3", "Point 4"],
+                "zone_key": [
+                    "zone-name-only",
+                    "zone-id-only",
+                    "zone-empty",
+                    "unmatched-zone",
+                ],
+                "pipeline_segment_key": [
+                    "pipe-name-only",
+                    "pipe-id-only",
+                    "pipe-empty",
+                    "unmatched-pipe",
+                ],
+            }
+        ),
+    )
+    empty_operational_point_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[1],
+        pl.DataFrame(),
+    )
+    zone_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[2],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["zone-name-only", "zone-id-only", "zone-empty"],
+                "zone_name": ["Name Only", None, None],
+                "source_zone_id": [None, "6", None],
+            }
+        ),
+    )
+    empty_zone_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[2],
+        pl.DataFrame(),
+    )
+    pipeline_segment_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[3],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["pipe-name-only", "pipe-id-only", "pipe-empty"],
+                "pipe_segment_name": ["Pipe Name Only", None, None],
+                "source_pipe_segment_id": [None, "88", None],
+            }
+        ),
+    )
+    empty_pipeline_segment_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[3],
+        pl.DataFrame(),
+    )
+    loads = (
+        meter_flow_load,
+        operational_point_load,
+        zone_load,
+        pipeline_segment_load,
+    )
+
+    summary = operational_meter_flow_summary_frame(loads)
+    point_context = operational_meter_flow_point_context_frame(loads)
+    summary_rows = {
+        row["source point id"]: row
+        for row in summary.sort("source point id").to_dicts()
+    }
+    point_rows = {
+        row["source point id"]: row
+        for row in point_context.sort("source point id").to_dicts()
+    }
+
+    assert summary_rows["OP1"]["coverage gap"] == "Unmatched operational_point_key"
+    assert summary_rows["OP1"]["source table"] == (
+        "(empty source_table/source_tables value)"
+    )
+    assert summary_rows["Missing"]["coverage gap"] == (
+        "Missing Operational Point dimension match"
+    )
+    assert point_rows["OP1"]["zone"] == "Name Only"
+    assert point_rows["OP1"]["pipeline segment"] == "Pipe Name Only"
+    assert point_rows["OP2"]["zone"] == "6"
+    assert point_rows["OP2"]["pipeline segment"] == "88"
+    assert point_rows["OP3"]["zone"] is None
+    assert point_rows["OP3"]["pipeline segment"] is None
+    assert point_rows["OP4"]["coverage gap"] == (
+        "Unmatched zone_key, Unmatched pipeline_segment_key"
+    )
+
+    missing_dimension_rows = operational_meter_flow_point_context_frame(
+        (
+            empty_meter_flow_load,
+            operational_point_load,
+            empty_zone_load,
+            empty_pipeline_segment_load,
+        )
+    )
+    missing_dimension_gap_rows = operational_meter_flow_relationship_gap_frame(
+        (
+            empty_meter_flow_load,
+            operational_point_load,
+            empty_zone_load,
+            empty_pipeline_segment_load,
+        )
+    )
+    missing_point_gap_rows = operational_meter_flow_relationship_gap_frame(
+        (
+            meter_flow_load,
+            empty_operational_point_load,
+            empty_zone_load,
+            empty_pipeline_segment_load,
+        )
+    )
+    empty_meter_kpis = operational_meter_flow_kpi_frame(
+        (
+            empty_meter_flow_load,
+            operational_point_load,
+            empty_zone_load,
+            empty_pipeline_segment_load,
+        )
+    )
+
+    assert {row["coverage gap"] for row in missing_dimension_rows.to_dicts()} == {
+        "Unmatched zone_key, Unmatched pipeline_segment_key"
+    }
+    assert {row["coverage gap"] for row in missing_dimension_gap_rows.to_dicts()} >= {
+        "No source rows loaded"
+    }
+    assert missing_point_gap_rows.row(0, named=True)["coverage gap"] == (
+        "Meter flow rows have missing or unmatched operational_point_key values "
+        "and no source-qualified Operational Point row was loaded."
+    )
+    assert {row["metric"]: row["value"] for row in empty_meter_kpis.to_dicts()}[
+        "Gas intervals"
+    ] == "0"
+
+
+def test_operational_meter_flow_helpers_cover_empty_state_behavior() -> None:
+    unavailable_load = _facility_load(
+        OPERATIONAL_METER_FLOW_TABLE_SPECS[0],
+        None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=5,
+    )
+    loads = (
+        unavailable_load,
+        *(
+            _facility_load(spec, pl.DataFrame(), row_limit=5)
+            for spec in OPERATIONAL_METER_FLOW_TABLE_SPECS[1:]
+        ),
+    )
+
+    assert operational_meter_flow_summary_frame(loads).is_empty()
+    assert operational_meter_flow_point_context_frame(loads).is_empty()
+    assert operational_meter_flow_relationship_gap_frame(loads).is_empty()
+
+    markdown = operational_meter_flow_empty_state_markdown(loads)
+    empty_markdown = operational_meter_flow_empty_state_markdown(())
+    empty_context_links = render_operational_meter_flow_context_links(entries=())
+
+    assert "No Operational Meter Flow rows or dimension context" in markdown
+    assert "`1` reads were unavailable and `3` reads returned no rows" in markdown
+    assert "Bounded preview reads are capped at `5` rows per table" in markdown
+    assert "No Operational Meter Flow tables were requested" in empty_markdown
+    assert (
+        "No Operational Meter Flow, Flow, Pipeline, Hub / Zone, source coverage, "
+        "or table explorer entries are registered."
+    ) in empty_context_links
+
+
+def test_pipeline_connection_operations_metadata_is_available_dashboard() -> None:
+    entry = registry_entry_by_concept_id(PIPELINE_CONNECTION_OPERATIONS_CONTEXT_ID)
+    html = render_dashboard_context_panel(PIPELINE_CONNECTION_OPERATIONS_CONTEXT_ID)
+    context_links = render_pipeline_connection_operations_context_links()
+
+    assert entry is not None
+    assert entry.status is DashboardStatus.AVAILABLE
+    assert entry.notebook_name == "pipeline_connection_operations"
+    assert entry.notebook_route == "/marimo/pipeline_connection_operations/"
+    assert "silver.gas_model.silver_gas_dim_connection_point" in (entry.backing_assets)
+    assert "silver.gas_model.silver_gas_dim_pipeline_segment" in (entry.backing_assets)
+    assert "silver.gas_model.silver_gas_fact_connection_point_flow" in (
+        entry.backing_assets
+    )
+    assert "silver.gas_model.silver_gas_fact_operational_meter_flow" in (
+        entry.backing_assets
+    )
+    assert "silver.gas_model.silver_gas_fact_capacity_outlook" in (entry.backing_assets)
+    assert "Pipeline and Connection Operations" in html
+    assert "chunk-gbb-guide-connection-point-identifiers" in html
+    assert 'data-status="available"' in html
+    assert 'href="/marimo/pipeline_connection_operations/"' in context_links
+    assert "Connection Point Context" in context_links
+    assert "Facility Context" in context_links
+    assert "Flow Context" in context_links
+    assert "Capacity Context" in context_links
+
+
+def test_pipeline_connection_operations_table_specs_and_loader_use_bounded_rows() -> (
+    None
+):
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "12",
+        }
+    )
+    captured: list[tuple[str, int | None]] = []
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        assert storage_options == config.storage_options()
+        captured.append((uri, row_limit))
+        return pl.DataFrame()
+
+    specs = pipeline_connection_operations_table_specs()
+    loads = load_pipeline_connection_operations_tables(config, reader=reader)
+
+    assert specs == PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS
+    assert tuple(spec.table_name for spec in specs) == (
+        CONNECTION_POINT_DIM_TABLE_NAME,
+        FACILITY_DIM_TABLE_NAME,
+        PIPELINE_SEGMENT_DIM_TABLE_NAME,
+        HUB_ZONE_DIM_TABLE_NAME,
+        CONNECTION_POINT_FLOW_TABLE_NAME,
+        OPERATIONAL_METER_FLOW_TABLE_NAME,
+        FACILITY_CAPACITY_OUTLOOK_TABLE_NAME,
+    )
+    assert len(loads) == 7
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_dim_connection_point",
+            12,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_dim_facility",
+            12,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_dim_pipeline_segment",
+            12,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/silver_gas_dim_zone",
+            12,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_connection_point_flow",
+            12,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_operational_meter_flow",
+            12,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_capacity_outlook",
+            12,
+        ),
+    ]
+
+    cache: GasModelSessionCache = {}
+    cached_calls = 0
+
+    def cached_reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        nonlocal cached_calls
+        assert uri.endswith(f"/{PIPELINE_SEGMENT_DIM_TABLE_NAME}")
+        assert storage_options == config.storage_options()
+        assert row_limit == 12
+        cached_calls += 1
+        return pl.DataFrame({"source_system": ["VICGAS"]})
+
+    first_cached = cached_load_pipeline_connection_operations_tables(
+        config,
+        cache,
+        specs=(PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[2],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    second_cached = cached_load_pipeline_connection_operations_tables(
+        config,
+        cache,
+        specs=(PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[2],),
+        reader=cached_reader,
+        refresh_token="same",
+    )
+    refreshed = cached_load_pipeline_connection_operations_tables(
+        config,
+        cache,
+        specs=(PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[2],),
+        reader=cached_reader,
+        refresh_token="changed",
+    )
+
+    assert cached_calls == 2
+    assert not first_cached[0].cache_hit
+    assert second_cached[0].cache_hit
+    assert not refreshed[0].cache_hit
+
+
+def test_pipeline_connection_operations_helpers_show_relationship_gaps() -> None:
+    connection_point_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["cp-key-1", "cp-key-2"],
+                "facility_key": ["facility-key-1", None],
+                "location_key": ["location-key-1", None],
+                "zone_key": ["zone-key-1", None],
+                "source_system": ["GBB", "GBB"],
+                "source_tables": [
+                    ["silver.gbb.silver_gasbb_nodes_connection_points"],
+                    ["silver.gbb.silver_gasbb_nodes_connection_points"],
+                ],
+                "source_facility_id": ["10", "20"],
+                "source_connection_point_id": ["1001", "2002"],
+                "connection_point_name": ["Receipt Point", "Delivery Point"],
+                "flow_direction": ["RECEIPT", "DELIVERY"],
+                "facility_name": ["Matched Facility", "Unmatched Facility"],
+                "location_name": ["Longford", None],
+                "state": ["Victoria", "Queensland"],
+                "exempt": [False, True],
+                "effective_date": [date(2024, 1, 1), None],
+                "exemption_description": [None, "test exemption"],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 1, 6),
+                    datetime(2024, 1, 2, 6),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 1, 8),
+                    datetime(2024, 1, 2, 8),
+                ],
+            }
+        ),
+    )
+    facility_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["facility-key-1"],
+                "source_system": ["GBB"],
+                "source_facility_id": ["10"],
+                "facility_name": ["Matched Facility"],
+            }
+        ),
+    )
+    pipeline_segment_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[2],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["pipe-key-1", "pipe-key-2"],
+                "zone_key": ["zone-key-1", None],
+                "source_system": ["VICGAS", "VICGAS"],
+                "source_tables": [
+                    ["silver.vicgas.silver_int259_v4_pipe_segment_1"],
+                    ["silver.vicgas.silver_int259_v4_pipe_segment_1"],
+                ],
+                "source_pipeline_id": ["VTS", "VTS"],
+                "source_pipe_segment_id": ["77", "78"],
+                "pipe_segment_name": ["Segment 77", "Segment 78"],
+                "source_linepack_zone_id": ["5", "6"],
+                "source_origin_node_name": ["Origin A", "Origin B"],
+                "source_destination_node_name": ["Destination A", "Destination B"],
+                "reverse_flow": ["Y", None],
+                "compressor": ["N", "Y"],
+                "commencement_date": [date(2020, 1, 1), None],
+                "termination_date": [None, date(2025, 1, 1)],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 3, 6),
+                    datetime(2024, 1, 4, 6),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 3, 8),
+                    datetime(2024, 1, 4, 8),
+                ],
+            }
+        ),
+    )
+    zone_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[3],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["zone-key-1"],
+                "source_system": ["VICGAS"],
+                "zone_type": ["linepack_zone"],
+                "source_zone_id": ["5"],
+                "zone_name": ["Linepack 5"],
+            }
+        ),
+    )
+    flow_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[4],
+        pl.DataFrame(
+            {
+                "connection_point_key": ["cp-key-1", None, None],
+                "source_system": ["GBB", "GBB", "GBB"],
+                "gas_date": [
+                    date(2024, 1, 3),
+                    date(2024, 1, 4),
+                    date(2024, 1, 4),
+                ],
+                "source_facility_id": ["10", "20", "99"],
+                "source_connection_point_id": ["1001", "2002", "9999"],
+                "flow_direction": ["RECEIPT", "DELIVERY", "RECEIPT"],
+                "actual_quantity_tj": [5.0, 7.0, 3.0],
+                "quality": ["actual", "actual", "estimated"],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 3, 7),
+                    datetime(2024, 1, 4, 7),
+                    datetime(2024, 1, 4, 8),
+                ],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 3, 9),
+                    datetime(2024, 1, 4, 9),
+                    datetime(2024, 1, 4, 10),
+                ],
+            }
+        ),
+    )
+    meter_flow_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[5],
+        pl.DataFrame(
+            {
+                "source_system": ["VICGAS", "VICGAS"],
+                "source_table": [
+                    "silver.vicgas.silver_int236_v4_operational_meter_readings_1",
+                    "silver.vicgas.silver_int236_v4_operational_meter_readings_1",
+                ],
+                "gas_date": [date(2024, 1, 4), date(2024, 1, 4)],
+                "pipeline_segment_key": ["pipe-key-1", None],
+                "point_type": ["meter", "meter"],
+                "source_point_id": ["OP1", "OP2"],
+                "flow_direction": ["WITHDRAWAL", "INJECTION"],
+                "quantity_gj": [70.0, 20.0],
+            }
+        ),
+    )
+    capacity_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[6],
+        pl.DataFrame(
+            {
+                "source_system": ["GBB", "GBB"],
+                "source_table": ["silver.gbb.capacity", "silver.gbb.capacity"],
+                "source_facility_id": ["10", "99"],
+                "facility_name": ["Matched Facility", "Missing Facility"],
+                "capacity_type": ["nameplate", "nameplate"],
+                "flow_direction": ["RECEIPT", "RECEIPT"],
+                "capacity_quantity_tj": [100.0, 50.0],
+            }
+        ),
+    )
+    loads = (
+        connection_point_load,
+        facility_load,
+        pipeline_segment_load,
+        zone_load,
+        flow_load,
+        meter_flow_load,
+        capacity_load,
+    )
+
+    kpis = pipeline_connection_operations_kpi_frame(loads)
+    flow_summary = pipeline_connection_flow_summary_frame(loads)
+    metadata = pipeline_connection_metadata_frame(loads)
+    gaps = pipeline_connection_relationship_gap_frame(loads)
+    kpi_values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
+    flow_rows = {
+        (row["source facility id"], row["source connection point id"]): row
+        for row in flow_summary.to_dicts()
+    }
+    metadata_rows = {
+        (row["metadata kind"], row["source identifier"]): row
+        for row in metadata.to_dicts()
+    }
+    gap_rows = {row["relationship"]: row for row in gaps.to_dicts()}
+
+    assert kpi_values["Operation tables checked"] == "7"
+    assert kpi_values["Loaded tables"] == "7"
+    assert kpi_values["Connection points"] == "2"
+    assert kpi_values["Pipeline segments"] == "2"
+    assert kpi_values["Connection point flow rows"] == "3"
+    assert kpi_values["Operational meter flow rows"] == "2"
+    assert kpi_values["Capacity rows"] == "2"
+    assert kpi_values["Relationship gap rows"] == "5"
+    assert kpi_values["Latest Gas Day"] == "2024-01-04"
+
+    assert flow_rows[("10", "1001")]["relationship status"] == (
+        "Conformed Connection Point match"
+    )
+    assert flow_rows[("20", "2002")]["coverage gap"] == "Missing connection_point_key"
+    assert flow_rows[("99", "9999")]["relationship status"] == "Relationship gap"
+    assert flow_rows[("99", "9999")]["coverage gap"] == (
+        "Missing Connection Point dimension match"
+    )
+    assert flow_rows[("20", "2002")]["connection point"] == "Delivery Point"
+    assert flow_rows[("20", "2002")]["total actual quantity tj"] == 7.0
+
+    assert metadata_rows[("Connection Point", "1001")]["operational status"] == (
+        "not exempt; effective from 2024-01-01"
+    )
+    assert metadata_rows[("Connection Point", "2002")]["coverage gap"] == (
+        "Missing facility_key, location_key, zone_key"
+    )
+    assert (
+        "reverse flow: Y"
+        in metadata_rows[("Pipeline segment", "77")]["operational status"]
+    )
+    assert metadata_rows[("Pipeline segment", "78")]["coverage gap"] == (
+        "Missing zone_key"
+    )
+
+    assert gap_rows["Connection Point -> Facility"]["gap rows"] == 1
+    assert gap_rows["Connection Point flow -> Connection Point"]["gap rows"] == 1
+    assert gap_rows["Capacity -> Connection Point"]["gap rows"] == 1
+    assert gap_rows["Operational meter flow -> Pipeline segment"]["gap rows"] == 1
+    assert gap_rows["Pipeline segment -> Zone"]["gap rows"] == 1
+    assert (
+        "connection_point_key"
+        in gap_rows["Capacity -> Connection Point"]["coverage gap"]
+    )
+
+
+def test_pipeline_connection_operations_helpers_cover_gap_classification_branches() -> (
+    None
+):
+    connection_point_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[0],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["cp-key-1"],
+                "facility_key": ["facility-key-1"],
+                "location_key": ["location-key-1"],
+                "zone_key": ["zone-key-1"],
+                "source_system": ["GBB"],
+                "source_facility_id": ["10"],
+                "source_connection_point_id": ["1001"],
+                "connection_point_name": ["Receipt Point"],
+                "flow_direction": ["RECEIPT"],
+                "facility_name": ["Matched Facility"],
+                "effective_date": [datetime(2024, 1, 1, 0)],
+                "effective_to_date": [date(2024, 12, 31)],
+            }
+        ),
+    )
+    facility_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[1],
+        pl.DataFrame(
+            {
+                "surrogate_key": ["facility-key-1"],
+                "source_facility_id": ["10"],
+            }
+        ),
+    )
+    empty_pipeline_segment_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[2],
+        pl.DataFrame(),
+    )
+    empty_zone_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[3],
+        pl.DataFrame(),
+    )
+    flow_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[4],
+        pl.DataFrame(
+            {
+                "connection_point_key": ["wrong-key", "missing-key", "cp-key-1"],
+                "source_system": ["GBB", "GBB", "GBB"],
+                "gas_date": [date(2024, 1, 5), date(2024, 1, 5), date(2024, 1, 5)],
+                "source_facility_id": ["10", "99", "10"],
+                "source_connection_point_id": ["1001", "9999", "1001"],
+                "flow_direction": ["RECEIPT", "RECEIPT", "RECEIPT"],
+                "actual_quantity_tj": [4.0, 2.0, None],
+            }
+        ),
+    )
+    empty_meter_flow_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[5],
+        pl.DataFrame(),
+    )
+    capacity_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[6],
+        pl.DataFrame(
+            {
+                "source_facility_id": ["10"],
+                "flow_direction": ["RECEIPT"],
+                "capacity_quantity_tj": [100.0],
+            }
+        ),
+    )
+    loads = (
+        connection_point_load,
+        facility_load,
+        empty_pipeline_segment_load,
+        empty_zone_load,
+        flow_load,
+        empty_meter_flow_load,
+        capacity_load,
+    )
+
+    metadata = pipeline_connection_metadata_frame(loads)
+    flow_summary = pipeline_connection_flow_summary_frame(loads)
+    gaps = pipeline_connection_relationship_gap_frame(loads)
+    metadata_row = metadata.row(0, named=True)
+    flow_rows = flow_summary.to_dicts()
+    matched_flow_row = next(
+        row
+        for row in flow_rows
+        if (
+            row["source facility id"],
+            row["source connection point id"],
+            row["coverage gap"],
+        )
+        == ("10", "1001", "Unmatched connection_point_key")
+    )
+    direct_flow_row = next(
+        row
+        for row in flow_rows
+        if (
+            row["source facility id"],
+            row["source connection point id"],
+            row["coverage gap"],
+        )
+        == ("10", "1001", "Covered")
+    )
+    missing_flow_row = next(
+        row
+        for row in flow_rows
+        if (row["source facility id"], row["source connection point id"])
+        == ("99", "9999")
+    )
+    gap_rows = {row["relationship"]: row for row in gaps.to_dicts()}
+
+    assert "effective from 2024-01-01" in metadata_row["operational status"]
+    assert "effective to 2024-12-31" in metadata_row["operational status"]
+    assert matched_flow_row["flow rows"] == 1
+    assert matched_flow_row["flow rows with quantity"] == 1
+    assert direct_flow_row["flow rows"] == 1
+    assert direct_flow_row["flow rows with quantity"] == 0
+    assert missing_flow_row["coverage gap"] == "Unmatched connection_point_key"
+    assert gap_rows["Connection Point -> Facility"]["coverage gap"] == "Covered"
+    assert gap_rows["Capacity -> Connection Point"]["coverage gap"] == (
+        "No direct connection_point_key; source-qualified comparison only"
+    )
+    assert gap_rows["Operational meter flow -> Pipeline segment"]["coverage gap"] == (
+        "No source rows loaded"
+    )
+    assert gap_rows["Pipeline segment -> Zone"]["coverage gap"] == (
+        "No source rows loaded"
+    )
+
+
+def test_pipeline_connection_operations_helpers_cover_empty_state_behavior() -> None:
+    unavailable_load = _facility_load(
+        PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[0],
+        None,
+        error="FileNotFoundError: no parquet files found",
+        row_limit=5,
+    )
+    loads = (
+        unavailable_load,
+        *(
+            _facility_load(spec, pl.DataFrame(), row_limit=5)
+            for spec in PIPELINE_CONNECTION_OPERATIONS_TABLE_SPECS[1:]
+        ),
+    )
+
+    assert pipeline_connection_flow_summary_frame(loads).is_empty()
+    assert pipeline_connection_metadata_frame(loads).is_empty()
+    assert pipeline_connection_relationship_gap_frame(loads).is_empty()
+
+    markdown = pipeline_connection_operations_empty_state_markdown(loads)
+    empty_markdown = pipeline_connection_operations_empty_state_markdown(())
+    empty_context_links = render_pipeline_connection_operations_context_links(
+        entries=()
+    )
+
+    assert "No Pipeline and Connection operations rows are available" in markdown
+    assert "`1` reads were unavailable and `6` reads returned no rows" in markdown
+    assert "Bounded preview reads are capped at `5` rows per table" in markdown
+    assert (
+        "No Pipeline and Connection operations tables were requested" in empty_markdown
+    )
+    assert (
+        "No Pipeline, Connection Point, Facility, Flow, Capacity, Hub / Zone, "
+        "map, source coverage, or table explorer entries are registered."
     ) in empty_context_links
 
 
@@ -8688,6 +12859,50 @@ def _gas_quality_load(
     )
 
 
+def _heating_value_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = 100,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=HEATING_VALUE_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{HEATING_VALUE_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _scada_pressure_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = 100,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=SCADA_PRESSURE_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{SCADA_PRESSURE_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _heating_value_pressure_loads(
+    *,
+    heating_dataframe: pl.DataFrame,
+    pressure_dataframe: pl.DataFrame,
+    row_limit: int | None = 100,
+) -> list[GasTableLoad]:
+    return [
+        _heating_value_load(heating_dataframe, row_limit=row_limit),
+        _scada_pressure_load(pressure_dataframe, row_limit=row_limit),
+    ]
+
+
 def _customer_transfer_load(
     dataframe: pl.DataFrame,
     *,
@@ -8752,6 +12967,22 @@ def _capacity_outlook_load(
     )
 
 
+def _capacity_auction_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=CAPACITY_AUCTION_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{CAPACITY_AUCTION_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
 def _nomination_forecast_load(
     dataframe: pl.DataFrame,
     *,
@@ -8784,6 +13015,38 @@ def _settlement_activity_load(
     )
 
 
+def _sttm_market_settlement_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=STTM_MARKET_SETTLEMENT_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{STTM_MARKET_SETTLEMENT_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _sttm_capacity_settlement_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=STTM_CAPACITY_SETTLEMENT_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{STTM_CAPACITY_SETTLEMENT_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
 def _bid_stack_load(
     dataframe: pl.DataFrame,
     *,
@@ -8792,6 +13055,22 @@ def _bid_stack_load(
     return GasTableLoad(
         spec=BID_STACK_TABLE_SPEC,
         uri=f"s3://bucket/silver/gas_model/{BID_STACK_TABLE_NAME}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _sttm_contingency_gas_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=STTM_CONTINGENCY_GAS_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{STTM_CONTINGENCY_GAS_TABLE_NAME}",
         dataframe=dataframe,
         error=None,
         row_limit=row_limit,
@@ -8824,6 +13103,22 @@ def _schedule_run_load(
     return GasTableLoad(
         spec=SCHEDULE_RUN_TABLE_SPEC,
         uri=f"s3://bucket/silver/gas_model/{SCHEDULE_RUN_TABLE_SPEC.table_name}",
+        dataframe=dataframe,
+        error=None,
+        row_limit=row_limit,
+        load_duration_seconds=0.01,
+        cache_hit=False,
+    )
+
+
+def _scheduled_quantity_load(
+    dataframe: pl.DataFrame,
+    *,
+    row_limit: int | None = None,
+) -> GasTableLoad:
+    return GasTableLoad(
+        spec=SCHEDULED_QUANTITY_TABLE_SPEC,
+        uri=f"s3://bucket/silver/gas_model/{SCHEDULED_QUANTITY_TABLE_NAME}",
         dataframe=dataframe,
         error=None,
         row_limit=row_limit,

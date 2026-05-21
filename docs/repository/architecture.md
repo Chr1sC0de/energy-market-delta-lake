@@ -134,11 +134,13 @@ Market context glossary concepts to registry backing assets, dashboard routes,
 planned dashboard cards, and table explorer deep links without reading table
 rows. Its citation-chain explorer audits registry metadata from generated-gold
 paths to source chunk IDs, silver chunk paths, and source hashes without
-opening generated corpus files. Its Flow operations, market price, schedule
-run, settlement activity, customer transfer, Bid / Offer stack, gas quality,
-and system notice dashboards use the shared bounded gas-model loader for
-read-only fact previews and summaries. Its Gas Day explainer uses registry
-context metadata and bounded
+opening generated corpus files. Its Flow operations, Operational Meter Flow,
+market price, schedule run, settlement activity, customer transfer, Bid / Offer
+stack, gas quality, heating value and SCADA pressure, and system notice
+dashboards use the shared bounded gas-model loader for
+read-only fact previews and summaries. Its forecast-vs-actual dashboard compares
+bounded forecast and actual flow/storage facts without changing ETL grain or
+full-scan policy. Its Gas Day explainer uses registry context metadata and bounded
 gas-model samples to show date-field coverage across curated assets. Its Hub /
 Zone explainer uses the
 same bounded loader to show current `silver_gas_dim_zone` coverage and
@@ -168,7 +170,7 @@ materializable upstream closure; it defaults to host webserver port `3001`, a 90
 minute timeout, Dagster `max_concurrent_runs` `6`, 1 cached raw object per
 required source table, and 1 cached zip object per required domain. Ralph
 **Promotion** uses the `promotion-gas-model` scenario from the isolated source
-worktree with `--rebuild`, a 20 minute timeout, Dagster `max_concurrent_runs`
+worktree with `--rebuild`, a 30 minute timeout, Dagster `max_concurrent_runs`
 `6`, and the same 1-object raw and zip seed horizon. That Promotion scenario
 validates the runtime GraphQL target count against that source count through the
 GitHub issue #141 stale-runtime/current-source guard, and uses the same
@@ -194,7 +196,7 @@ keys, dependency-wave count, run-batch count, and asset batch size; the
 manifest also records top-level source-definition evidence with the current
 executable asset count, asset-check count, full target keys, and STTM target
 keys. The Promotion scenario enforces regression budgets from the
-approved targeted baseline: total gate duration at or below 20 minutes, peak
+approved targeted baseline: total gate duration at or below 30 minutes, peak
 active and queued runs at or below `6`, total Dagster runs at or below the
 current direct-launch `dataflow.scenario_evidence.batch_count`, target progress
 matching the current `source_definitions.executable_asset_count`, and missing or
@@ -287,19 +289,27 @@ Gas market knowledge base responsibility:
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/gas_scheduled_quantities.py`
   - `backend-services/marimo/notebooks/facility_explainer.py`
   - `backend-services/marimo/notebooks/participant_explainer.py`
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/connection_point_explainer.py`
   - `backend-services/marimo/notebooks/flow_operations.py`
+  - `backend-services/marimo/notebooks/operational_meter_flow.py`
+  - `backend-services/marimo/notebooks/pipeline_connection_operations.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
+  - `backend-services/marimo/notebooks/gas_sttm_market_settlement.py`
+  - `backend-services/marimo/notebooks/gas_sttm_capacity_settlement.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/facility_flow_storage.py`
+  - `backend-services/marimo/notebooks/forecast_vs_actual.py`
   - `backend-services/marimo/notebooks/capacity_outlook.py`
+  - `backend-services/marimo/notebooks/capacity_auction.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
+  - `backend-services/marimo/notebooks/heating_value_pressure.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

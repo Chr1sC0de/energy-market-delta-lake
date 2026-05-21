@@ -10,6 +10,7 @@ def _():
     import polars as pl
 
     from marimoserver.gas_dashboard import (
+        MARKET_PRICE_GAS_DATE_FILTER_ALL,
         MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
         MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
         MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
@@ -17,12 +18,16 @@ def _():
         discover_dashboard_config,
         gas_table_load_status_frame,
         gas_table_load_status_message,
+        market_price_bounded_scope_markdown,
         market_price_empty_state_markdown,
+        market_price_exception_frame,
+        market_price_gas_date_options,
         market_price_kpi_frame,
         market_price_observation_frame,
         market_price_price_type_options,
         market_price_source_system_options,
         market_price_source_table_options,
+        market_price_trend_diagnostic_frame,
         market_price_trend_frame,
         market_price_type_summary_frame,
         render_dashboard_context_panel,
@@ -31,6 +36,7 @@ def _():
     from marimoserver.gas_model_loader import refresh_token_from_control
 
     return (
+        MARKET_PRICE_GAS_DATE_FILTER_ALL,
         MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
         MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
         MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
@@ -38,12 +44,16 @@ def _():
         discover_dashboard_config,
         gas_table_load_status_frame,
         gas_table_load_status_message,
+        market_price_bounded_scope_markdown,
         market_price_empty_state_markdown,
+        market_price_exception_frame,
+        market_price_gas_date_options,
         market_price_kpi_frame,
         market_price_observation_frame,
         market_price_price_type_options,
         market_price_source_system_options,
         market_price_source_table_options,
+        market_price_trend_diagnostic_frame,
         market_price_trend_frame,
         market_price_type_summary_frame,
         mo,
@@ -66,11 +76,12 @@ def _(mo, render_dashboard_context_panel, render_market_price_context_links):
             observations from
             `silver.gas_model.silver_gas_fact_market_price`, including
             `price_type`, `source_system`, `source_table`, `gas_date`,
-            Schedule context fields, and populated price measures. Freshness,
-            load timing, cache status, and bounded preview policy come from the
-            shared gas model loader. Missing LocalStack/AWS data and filter
-            matches with no rows render as designed empty states instead of
-            notebook tracebacks.
+            Schedule context fields, populated price measures, bounded trend
+            diagnostics, and recent/sample exception candidates. Freshness,
+            load timing, cache status, and bounded preview policy come from
+            the shared gas model loader. Missing LocalStack/AWS data and
+            filter matches with no rows render as designed empty states instead
+            of notebook tracebacks.
             """),
             mo.Html(render_dashboard_context_panel("gas-market-prices")),
             mo.Html(render_market_price_context_links()),
@@ -87,7 +98,11 @@ def _():
 
 @app.cell
 def _(mo):
-    refresh_data_button = mo.ui.run_button(label="Refresh data")
+    refresh_data_button = mo.ui.button(
+        label="Refresh data",
+        value=0,
+        on_click=lambda value: value + 1,
+    )
     mo.hstack([refresh_data_button], justify="start")
     return (refresh_data_button,)
 
@@ -111,7 +126,12 @@ def _(
 
 @app.cell
 def _(
-    gas_table_load_status_frame, gas_table_load_status_message, market_price_load, mo
+    config,
+    gas_table_load_status_frame,
+    gas_table_load_status_message,
+    market_price_bounded_scope_markdown,
+    market_price_load,
+    mo,
 ):
     price_loads = [market_price_load]
     mo.vstack(
@@ -119,6 +139,10 @@ def _(
             mo.callout(
                 mo.md(gas_table_load_status_message(price_loads)),
                 kind="neutral",
+            ),
+            mo.callout(
+                mo.md(market_price_bounded_scope_markdown(config, market_price_load)),
+                kind="warn" if config.aws_runtime else "neutral",
             ),
             mo.accordion(
                 {
@@ -162,15 +186,24 @@ def _(config, mo, pl):
 
 @app.cell
 def _(
+    MARKET_PRICE_GAS_DATE_FILTER_ALL,
     MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
     MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
     MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
     market_price_load,
+    market_price_gas_date_options,
     market_price_price_type_options,
     market_price_source_system_options,
     market_price_source_table_options,
     mo,
 ):
+    gas_date_filter = mo.ui.dropdown(
+        options=market_price_gas_date_options(market_price_load),
+        value=MARKET_PRICE_GAS_DATE_FILTER_ALL,
+        searchable=True,
+        label="Gas date",
+        full_width=True,
+    )
     price_type_filter = mo.ui.dropdown(
         options=market_price_price_type_options(market_price_load),
         value=MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
@@ -197,13 +230,18 @@ def _(
         [
             mo.md("## Filters"),
             mo.hstack(
-                [price_type_filter, source_system_filter, source_table_filter],
+                [
+                    gas_date_filter,
+                    price_type_filter,
+                    source_system_filter,
+                    source_table_filter,
+                ],
                 gap=1,
             ),
         ],
         gap=0.5,
     )
-    return price_type_filter, source_system_filter, source_table_filter
+    return gas_date_filter, price_type_filter, source_system_filter, source_table_filter
 
 
 @app.cell
@@ -212,6 +250,7 @@ def _(
     market_price_kpi_frame,
     market_price_load,
     mo,
+    gas_date_filter,
     price_type_filter,
     source_system_filter,
     source_table_filter,
@@ -221,6 +260,7 @@ def _(
         price_type_filter.value,
         source_system_filter.value,
         source_table_filter.value,
+        gas_date_filter.value,
     )
     if kpis.is_empty():
         kpi_view = mo.md(market_price_empty_state_markdown(market_price_load))
@@ -242,6 +282,7 @@ def _(
     market_price_load,
     market_price_type_summary_frame,
     mo,
+    gas_date_filter,
     price_type_filter,
     source_system_filter,
     source_table_filter,
@@ -251,6 +292,7 @@ def _(
         price_type_filter.value,
         source_system_filter.value,
         source_table_filter.value,
+        gas_date_filter.value,
     )
     if type_summary.is_empty():
         type_summary_view = mo.md(market_price_empty_state_markdown(market_price_load))
@@ -263,8 +305,8 @@ def _(
             ## Price Type And Source Summary
 
             This sampled/recent-only view summarizes the currently loaded
-            bounded rows by `price_type`, `source_system`, `source_table`,
-            gas-date coverage, and populated price measure columns.
+            bounded rows by `gas_date`, `price_type`, `source_system`,
+            `source_table`, and populated price measure columns.
             """),
             type_summary_view,
         ]
@@ -276,8 +318,97 @@ def _(
 def _(
     market_price_empty_state_markdown,
     market_price_load,
+    market_price_trend_diagnostic_frame,
+    mo,
+    gas_date_filter,
+    price_type_filter,
+    source_system_filter,
+    source_table_filter,
+):
+    trend_diagnostics = market_price_trend_diagnostic_frame(
+        market_price_load,
+        price_type_filter.value,
+        source_system_filter.value,
+        source_table_filter.value,
+        gas_date_filter.value,
+    )
+    if trend_diagnostics.is_empty():
+        trend_diagnostics_view = mo.md(
+            market_price_empty_state_markdown(market_price_load)
+        )
+    else:
+        trend_diagnostics_view = mo.ui.table(
+            trend_diagnostics,
+            selection=None,
+            page_size=20,
+        )
+
+    mo.vstack(
+        [
+            mo.md("""
+            ## Bounded Price Trend Diagnostics
+
+            This bounded view compares first and latest loaded daily averages
+            by source, price type, and price measure. In AWS mode it is a
+            sampled/recent-only diagnostic, not a full historical scan.
+            """),
+            trend_diagnostics_view,
+        ]
+    )
+    return
+
+
+@app.cell
+def _(
+    market_price_empty_state_markdown,
+    market_price_exception_frame,
+    market_price_load,
+    mo,
+    gas_date_filter,
+    price_type_filter,
+    source_system_filter,
+    source_table_filter,
+):
+    exception_candidates = market_price_exception_frame(
+        market_price_load,
+        price_type_filter.value,
+        source_system_filter.value,
+        source_table_filter.value,
+        gas_date_filter.value,
+    )
+    if exception_candidates.is_empty():
+        exception_candidates_view = mo.md(
+            market_price_empty_state_markdown(market_price_load)
+        )
+    else:
+        exception_candidates_view = mo.ui.table(
+            exception_candidates,
+            selection=None,
+            page_size=20,
+        )
+
+    mo.vstack(
+        [
+            mo.md("""
+            ## Bounded Price Exception Candidates
+
+            Candidate rows come from missing price measures, non-positive
+            values, and bounded high/low range edges in the loaded sample. In
+            AWS mode this view is explicitly bounded to recent/sample rows.
+            """),
+            exception_candidates_view,
+        ]
+    )
+    return
+
+
+@app.cell
+def _(
+    market_price_empty_state_markdown,
+    market_price_load,
     market_price_trend_frame,
     mo,
+    gas_date_filter,
     price_type_filter,
     source_system_filter,
     source_table_filter,
@@ -287,6 +418,7 @@ def _(
         price_type_filter.value,
         source_system_filter.value,
         source_table_filter.value,
+        gas_date_filter.value,
     )
     if trend.is_empty():
         trend_view = mo.md(market_price_empty_state_markdown(market_price_load))
@@ -301,9 +433,10 @@ def _(
         [
             mo.md(
                 f"""
-                ## Recent Loaded Price Trend
+                ## Bounded Recent Loaded Price Trend
 
-                Price type: `{price_type_filter.value}`. Source system:
+                Gas date: `{gas_date_filter.value}`. Price type:
+                `{price_type_filter.value}`. Source system:
                 `{source_system_filter.value}`. Source table:
                 `{source_table_filter.value}`. This trend is calculated only
                 from the loaded bounded rows and is not a full historical scan
@@ -322,6 +455,7 @@ def _(
     market_price_load,
     market_price_observation_frame,
     mo,
+    gas_date_filter,
     price_type_filter,
     source_system_filter,
     source_table_filter,
@@ -331,6 +465,7 @@ def _(
         price_type_filter.value,
         source_system_filter.value,
         source_table_filter.value,
+        gas_date_filter.value,
     )
     if observations.is_empty():
         observation_view = mo.md(market_price_empty_state_markdown(market_price_load))

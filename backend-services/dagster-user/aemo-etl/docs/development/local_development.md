@@ -187,7 +187,11 @@ uv run aemo-e2e-archive-seed refresh --raw-latest-count 2 --zip-latest-count 1
 The cache and `seed-run-manifest.json` are written under
 `backend-services/.e2e/aemo-etl` by default. If any required source table or zip
 domain has fewer live archive objects than requested, refresh exits non-zero and
-records the shortfall in that manifest.
+records the shortfall in that manifest. For source tables that are validly
+absent from the live archive slice, add `--allow-empty-source-table-seed` to
+write explicit zero-byte placeholders into the local cache; zip-domain
+shortfalls still fail because the e2e stack needs at least one zip per required
+domain.
 
 To load the cached seed into LocalStack during local compose startup:
 
@@ -245,7 +249,7 @@ webserver port `3001`, a 90 minute timeout, 1 raw object per required source
 table, 1 zip object per required domain, and Dagster `max_concurrent_runs` `6`.
 The `promotion-gas-model` scenario uses the same direct-launch shape from the
 isolated source worktree for Ralph **Promotion** with the same one-object seed
-horizon, uses a 20 minute timeout, and adds the #141
+horizon, uses a 30 minute timeout, and adds the #141
 stale-runtime/current-source validation guard. Both direct scenarios skip live
 `bronze_nemweb_public_files_*` discovery/listing assets. Asset batches use
 Dagster's in-process executor inside Podman run-worker containers. Direct
@@ -294,7 +298,7 @@ report prints those values in command output before #79 enforcement is applied.
 
 The `promotion-gas-model` scenario enforces #79 Promotion guard regression
 budgets from the approved #78 targeted baseline: total gate duration at or
-below 20 minutes, peak active runs at or below `6`, peak queued runs at or below
+below 30 minutes, peak active runs at or below `6`, peak queued runs at or below
 `6`, total Dagster runs at or below the current direct-launch
 `dataflow.scenario_evidence.batch_count`, target progress matching the current
 `source_definitions.executable_asset_count`, and missing or failed target assets

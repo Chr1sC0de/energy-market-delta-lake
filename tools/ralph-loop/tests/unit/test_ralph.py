@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -53,6 +54,20 @@ None
 ## Context anchors
 - Path: `.agents/skills/ralph-loop/SKILL.md`
 - Doc: `docs/agents/ralph-loop.md`
+"""
+
+RALPH_SELF_UPDATE_BODY = """## What to build
+Update the Ralph loop.
+
+## Acceptance criteria
+- [ ] The Operator restart checkpoint remains stable.
+
+## Blocked by
+None
+
+## Context anchors
+- Path: `tools/ralph-loop/src/ralph_loop/cli.py`
+- Path: `scripts/ralph.py`
 """
 
 EXPLORATORY_IMPLEMENTATION_BODY = """## What to build
@@ -466,6 +481,32 @@ def make_issue(
 def load_run_manifest(tmp_path: Path, run_glob: str = "issue-42-*") -> dict[str, Any]:
     manifest_path = next((tmp_path / "logs").glob(f"{run_glob}/ralph-run.json"))
     return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+
+def write_minimal_child_manifest(
+    log_root: Path,
+    *,
+    name: str,
+    status: str = "succeeded",
+    run_kind: str = "implementation",
+) -> Path:
+    run_dir = log_root / name
+    run_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = run_dir / ralph.MANIFEST_NAME
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": ralph.MANIFEST_SCHEMA_VERSION,
+                "run_kind": run_kind,
+                "status": status,
+                "paths": {"run_dir": str(run_dir)},
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return manifest_path
 
 
 @dataclass(frozen=True)
@@ -1808,6 +1849,10 @@ def write_child_manifest(
     name: str,
     run_kind: str,
     status: str,
+    stage: str | None = None,
+    started_at: str | None = None,
+    updated_at: str | None = None,
+    events: list[dict[str, Any]] | None = None,
     issue: ralph.Issue | None = None,
     delivery_mode: str = ralph.GITFLOW_MODE,
     integration_target: str = ralph.DEFAULT_GITFLOW_BRANCH,
@@ -1828,7 +1873,7 @@ def write_child_manifest(
         "schema_version": ralph.MANIFEST_SCHEMA_VERSION,
         "run_kind": run_kind,
         "status": status,
-        "stage": status,
+        "stage": stage or status,
         "paths": {"run_dir": str(run_dir)},
         "changed_files": changed_files or ["scripts/ralph.py"],
         "qa_results": qa_results
@@ -1841,8 +1886,12 @@ def write_child_manifest(
                 "status": "passed" if status == "succeeded" else "failed",
             }
         ],
-        "events": [],
+        "events": events or [],
     }
+    if started_at is not None:
+        payload["started_at"] = started_at
+    if updated_at is not None:
+        payload["updated_at"] = updated_at
     if issue is not None:
         payload["issue"] = {
             "number": issue.number,
@@ -3975,7 +4024,7 @@ Build it.
                 "--scenario",
                 "promotion-gas-model",
                 "--timeout-seconds",
-                "1200",
+                "1800",
                 "--max-concurrent-runs",
                 "6",
                 "--seed-root",
@@ -3999,7 +4048,7 @@ Build it.
                 "--scenario",
                 "promotion-gas-model",
                 "--timeout-seconds",
-                "1200",
+                "1800",
                 "--max-concurrent-runs",
                 "6",
             ),
@@ -4243,6 +4292,167 @@ Build it.
             with self.subTest(name=name):
                 self.assertEqual(runtime_env.metadata[name]["source"], "ralph_default")
                 self.assertTrue(Path(value).is_dir())
+
+    def test_qa_runtime_cleanup_removes_only_succeeded_default_run_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = f"example/cleanup-{tmp_path.name}"
+            log_root = tmp_path / "logs"
+            repo_runtime_root = ralph.default_qa_runtime_repo_root(repo)
+            shutil.rmtree(repo_runtime_root, ignore_errors=True)
+            try:
+                succeeded = repo_runtime_root / "issue-1-succeeded"
+                failed = repo_runtime_root / "issue-2-failed"
+                active = repo_runtime_root / "issue-3-active"
+                missing_manifest = repo_runtime_root / "issue-4-missing"
+                for path in (succeeded, failed, active, missing_manifest):
+                    (path / "uv-cache").mkdir(parents=True)
+                    (path / "uv-cache" / "payload.txt").write_text(
+                        "payload",
+                        encoding="utf-8",
+                    )
+                write_minimal_child_manifest(log_root, name=succeeded.name)
+                write_minimal_child_manifest(
+                    log_root, name=failed.name, status="failed"
+                )
+                write_minimal_child_manifest(log_root, name=active.name)
+
+                actions = ralph.cleanup_completed_qa_runtime_dirs(
+                    repo=repo,
+                    log_root=log_root,
+                    active_run_dirs=(log_root / active.name,),
+                )
+            finally:
+                shutil.rmtree(repo_runtime_root, ignore_errors=True)
+
+        statuses = {action.path.name: action.status for action in actions}
+        reasons = {action.path.name: action.reason for action in actions}
+        self.assertEqual(statuses[succeeded.name], "removed")
+        self.assertEqual(statuses[failed.name], "skipped")
+        self.assertEqual(statuses[active.name], "skipped")
+        self.assertEqual(statuses[missing_manifest.name], "skipped")
+        self.assertIn("did not succeed", reasons[failed.name])
+        self.assertIn("active run directory", reasons[active.name])
+        self.assertIn("manifest not found", reasons[missing_manifest.name])
+
+    def test_qa_runtime_cleanup_refuses_non_ralph_owned_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            outside = tmp_path / "not-ralph-owned"
+            outside.mkdir()
+
+            with self.assertRaises(ralph.QARuntimeCleanupRefusal):
+                ralph.validate_qa_runtime_cleanup_target(
+                    outside,
+                    repo="example/repo",
+                    log_root=tmp_path / "logs",
+                )
+
+    def test_qa_runtime_preflight_reports_sources_and_cleans_before_failure(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = f"example/preflight-{tmp_path.name}"
+            log_root = tmp_path / "logs"
+            run_dir = log_root / "issue-10-current"
+            old_run = "issue-9-old"
+            repo_runtime_root = ralph.default_qa_runtime_repo_root(repo)
+            shutil.rmtree(repo_runtime_root, ignore_errors=True)
+            try:
+                (repo_runtime_root / old_run / "uv-cache").mkdir(parents=True)
+                write_minimal_child_manifest(log_root, name=old_run)
+                current_runtime_root = ralph.default_qa_runtime_root(repo, run_dir)
+                readings = [
+                    ralph.QARuntimeCapacity(
+                        repo_runtime_root, free_bytes=10, free_inodes=10
+                    ),
+                    ralph.QARuntimeCapacity(
+                        repo_runtime_root, free_bytes=200, free_inodes=200
+                    ),
+                ]
+
+                def capacity_reader(path: Path) -> ralph.QARuntimeCapacity:
+                    self.assertEqual(path, repo_runtime_root)
+                    if len(readings) == 2:
+                        self.assertFalse(current_runtime_root.exists())
+                    return readings.pop(0)
+
+                result = ralph.qa_runtime_disk_preflight(
+                    repo=repo,
+                    run_dir=run_dir,
+                    log_root=log_root,
+                    label="unit preflight",
+                    base_env={
+                        ralph.QA_RUNTIME_MIN_FREE_BYTES_ENV: "100",
+                        ralph.QA_RUNTIME_MIN_FREE_INODES_ENV: "100",
+                    },
+                    capacity_reader=capacity_reader,
+                )
+                created_default_dirs = all(
+                    Path(value).is_dir()
+                    for value in result.qa_runtime_env.values.values()
+                )
+            finally:
+                shutil.rmtree(repo_runtime_root, ignore_errors=True)
+
+        lines = "\n".join(ralph.qa_runtime_preflight_lines(result))
+        statuses = {
+            action.path.name: action.status for action in result.cleanup_actions
+        }
+        self.assertEqual(statuses[old_run], "removed")
+        self.assertNotIn(run_dir.name, statuses)
+        self.assertEqual(result.failed_signals, ())
+        self.assertTrue(created_default_dirs)
+        self.assertIn("DAGSTER_HOME: ralph_default ->", lines)
+        self.assertIn("XDG_CACHE_HOME: ralph_default ->", lines)
+        self.assertIn("UV_CACHE_DIR: ralph_default ->", lines)
+
+    def test_qa_runtime_preflight_preserves_operator_provided_cache_paths(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = f"example/operator-cache-{tmp_path.name}"
+            log_root = tmp_path / "logs"
+            run_dir = log_root / "issue-11-current"
+            old_run = "issue-8-old"
+            repo_runtime_root = ralph.default_qa_runtime_repo_root(repo)
+            shutil.rmtree(repo_runtime_root, ignore_errors=True)
+            try:
+                (repo_runtime_root / old_run / "uv-cache").mkdir(parents=True)
+                write_minimal_child_manifest(log_root, name=old_run)
+                capacity = ralph.QARuntimeCapacity(
+                    repo_runtime_root,
+                    free_bytes=10,
+                    free_inodes=10,
+                )
+
+                result = ralph.qa_runtime_disk_preflight(
+                    repo=repo,
+                    run_dir=run_dir,
+                    log_root=log_root,
+                    label="operator cache preflight",
+                    base_env={
+                        "DAGSTER_HOME": str(tmp_path / "operator-dagster"),
+                        "XDG_CACHE_HOME": str(tmp_path / "operator-cache"),
+                        "UV_CACHE_DIR": str(tmp_path / "operator-uv"),
+                        ralph.QA_RUNTIME_MIN_FREE_BYTES_ENV: "100",
+                        ralph.QA_RUNTIME_MIN_FREE_INODES_ENV: "100",
+                    },
+                    capacity_reader=lambda path: capacity,
+                )
+                preserved = (repo_runtime_root / old_run).is_dir()
+            finally:
+                shutil.rmtree(repo_runtime_root, ignore_errors=True)
+
+        self.assertEqual(result.cleanup_actions, ())
+        self.assertTrue(preserved)
+        self.assertFalse(ralph.qa_runtime_capacity_failed(result))
+        self.assertEqual(
+            result.qa_runtime_env.metadata["UV_CACHE_DIR"]["source"],
+            "operator",
+        )
 
     def test_sandbox_token_uses_parent_gh_token_first(self) -> None:
         runner = FakeRunner()
@@ -6027,6 +6237,99 @@ Build it.
 
 
 class RalphRunInspectionRecoveryTests(unittest.TestCase):
+    def _requeue_manifest_paths(self, run_dir: Path) -> tuple[Path, Path, str, str]:
+        manifest = json.loads((run_dir / "ralph-run.json").read_text(encoding="utf-8"))
+        paths = manifest["paths"]
+        branches = manifest["branches"]
+        return (
+            Path(paths["implementation_worktree"]),
+            Path(paths["integration_worktree"]),
+            branches["issue"],
+            f"refs/ralph/requeue/{ralph.slugify(run_dir.name)}",
+        )
+
+    def _requeue_worktree_list(
+        self,
+        *,
+        repo_root: Path,
+        implementation_worktree: Path,
+        integration_worktree: Path,
+        issue_branch: str,
+        implementation_head: str = "impl-sha",
+        integration_head: str = "integration-sha",
+    ) -> str:
+        return "\n".join(
+            [
+                f"worktree {repo_root}",
+                "HEAD base-sha",
+                "branch refs/heads/main",
+                "",
+                f"worktree {implementation_worktree}",
+                f"HEAD {implementation_head}",
+                f"branch refs/heads/{issue_branch}",
+                "",
+                f"worktree {integration_worktree}",
+                f"HEAD {integration_head}",
+                "detached",
+                "",
+            ]
+        )
+
+    def _requeue_command_outputs(
+        self,
+        *,
+        run_dir: Path,
+        implementation_worktree: Path,
+        integration_worktree: Path,
+        issue_branch: str,
+        backup_ref: str,
+        labels: list[str] | None = None,
+        comments: list[dict[str, Any]] | None = None,
+        implementation_head: str = "impl-sha",
+        integration_head: str = "integration-sha",
+    ) -> dict[tuple[str, ...], list[str]]:
+        repo_root = run_dir.parents[1] / "repo"
+        return {
+            issue_view_command(234): [
+                json.dumps(
+                    issue_payload(
+                        234,
+                        labels
+                        or [
+                            ralph.AGENT_FAILED_LABEL,
+                            "enhancement",
+                            ralph.DELIVERY_GITFLOW_LABEL,
+                        ],
+                    )
+                )
+            ],
+            issue_comments_command(234): [json.dumps({"comments": comments or []})],
+            ("git", "worktree", "list", "--porcelain"): [
+                self._requeue_worktree_list(
+                    repo_root=repo_root,
+                    implementation_worktree=implementation_worktree,
+                    integration_worktree=integration_worktree,
+                    issue_branch=issue_branch,
+                    implementation_head=implementation_head,
+                    integration_head=integration_head,
+                )
+            ],
+            (
+                "git",
+                "show-ref",
+                "--verify",
+                "--hash",
+                f"refs/heads/{issue_branch}",
+            ): [f"{implementation_head}\n"],
+            (
+                "git",
+                "show-ref",
+                "--verify",
+                "--hash",
+                backup_ref,
+            ): [""],
+        }
+
     def test_inspect_run_reports_manifest_state_without_runner(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = write_recovery_manifest(
@@ -6098,8 +6401,349 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
         )
         self.assertIn("Run evidence: failure Command failed: git commit", text)
         self.assertIn("integration-git-commit.log", text)
-        self.assertIn("--recover-run is not applicable", text)
-        self.assertNotIn("python3 scripts/ralph.py --recover-run", text)
+        self.assertIn(
+            f"python3 scripts/ralph.py --recover-run {run_dir} --dry-run",
+            text,
+        )
+        self.assertIn(
+            f"rerun without `--dry-run`: "
+            f"`python3 scripts/ralph.py --recover-run {run_dir}`",
+            text,
+        )
+        self.assertNotIn("--recover-run is not applicable", text)
+
+    def test_recover_run_dry_run_reports_pre_push_requeue_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_push_requeue_manifest(tmp_path)
+            implementation_worktree, integration_worktree, issue_branch, backup_ref = (
+                self._requeue_manifest_paths(run_dir)
+            )
+            implementation_worktree.mkdir(parents=True)
+            integration_worktree.mkdir(parents=True)
+            runner = FakeRunner(
+                status_outputs=["", ""],
+                command_outputs=self._requeue_command_outputs(
+                    run_dir=run_dir,
+                    implementation_worktree=implementation_worktree,
+                    integration_worktree=integration_worktree,
+                    issue_branch=issue_branch,
+                    backup_ref=backup_ref,
+                ),
+                fail_commands={
+                    (
+                        "git",
+                        "merge-base",
+                        "--is-ancestor",
+                        "impl-sha",
+                        "origin/dev",
+                    ),
+                    (
+                        "git",
+                        "merge-base",
+                        "--is-ancestor",
+                        "integration-sha",
+                        "origin/dev",
+                    ),
+                },
+            )
+            loop = make_loop(
+                tmp_path,
+                runner,
+                delivery_mode=ralph.GITFLOW_MODE,
+                dry_run=True,
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
+
+        text = output.getvalue()
+        commands = [call.args for call in runner.calls]
+        self.assertIn("Ralph pre-push requeue recovery", text)
+        self.assertIn("Issue: #234 Issue 234", text)
+        self.assertIn("Eligibility: eligible", text)
+        self.assertIn("Labels to add: ready-for-agent", text)
+        self.assertIn("Labels to remove: agent-failed", text)
+        self.assertIn(f"Backup ref: would create {backup_ref} -> impl-sha", text)
+        self.assertIn(
+            f"- implementation_worktree: will remove {implementation_worktree}",
+            text,
+        )
+        self.assertIn(
+            f"- integration_worktree: will remove {integration_worktree}",
+            text,
+        )
+        self.assertIn(
+            f"- local_issue_branch: will delete {issue_branch}",
+            text,
+        )
+        self.assertIn(ralph.PRE_PUSH_REQUEUE_COMMENT_TITLE, text)
+        self.assertFalse(any(command[:2] == ("codex", "exec") for command in commands))
+        self.assertFalse(
+            any(command[:2] == ("make", "run-prek") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "comment") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
+        self.assertFalse(
+            any(
+                command[:3] == ("git", "update-ref", backup_ref) for command in commands
+            )
+        )
+
+    def test_recover_run_requeues_pre_push_failure_and_cleans_local_artifacts(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_push_requeue_manifest(tmp_path)
+            implementation_worktree, integration_worktree, issue_branch, backup_ref = (
+                self._requeue_manifest_paths(run_dir)
+            )
+            implementation_worktree.mkdir(parents=True)
+            integration_worktree.mkdir(parents=True)
+            runner = FakeRunner(
+                status_outputs=["", ""],
+                command_outputs=self._requeue_command_outputs(
+                    run_dir=run_dir,
+                    implementation_worktree=implementation_worktree,
+                    integration_worktree=integration_worktree,
+                    issue_branch=issue_branch,
+                    backup_ref=backup_ref,
+                ),
+                fail_commands={
+                    (
+                        "git",
+                        "merge-base",
+                        "--is-ancestor",
+                        "impl-sha",
+                        "origin/dev",
+                    ),
+                    (
+                        "git",
+                        "merge-base",
+                        "--is-ancestor",
+                        "integration-sha",
+                        "origin/dev",
+                    ),
+                },
+            )
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
+
+            comment = (run_dir / "issue-234-comment.md").read_text(encoding="utf-8")
+            manifest = json.loads(
+                (run_dir / "ralph-run.json").read_text(encoding="utf-8")
+            )
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(
+            ("git", "update-ref", backup_ref, "impl-sha"),
+            commands,
+        )
+        self.assertIn(
+            ("git", "worktree", "remove", str(implementation_worktree)),
+            commands,
+        )
+        self.assertIn(
+            ("git", "worktree", "remove", str(integration_worktree)),
+            commands,
+        )
+        self.assertIn(("git", "branch", "-D", issue_branch), commands)
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "234",
+                "-R",
+                "example/repo",
+                "--add-label",
+                "ready-for-agent",
+                "--remove-label",
+                "agent-failed",
+            ),
+            commands,
+        )
+        self.assertIn(ralph.PRE_PUSH_REQUEUE_COMMENT_TITLE, comment)
+        self.assertIn(
+            f"Preserved implementation commit: `impl-sha` at `{backup_ref}`", comment
+        )
+        self.assertIn("Delivery mode: `gitflow`", comment)
+        self.assertIn("Integration target: `dev`", comment)
+        self.assertEqual(manifest["github_metadata"]["status"], "pre_push_requeued")
+        self.assertEqual(manifest["github_metadata"]["backup_ref"], backup_ref)
+        self.assertFalse(any(command[:2] == ("codex", "exec") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("git", "push", "origin") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "close") for command in commands)
+        )
+
+    def test_recover_run_requeue_is_idempotent_after_partial_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_push_requeue_manifest(tmp_path)
+            (
+                _implementation_worktree,
+                _integration_worktree,
+                issue_branch,
+                backup_ref,
+            ) = self._requeue_manifest_paths(run_dir)
+            comment_body = "\n".join(
+                [
+                    ralph.PRE_PUSH_REQUEUE_COMMENT_TITLE,
+                    "",
+                    f"Recovered from run: `{run_dir}`",
+                    f"Preserved implementation commit: `impl-sha` at `{backup_ref}`",
+                ]
+            )
+            runner = FakeRunner(
+                command_outputs={
+                    issue_view_command(234): [
+                        json.dumps(
+                            issue_payload(
+                                234,
+                                [
+                                    ralph.READY_LABEL,
+                                    "enhancement",
+                                    ralph.DELIVERY_GITFLOW_LABEL,
+                                ],
+                            )
+                        )
+                    ],
+                    issue_comments_command(234): [
+                        json.dumps({"comments": [{"body": comment_body}]})
+                    ],
+                    ("git", "worktree", "list", "--porcelain"): [""],
+                    (
+                        "git",
+                        "show-ref",
+                        "--verify",
+                        "--hash",
+                        f"refs/heads/{issue_branch}",
+                    ): [""],
+                    (
+                        "git",
+                        "show-ref",
+                        "--verify",
+                        "--hash",
+                        backup_ref,
+                    ): ["impl-sha\n"],
+                },
+                fail_commands={
+                    (
+                        "git",
+                        "merge-base",
+                        "--is-ancestor",
+                        "impl-sha",
+                        "origin/dev",
+                    )
+                },
+            )
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
+
+            manifest = json.loads(
+                (run_dir / "ralph-run.json").read_text(encoding="utf-8")
+            )
+
+        text = output.getvalue()
+        commands = [call.args for call in runner.calls]
+        self.assertIn("backup ref already preserved", text)
+        self.assertIn("already absent", text)
+        self.assertIn("pre-push requeue comment already present", text)
+        self.assertIn("requeue labels already reconciled", text)
+        self.assertEqual(manifest["github_metadata"]["status"], "pre_push_requeued")
+        self.assertFalse(
+            any(command[:2] == ("git", "update-ref") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("git", "worktree", "remove") for command in commands)
+        )
+        self.assertFalse(any(command[:2] == ("git", "branch") for command in commands))
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "comment") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
+
+    def test_recover_run_refuses_pre_push_requeue_when_target_contains_work(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_push_requeue_manifest(tmp_path)
+            implementation_worktree, integration_worktree, issue_branch, backup_ref = (
+                self._requeue_manifest_paths(run_dir)
+            )
+            runner = FakeRunner(
+                command_outputs=self._requeue_command_outputs(
+                    run_dir=run_dir,
+                    implementation_worktree=implementation_worktree,
+                    integration_worktree=integration_worktree,
+                    issue_branch=issue_branch,
+                    backup_ref=backup_ref,
+                )
+            )
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+
+            with self.assertRaises(ralph.RalphError) as caught:
+                ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn("already reachable from origin/dev", str(caught.exception))
+        self.assertFalse(
+            any(command[:2] == ("git", "update-ref") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
+
+    def test_recover_run_refuses_dirty_requeue_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_push_requeue_manifest(tmp_path)
+            implementation_worktree, integration_worktree, issue_branch, backup_ref = (
+                self._requeue_manifest_paths(run_dir)
+            )
+            implementation_worktree.mkdir(parents=True)
+            integration_worktree.mkdir(parents=True)
+            runner = FakeRunner(
+                status_outputs=[" M tools/ralph-loop/src/ralph_loop/cli.py\n"],
+                command_outputs=self._requeue_command_outputs(
+                    run_dir=run_dir,
+                    implementation_worktree=implementation_worktree,
+                    integration_worktree=integration_worktree,
+                    issue_branch=issue_branch,
+                    backup_ref=backup_ref,
+                ),
+            )
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+
+            with self.assertRaises(ralph.RalphError) as caught:
+                ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn("implementation_worktree is dirty", str(caught.exception))
+        self.assertFalse(
+            any(command[:2] == ("git", "update-ref") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
 
     def test_inspect_run_reports_branch_sync_recovery_guidance(self) -> None:
         guidance = "Inspect `/worktrees/agent-sync-main-into-dev` before rerunning Ralph drain."
@@ -6178,6 +6822,50 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
 
 
 class RalphOperatorRunTests(unittest.TestCase):
+    def test_operator_preflight_reports_runtime_env_sources(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = ScriptedOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=1,
+                snapshots=[],
+            )
+
+            with patch.dict(
+                ralph.os.environ,
+                {
+                    "PATH": "/usr/bin",
+                    "UV_CACHE_DIR": "/operator/uv-cache",
+                    ralph.QA_RUNTIME_MIN_FREE_BYTES_ENV: "0",
+                    ralph.QA_RUNTIME_MIN_FREE_INODES_ENV: "0",
+                },
+                clear=True,
+            ):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    operator._preflight_qa_runtime_disk(label="Operator launch")
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+
+        text = output.getvalue()
+        self.assertIn("QA runtime disk preflight (Operator launch)", text)
+        self.assertIn("DAGSTER_HOME: ralph_default ->", text)
+        self.assertIn("UV_CACHE_DIR: operator -> /operator/uv-cache", text)
+        preflight_event = next(
+            event
+            for event in manifest["events"]
+            if event["state"] == "qa_runtime_disk_preflight"
+        )
+        self.assertEqual(
+            preflight_event["details"]["variables"]["UV_CACHE_DIR"]["source"],
+            "operator",
+        )
+
     def test_operator_skips_post_promotion_deployment_when_classifier_has_no_deploy(
         self,
     ) -> None:
@@ -6712,6 +7400,171 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn("Promotion commit `promotion-1-sha`", markdown)
         self.assertIn("- clean=yes", markdown)
 
+    def test_operator_promotes_integrated_backlog_before_ready_claim_at_startup(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE
+            )
+            ready_issue = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=99,
+                title="Ready follow-up",
+            )
+            integrated_issue = make_issue(
+                {ralph.AGENT_INTEGRATED_LABEL},
+                IMPLEMENTATION_BODY,
+                number=42,
+                title="Integrated backlog",
+            )
+            ready_integrated_issue = make_issue(
+                {ralph.AGENT_INTEGRATED_LABEL},
+                IMPLEMENTATION_BODY,
+                number=99,
+                title="Ready follow-up",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = ScriptedOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=4,
+                snapshots=[
+                    operator_snapshot(
+                        ready=[ready_issue],
+                        integrated=[integrated_issue],
+                    ),
+                    operator_snapshot(ready=[ready_issue]),
+                    operator_snapshot(integrated=[ready_integrated_issue]),
+                    operator_snapshot(),
+                ],
+            )
+
+            with redirect_stdout(io.StringIO()):
+                operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+
+        checkpoints = [entry["checkpoint"] for entry in manifest["checkpoints"]]
+        first_promotion_index = checkpoints.index("before_promotion")
+        first_issue_index = checkpoints.index("issue_succeeded")
+        self.assertLess(first_promotion_index, first_issue_index)
+        self.assertEqual(operator.issue_runs, 1)
+        self.assertEqual(operator.promotion_runs, 2)
+        self.assertEqual(manifest["status"], "succeeded")
+
+    def test_operator_starts_ready_queue_when_no_integrated_backlog(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE
+            )
+            oldest_ready = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=42,
+                title="Oldest ready work",
+            )
+            newer_ready = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=99,
+                title="Newer ready work",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = ScriptedOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=2,
+                snapshots=[
+                    operator_snapshot(ready=[oldest_ready, newer_ready]),
+                    operator_snapshot(),
+                ],
+            )
+
+            with redirect_stdout(io.StringIO()):
+                operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+
+        checkpoints = [entry["checkpoint"] for entry in manifest["checkpoints"]]
+        succeeded_issues = [
+            entry["issue"]["number"]
+            for entry in manifest["checkpoints"]
+            if entry["checkpoint"] == "issue_succeeded"
+        ]
+        self.assertLess(
+            checkpoints.index("issue_succeeded"),
+            checkpoints.index("queue_clean"),
+        )
+        self.assertNotIn("before_promotion", checkpoints)
+        self.assertEqual(succeeded_issues, [42, 99])
+
+    def test_operator_recovery_guidance_names_integrated_backlog_when_blocked(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            integrated_issue = make_issue(
+                {ralph.AGENT_INTEGRATED_LABEL},
+                IMPLEMENTATION_BODY,
+                number=42,
+                title="Integrated backlog",
+            )
+            failed_issue = make_issue(
+                {ralph.AGENT_FAILED_LABEL},
+                IMPLEMENTATION_BODY,
+                number=77,
+                title="Needs recovery",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = ScriptedOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=2,
+                snapshots=[
+                    operator_snapshot(
+                        integrated=[integrated_issue],
+                        failed=[failed_issue],
+                    )
+                ],
+            )
+
+            with self.assertRaises(ralph.RalphError):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    operator.run()
+
+            status_output = io.StringIO()
+            with redirect_stdout(status_output):
+                ralph.inspect_operator_run_status(str(run_dir), runner)
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+            rollup = json.loads(
+                (run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME).read_text(encoding="utf-8")
+            )
+
+        guidance = manifest["recovery_guidance"]
+        self.assertIn("agent-failed issue(s)", guidance)
+        self.assertIn("#77", guidance)
+        self.assertIn("agent-integrated issue(s)", guidance)
+        self.assertIn("#42", guidance)
+        self.assertIn("#42", status_output.getvalue())
+        self.assertIn("#77", status_output.getvalue())
+        self.assertIn("#42", rollup["stop_reason"]["recovery_guidance"])
+        self.assertIn("#77", rollup["stop_reason"]["recovery_guidance"])
+        self.assertEqual(rollup["final_queue"]["counts"]["integrated"], 1)
+        self.assertEqual(rollup["final_queue"]["counts"]["failed"], 1)
+
     def test_operator_stops_after_ralph_loop_self_update_before_next_claim(
         self,
     ) -> None:
@@ -6769,6 +7622,66 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn(
             "tools/ralph-loop/src/ralph_loop/cli.py",
             manifest["recovery_guidance"],
+        )
+
+    def test_operator_isolates_ralph_loop_self_update_from_exploratory_claims(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                drain=True,
+                delivery_mode=ralph.GITFLOW_MODE,
+                exploratory_concurrency=2,
+            )
+            exploratory_issue = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL},
+                EXPLORATORY_IMPLEMENTATION_BODY,
+                number=172,
+                title="Explore unrelated work",
+            )
+            self_update_issue = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                RALPH_SELF_UPDATE_BODY,
+                number=173,
+                title="Update Ralph loop",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = SelfUpdateGuardOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=3,
+                snapshots=[
+                    operator_snapshot(ready=[exploratory_issue, self_update_issue])
+                ],
+                issues=[exploratory_issue, self_update_issue],
+                changed_files_by_issue={
+                    172: ["README.md"],
+                    173: ["scripts/ralph.py"],
+                },
+            )
+
+            with self.assertRaises(ralph.RalphSelfUpdateRestartRequired):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+
+        checkpoints = [entry["checkpoint"] for entry in manifest["checkpoints"]]
+        self.assertEqual(operator.guard_loop.handled_issue_numbers, [173])
+        self.assertEqual(checkpoints.count("issue_succeeded"), 1)
+        self.assertIn("ralph_self_update_restart_required", checkpoints)
+        self.assertNotIn(
+            172,
+            [
+                child["issue"]["number"]
+                for child in manifest["child_run_manifests"]
+                if isinstance(child.get("issue"), dict)
+            ],
         )
 
     def test_operator_records_parallel_scheduler_issue_checkpoints_before_promotion(
@@ -7264,10 +8177,177 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn(
             "Queue: ready=0, integrated=1, reviewing=0, running=0, failed=0", text
         )
+        self.assertNotIn("Active child:", text)
         self.assertIn(f"- implementation #42 succeeded: {child_manifest_path}", text)
         self.assertIn("Rollup artifacts:", text)
         self.assertIn(str(run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME), text)
         self.assertIn("Recommended next action:", text)
+
+    def test_operator_status_reports_active_issue_child_heartbeat(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            issue = make_issue(
+                {ralph.READY_LABEL},
+                IMPLEMENTATION_BODY,
+                number=250,
+                title="Surface active child run heartbeat",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            child_manifest_path = write_child_manifest(
+                loop.config.log_root,
+                name="issue-250-active-child",
+                run_kind="implementation",
+                status="running",
+                stage="codex_attempt_running",
+                started_at="2026-05-21T00:00:00Z",
+                updated_at="2026-05-21T00:05:00Z",
+                events=[
+                    {
+                        "timestamp": "2026-05-21T00:05:00Z",
+                        "stage": "codex_attempt_running",
+                        "status": "running",
+                    }
+                ],
+                issue=issue,
+            )
+            manifest = ralph.OperatorRunManifest.start(
+                run_dir=run_dir,
+                config=loop.config,
+                max_cycles=3,
+            )
+            manifest.record_cycle(1)
+            manifest.record_queue(operator_snapshot(ready=[issue]))
+            manifest.record_current_issue(issue)
+            manifest.record_active_child_manifest(child_manifest_path)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_operator_run_status(str(run_dir), runner)
+
+            manifest_data = json.loads(
+                (run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text(encoding="utf-8")
+            )
+
+        text = output.getvalue()
+        self.assertNotEqual(
+            (manifest_data.get("last_checkpoint") or {}).get("checkpoint"),
+            "before_promotion",
+        )
+        self.assertIn(
+            "Current: issue #250 Surface active child run heartbeat",
+            text,
+        )
+        self.assertIn("Active child:", text)
+        self.assertIn("Run: implementation running / codex_attempt_running", text)
+        self.assertIn(f"Run directory: {child_manifest_path.parent}", text)
+        self.assertIn(f"Manifest: {child_manifest_path}", text)
+        self.assertIn("Elapsed:", text)
+        self.assertIn(
+            "Last child checkpoint: codex_attempt_running at 2026-05-21T00:05:00Z",
+            text,
+        )
+        self.assertIn("Last child heartbeat: 2026-05-21T00:05:00Z", text)
+        self.assertIn(
+            "Queue: ready=1, integrated=0, reviewing=0, running=0, failed=0",
+            text,
+        )
+        self.assertIn(f"- implementation #250 running: {child_manifest_path}", text)
+        self.assertNotIn("codex-implementation", text)
+
+    def test_operator_status_reports_active_promotion_child_phase(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            child_manifest_path = write_child_manifest(
+                loop.config.log_root,
+                name="promote-active-child",
+                run_kind="promotion",
+                status="running",
+                stage="fetching_branches",
+                started_at="2026-05-21T01:00:00Z",
+                updated_at="2026-05-21T01:04:00Z",
+                events=[
+                    {
+                        "timestamp": "2026-05-21T01:04:00Z",
+                        "stage": "fetching_branches",
+                        "status": "running",
+                    }
+                ],
+                promotion_commit=None,
+            )
+            manifest = ralph.OperatorRunManifest.start(
+                run_dir=run_dir,
+                config=loop.config,
+                max_cycles=3,
+            )
+            manifest.record_current_promotion(
+                source_branch=ralph.DEFAULT_GITFLOW_BRANCH,
+                target_branch=ralph.DEFAULT_TRUNK_BRANCH,
+            )
+            manifest.record_active_child_manifest(child_manifest_path)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_operator_run_status(str(run_dir), runner)
+
+        text = output.getvalue()
+        self.assertIn("Current: Promotion dev -> main", text)
+        self.assertIn("Active child:", text)
+        self.assertIn("Run: promotion running / fetching_branches", text)
+        self.assertIn(f"Run directory: {child_manifest_path.parent}", text)
+        self.assertIn(f"Manifest: {child_manifest_path}", text)
+        self.assertIn(
+            "Last child checkpoint: fetching_branches at 2026-05-21T01:04:00Z",
+            text,
+        )
+        self.assertIn("Last child heartbeat: 2026-05-21T01:04:00Z", text)
+
+    def test_operator_status_reports_stopped_run_without_active_child(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            issue = make_issue(
+                {ralph.READY_LABEL},
+                IMPLEMENTATION_BODY,
+                number=77,
+                title="Still queued",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            manifest = ralph.OperatorRunManifest.start(
+                run_dir=run_dir,
+                config=loop.config,
+                max_cycles=1,
+            )
+            manifest.record_queue(operator_snapshot(ready=[issue]))
+            manifest.clear_current()
+            manifest.record_checkpoint(
+                "stopped_by_guard",
+                message="Reached --max-cycles 1.",
+                status="failed",
+                recovery_guidance="Review progress before raising --max-cycles.",
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_operator_run_status(str(run_dir), runner)
+
+        text = output.getvalue()
+        self.assertIn(
+            "Last checkpoint: stopped_by_guard: Reached --max-cycles 1.",
+            text,
+        )
+        self.assertIn("Current: none", text)
+        self.assertNotIn("Active child:", text)
+        self.assertIn(
+            "Queue: ready=1, integrated=0, reviewing=0, running=0, failed=0",
+            text,
+        )
+        self.assertIn("Review progress before raising --max-cycles.", text)
 
     def test_detached_operator_launch_prints_status_command_without_waiting(
         self,
@@ -8578,6 +9658,140 @@ Build it.
             str(runtime_root / "uv-cache"),
         )
         self.assertEqual(manifest_payload["qa_results"][0]["status"], "passed")
+
+    def test_no_space_qa_command_failure_is_environment_failure(self) -> None:
+        runner = FakeRunner(
+            fail_command_attempts={
+                ("make", "run-prek"): [
+                    (
+                        1,
+                        "OSError: [Errno 28] No space left on device: '/tmp/uv-cache'",
+                    )
+                ]
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            branch, worktree_path, integration_path = loop._branch_and_worktrees(issue)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch=branch,
+                worktree_path=worktree_path,
+                integration_path=integration_path,
+                config=loop.config,
+            )
+
+            with patch.dict(
+                ralph.os.environ,
+                {
+                    "PATH": "/usr/bin",
+                    ralph.QA_RUNTIME_MIN_FREE_BYTES_ENV: "0",
+                    ralph.QA_RUNTIME_MIN_FREE_INODES_ENV: "0",
+                },
+                clear=True,
+            ):
+                with self.assertRaises(ralph.EnvironmentFailure) as caught:
+                    with redirect_stdout(io.StringIO()):
+                        loop._run_qa_commands(
+                            ["scripts/ralph.py"],
+                            loop.config.repo_root,
+                            run_dir,
+                            log_prefix="qa",
+                            subject="#42",
+                            manifest=manifest,
+                        )
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        self.assertEqual(caught.exception.failure_type, "qa_runtime_no_space_left")
+        self.assertIn("No space left on device", str(caught.exception))
+        self.assertIn("Capacity signal", str(caught.exception))
+        self.assertIn("Next action", str(caught.exception))
+        self.assertIn("/tmp/uv-cache", str(caught.exception))
+        self.assertIn(
+            "rerun the Operator command or targeted issue",
+            caught.exception.recovery_guidance or "",
+        )
+        self.assertEqual(manifest_payload["qa_results"][0]["status"], "failed")
+
+    def test_no_space_qa_command_failure_names_operator_cache_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            operator_uv_cache = tmp_path / "operator-uv-cache"
+            runner = FakeRunner(
+                fail_command_attempts={
+                    ("make", "run-prek"): [
+                        (
+                            1,
+                            "OSError: [Errno 28] No space left on device: "
+                            f"'{operator_uv_cache}'",
+                        )
+                    ]
+                }
+            )
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            branch, worktree_path, integration_path = loop._branch_and_worktrees(issue)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch=branch,
+                worktree_path=worktree_path,
+                integration_path=integration_path,
+                config=loop.config,
+            )
+
+            with patch.dict(
+                ralph.os.environ,
+                {
+                    "PATH": "/usr/bin",
+                    "DAGSTER_HOME": str(tmp_path / "operator-dagster"),
+                    "XDG_CACHE_HOME": str(tmp_path / "operator-xdg-cache"),
+                    "UV_CACHE_DIR": str(operator_uv_cache),
+                    ralph.QA_RUNTIME_MIN_FREE_BYTES_ENV: str(sys.maxsize),
+                    ralph.QA_RUNTIME_MIN_FREE_INODES_ENV: str(sys.maxsize),
+                },
+                clear=True,
+            ):
+                with self.assertRaises(ralph.EnvironmentFailure) as caught:
+                    with redirect_stdout(io.StringIO()):
+                        loop._run_qa_commands(
+                            ["scripts/ralph.py"],
+                            loop.config.repo_root,
+                            run_dir,
+                            log_prefix="qa",
+                            subject="#42",
+                            manifest=manifest,
+                        )
+
+        text = str(caught.exception)
+        default_runtime_root = ralph.default_qa_runtime_root("example/repo", run_dir)
+        self.assertEqual(caught.exception.failure_type, "qa_runtime_no_space_left")
+        self.assertIn(str(operator_uv_cache), text)
+        self.assertNotIn(str(default_runtime_root), text)
+        self.assertIn("Capacity signal: free bytes, free inodes", text)
+        self.assertIn("Next action", text)
+        self.assertIn(str(operator_uv_cache), caught.exception.recovery_guidance or "")
+        self.assertIn(
+            "rerun the Operator command or targeted issue",
+            caught.exception.recovery_guidance or "",
+        )
 
     def test_docs_only_aemo_etl_qa_selection_records_manifest_command(self) -> None:
         runner = FakeRunner()
@@ -13981,7 +15195,7 @@ None.
                 "--scenario",
                 "promotion-gas-model",
                 "--timeout-seconds",
-                "1200",
+                "1800",
                 "--max-concurrent-runs",
                 "6",
                 "--seed-root",
@@ -14047,7 +15261,7 @@ None.
                 "--scenario",
                 "promotion-gas-model",
                 "--timeout-seconds",
-                "1200",
+                "1800",
                 "--max-concurrent-runs",
                 "6",
                 "--seed-root",
@@ -14079,7 +15293,7 @@ None.
                 "--scenario",
                 "promotion-gas-model",
                 "--timeout-seconds",
-                "1200",
+                "1800",
                 "--max-concurrent-runs",
                 "6",
                 "--seed-root",

@@ -90,7 +90,11 @@ def _():
 
 @app.cell
 def _(mo):
-    refresh_data_button = mo.ui.run_button(label="Refresh data")
+    refresh_data_button = mo.ui.button(
+        label="Refresh data",
+        value=0,
+        on_click=lambda value: value + 1,
+    )
     mo.hstack([refresh_data_button], justify="start")
     return (refresh_data_button,)
 

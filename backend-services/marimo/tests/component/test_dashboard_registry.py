@@ -83,6 +83,25 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         in schedule_runs.generated_gold_paths
     )
 
+    scheduled_quantities = registry_entry_by_concept_id(
+        "gas-scheduled-quantities",
+        entries,
+    )
+    assert scheduled_quantities is not None
+    assert scheduled_quantities.status is DashboardStatus.AVAILABLE
+    assert scheduled_quantities.notebook_name == "gas_scheduled_quantities"
+    assert scheduled_quantities.notebook_route == "/marimo/gas_scheduled_quantities/"
+    assert scheduled_quantities.backing_assets == (
+        "silver.gas_model.silver_gas_fact_scheduled_quantity",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md"
+        in scheduled_quantities.generated_gold_paths
+    )
+    assert "chunk-gbb-procedures-scheduled-flow" in (
+        scheduled_quantities.source_chunk_ids
+    )
+
     settlement = registry_entry_by_concept_id("settlement-context", entries)
     assert settlement is not None
     assert settlement.status is DashboardStatus.AVAILABLE
@@ -94,6 +113,69 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert (
         "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md"
         in settlement.generated_gold_paths
+    )
+
+    sttm_market_settlement = registry_entry_by_concept_id(
+        "sttm-market-settlement",
+        entries,
+    )
+    assert sttm_market_settlement is not None
+    assert sttm_market_settlement.status is DashboardStatus.AVAILABLE
+    assert sttm_market_settlement.notebook_name == "gas_sttm_market_settlement"
+    assert (
+        sttm_market_settlement.notebook_route == "/marimo/gas_sttm_market_settlement/"
+    )
+    assert sttm_market_settlement.backing_assets == (
+        "silver.gas_model.silver_gas_fact_sttm_market_settlement",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md"
+        in sttm_market_settlement.generated_gold_paths
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md"
+        in sttm_market_settlement.generated_gold_paths
+    )
+    assert sttm_market_settlement.source_chunk_ids == (
+        "chunk-gbb-guide-gas-day",
+        "chunk-gbb-guide-nodes-facilities",
+        "chunk-sttm-procedures-definitions",
+        "chunk-sttm-procedures-settlement-terms",
+        "chunk-sttm-procedures-settlement-amounts",
+        "chunk-sttm-procedures-shortfall-settlement",
+        "chunk-sttm-procedures-capacity-settlement",
+    )
+
+    sttm_capacity_settlement = registry_entry_by_concept_id(
+        "sttm-capacity-settlement",
+        entries,
+    )
+    assert sttm_capacity_settlement is not None
+    assert sttm_capacity_settlement.status is DashboardStatus.AVAILABLE
+    assert sttm_capacity_settlement.notebook_name == "gas_sttm_capacity_settlement"
+    assert (
+        sttm_capacity_settlement.notebook_route
+        == "/marimo/gas_sttm_capacity_settlement/"
+    )
+    assert sttm_capacity_settlement.backing_assets == (
+        "silver.gas_model.silver_gas_fact_sttm_capacity_settlement",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md"
+        in sttm_capacity_settlement.generated_gold_paths
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/mos.md"
+        in sttm_capacity_settlement.generated_gold_paths
+    )
+    assert sttm_capacity_settlement.source_chunk_ids == (
+        "chunk-gbb-guide-gas-day",
+        "chunk-gbb-guide-nodes-facilities",
+        "chunk-sttm-procedures-definitions",
+        "chunk-sttm-procedures-settlement-terms",
+        "chunk-sttm-procedures-mos-estimates",
+        "chunk-sttm-procedures-mos-settlement",
+        "chunk-sttm-procedures-capacity-settlement",
     )
 
     readiness = registry_entry_by_concept_id("data-readiness-overview", entries)
@@ -237,6 +319,23 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         in facility_flow_storage.source_chunk_ids
     )
 
+    forecast_actual = registry_entry_by_concept_id("forecast-vs-actual", entries)
+    assert forecast_actual is not None
+    assert forecast_actual.status is DashboardStatus.AVAILABLE
+    assert forecast_actual.notebook_name == "forecast_vs_actual"
+    assert forecast_actual.notebook_route == "/marimo/forecast_vs_actual/"
+    assert forecast_actual.backing_assets == (
+        "silver.gas_model.silver_gas_fact_nomination_forecast",
+        "silver.gas_model.silver_gas_fact_facility_flow_storage",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md"
+        in forecast_actual.generated_gold_paths
+    )
+    assert "chunk-gbb-procedures-daily-flow-storage" in (
+        forecast_actual.source_chunk_ids
+    )
+
     customer_transfer = registry_entry_by_concept_id(
         "gas-customer-transfer-activity",
         entries,
@@ -255,6 +354,22 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert bid_stack.notebook_name == "gas_bid_offer_stack"
     assert bid_stack.notebook_route == "/marimo/gas_bid_offer_stack/"
     assert bid_stack.backing_assets == ("silver.gas_model.silver_gas_fact_bid_stack",)
+
+    contingency_gas = registry_entry_by_concept_id("sttm-contingency-gas", entries)
+    assert contingency_gas is not None
+    assert contingency_gas.status is DashboardStatus.AVAILABLE
+    assert contingency_gas.notebook_name == "gas_sttm_contingency_gas"
+    assert contingency_gas.notebook_route == "/marimo/gas_sttm_contingency_gas/"
+    assert contingency_gas.backing_assets == (
+        "silver.gas_model.silver_gas_fact_sttm_contingency_gas_call",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/bid-offer.md"
+        in contingency_gas.generated_gold_paths
+    )
+    assert contingency_gas.source_chunk_ids == (
+        "chunk-sttm-procedures-contingency-gas-bids",
+    )
 
     participant = registry_entry_by_concept_id("participant-context", entries)
     assert participant is not None
@@ -328,6 +443,54 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert connection_point.source_chunk_ids == (
         "chunk-gbb-guide-connection-point-identifiers",
         "chunk-gbb-guide-flow-report",
+    )
+
+    pipeline_connection = registry_entry_by_concept_id(
+        "pipeline-connection-operations",
+        entries,
+    )
+    assert pipeline_connection is not None
+    assert pipeline_connection.status is DashboardStatus.AVAILABLE
+    assert pipeline_connection.notebook_name == "pipeline_connection_operations"
+    assert pipeline_connection.notebook_route == (
+        "/marimo/pipeline_connection_operations/"
+    )
+    assert pipeline_connection.backing_assets == (
+        "silver.gas_model.silver_gas_dim_connection_point",
+        "silver.gas_model.silver_gas_dim_facility",
+        "silver.gas_model.silver_gas_dim_pipeline_segment",
+        "silver.gas_model.silver_gas_dim_zone",
+        "silver.gas_model.silver_gas_fact_connection_point_flow",
+        "silver.gas_model.silver_gas_fact_operational_meter_flow",
+        "silver.gas_model.silver_gas_fact_capacity_outlook",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md"
+        in pipeline_connection.generated_gold_paths
+    )
+    assert (
+        "chunk-gbb-guide-connection-point-identifiers"
+        in pipeline_connection.source_chunk_ids
+    )
+
+    meter_flow = registry_entry_by_concept_id("operational-meter-flow", entries)
+    assert meter_flow is not None
+    assert meter_flow.status is DashboardStatus.AVAILABLE
+    assert meter_flow.notebook_name == "operational_meter_flow"
+    assert meter_flow.notebook_route == "/marimo/operational_meter_flow/"
+    assert meter_flow.backing_assets == (
+        "silver.gas_model.silver_gas_fact_operational_meter_flow",
+        "silver.gas_model.silver_gas_dim_operational_point",
+        "silver.gas_model.silver_gas_dim_zone",
+        "silver.gas_model.silver_gas_dim_pipeline_segment",
+    )
+    assert meter_flow.generated_gold_paths == (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
+    )
+    assert meter_flow.source_chunk_ids == (
+        "chunk-gbb-guide-flow-report",
+        "chunk-gbb-procedures-scheduled-flow",
+        "chunk-sttm-procedures-settlement-terms",
     )
 
     flow = registry_entry_by_concept_id("flow-context", entries)

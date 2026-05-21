@@ -249,8 +249,8 @@ way:
   guidance in [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
 - #111: Ralph provides a checkpointed Operator run for repeated drain and
   **Promotion** cycles. The Codex-safe detached launch, compact
-  `--operator-run-status` inspection, child manifest links, checkpoint names,
-  cycle guard, and recovery guidance live in
+  `--operator-run-status` inspection, active child run heartbeat, child
+  manifest links, checkpoint names, cycle guard, and recovery guidance live in
   [OPERATOR.md](../../OPERATOR.md) and
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
 - #115: Completed or stopped checkpointed Operator runs write

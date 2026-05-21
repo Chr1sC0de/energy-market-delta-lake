@@ -54,6 +54,14 @@ def build_parser() -> argparse.ArgumentParser:
     _add_seed_root_argument(refresh_parser)
     _add_archive_bucket_argument(refresh_parser)
     _add_latest_count_arguments(refresh_parser)
+    refresh_parser.add_argument(
+        "--allow-empty-source-table-seed",
+        action="store_true",
+        help=(
+            "write zero-byte placeholders for source-table archive shortfalls; "
+            "zip-domain shortfalls still fail"
+        ),
+    )
     refresh_parser.set_defaults(handler=_run_refresh)
 
     load_parser = subparsers.add_parser(
@@ -154,6 +162,7 @@ def _run_refresh(args: argparse.Namespace) -> None:
         archive_bucket=args.archive_bucket,
         raw_latest_count=args.raw_latest_count,
         zip_latest_count=args.zip_latest_count,
+        allow_empty_source_table_seed=args.allow_empty_source_table_seed,
     )
     _emit_json(manifest.as_dict())
 

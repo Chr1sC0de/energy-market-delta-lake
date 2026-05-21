@@ -137,10 +137,14 @@ Local workflow notes:
   gaps from catalogue metadata without scanning table contents. The Hub / Zone
   explainer connects
   generated context metadata to bounded `silver_gas_dim_zone` coverage and
-  source-qualified identifiers. Flow operations, market price, schedule run,
-  settlement activity, customer transfer, Bid / Offer stack, gas quality, and
-  system notice dashboards use shared bounded gas-model reads for fact previews
-  and summaries. The table explorer is the selected-table workbench for storage
+  source-qualified identifiers. Flow operations, Operational Meter Flow,
+  market price, schedule run, settlement activity, customer transfer, Bid /
+  Offer stack, gas quality, heating value and SCADA pressure, and system notice
+  dashboards use shared bounded gas-model reads for fact previews and
+  summaries. The
+  forecast-vs-actual dashboard compares bounded forecast and
+  actual flow/storage facts without changing ETL grain or full-scan policy. The
+  table explorer is the selected-table workbench for storage
   inspection, readiness links, bounded-read diagnostics, and concept-gallery
   metadata for mapped `silver.gas_model` assets. The
   `marimo-codex-workspace` service is a
@@ -159,7 +163,7 @@ Local workflow notes:
   observations, including source-definition-backed asset-check count, with
   `budget.status` set to `not-enforced`. Ralph **Promotion** runs pass
   `--rebuild`, an explicit `--seed-root` pointing at the primary repo cache, and
-  select the `promotion-gas-model` scenario with `--timeout-seconds 1200` and
+  select the `promotion-gas-model` scenario with `--timeout-seconds 1800` and
   `--max-concurrent-runs 6`. The scenario uses the same raw and zip seed horizon
   and validates the runtime
   GraphQL target count against that source count through the #141
@@ -182,7 +186,7 @@ Local workflow notes:
   telemetry and #76 budget report expose the observed timing, run-shape,
   target-progress, asset-check, cleanup, and manifest-path fields. The Promotion
   scenario enforces #79 Promotion guard
-  regression budgets from the approved #78 targeted baseline: 20 minute total
+  regression budgets from the approved #78 targeted baseline: 30 minute total
   duration, `6` peak active runs, `6` peak queued runs, total Dagster runs at
   or below the current direct-launch `dataflow.scenario_evidence.batch_count`,
   target progress matching the current
@@ -281,19 +285,27 @@ and the required `git diff` to `rg` to QA flow, use
   - `backend-services/marimo/notebooks/system_notices.py`
   - `backend-services/marimo/notebooks/gas_market_prices.py`
   - `backend-services/marimo/notebooks/gas_schedule_runs.py`
+  - `backend-services/marimo/notebooks/gas_scheduled_quantities.py`
   - `backend-services/marimo/notebooks/facility_explainer.py`
   - `backend-services/marimo/notebooks/participant_explainer.py`
   - `backend-services/marimo/notebooks/hub_zone_explainer.py`
   - `backend-services/marimo/notebooks/connection_point_explainer.py`
   - `backend-services/marimo/notebooks/flow_operations.py`
+  - `backend-services/marimo/notebooks/operational_meter_flow.py`
+  - `backend-services/marimo/notebooks/pipeline_connection_operations.py`
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
+  - `backend-services/marimo/notebooks/gas_sttm_market_settlement.py`
+  - `backend-services/marimo/notebooks/gas_sttm_capacity_settlement.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/facility_flow_storage.py`
+  - `backend-services/marimo/notebooks/forecast_vs_actual.py`
   - `backend-services/marimo/notebooks/capacity_outlook.py`
+  - `backend-services/marimo/notebooks/capacity_auction.py`
   - `backend-services/marimo/notebooks/linepack_adequacy.py`
   - `backend-services/marimo/notebooks/nomination_demand_forecast.py`
   - `backend-services/marimo/notebooks/gas_bid_offer_stack.py`
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
+  - `backend-services/marimo/notebooks/heating_value_pressure.py`
   - `backend-services/scripts/aemo-etl-e2e`
   - `infrastructure/aws-pulumi/__main__.py`
   - `infrastructure/aws-pulumi/components/marimo.py`

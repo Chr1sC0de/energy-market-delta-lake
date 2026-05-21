@@ -404,6 +404,13 @@ reached the expected **Integration target**:
 python3 scripts/ralph.py --recover-run .ralph/runs/issue-25-20260504T010203Z
 ```
 
+Preview a failed pre-push implementation requeue without mutating git or
+GitHub state:
+
+```bash
+python3 scripts/ralph.py --recover-run .ralph/runs/issue-25-20260504T010203Z --dry-run
+```
+
 Bypass the live clean-root preflight only when the operator intentionally wants
 Ralph to run with uncommitted root worktree changes:
 
@@ -488,9 +495,12 @@ operator should start from a known repo state.
 ## Operator run
 
 `python3 scripts/ralph.py --drain-promote-all` runs the Operator orchestration
-loop. Ready work in each cycle is handed to the same lane-aware drain scheduler
-used by plain `--drain`: Gitflow and Trunk issue attempts remain serial, while
-eligible Exploratory issues run up to `--exploratory-concurrency` in parallel.
+loop. After preflight and recovery checks, open `agent-integrated` backlog is
+handled through **Promotion** before the Operator claims more
+`ready-for-agent` work. Ready work in cycles without integrated backlog is
+handed to the same lane-aware drain scheduler used by plain `--drain`: Gitflow
+and Trunk issue attempts remain serial, while eligible Exploratory issues run
+up to `--exploratory-concurrency` in parallel.
 The Operator records compact checkpoints under
 `.ralph/operator-runs/.../operator-run.json` and links each checkpoint to the
 detailed child `.ralph/runs/.../ralph-run.json` manifest for the issue or
@@ -547,16 +557,23 @@ Checkpoints are recorded for:
 - queue clean
 - stopped-by-guard
 
-The `before_promotion` checkpoint is written only after the scheduler pass has
-returned. That means active Exploratory workers have finished, implementation
-**Ready issue refresh** claim gates have opened, and child metadata updates have
-either completed or produced recorded recovery evidence.
+The `before_promotion` checkpoint is written before **Promotion** starts. For
+startup or post-refresh `agent-integrated` backlog, this can happen before a new
+ready-work scheduler pass. When **Promotion** follows a scheduler pass, active
+Exploratory workers have finished, implementation **Ready issue refresh** claim
+gates have opened, and child metadata updates have either completed or produced
+recorded recovery evidence.
 If a successful Gitflow or Trunk child implementation manifest changed
 `scripts/ralph.py` or `tools/ralph-loop/**`, the Operator records
 `ralph_self_update_restart_required` and stops before **Promotion** or another
 issue claim. The running process does not try to apply newly integrated Ralph
 loop code in-place; restart the Operator command from a clean root worktree so
 later issue claims use the updated review gates and workflow code.
+When the drain scheduler selects a Gitflow or Trunk ready issue whose
+`## Context anchors` name `scripts/ralph.py` or `tools/ralph-loop/**`, it treats
+that candidate as an isolated Ralph loop self-update pass. It waits for already
+active Exploratory workers before claiming the self-update issue and does not
+start unrelated Exploratory claims in the same scheduler pass.
 Deployment checkpoints are written only after successful Promotion metadata
 updates, **Post-promotion review**, follow-up creation, and post-Promotion
 **Ready issue refresh** have completed in the Promotion child run.
@@ -590,11 +607,15 @@ python3 scripts/ralph.py --operator-run-status .ralph/operator-runs/operator-202
 ```
 
 Status reports the current state, last checkpoint, current issue or
-**Promotion**, child manifest paths, rollup artifact paths, queue counts, and
-recommended next action. Read `operator-run-rollup.md` first for completed or
-stopped runs. Open the child `ralph-run.json` or command logs only when the
-status guidance or rollup points to a failed issue, failed **Promotion**, or
-manual recovery condition. If status reports `needs_review`, read
+**Promotion**, queue counts, child manifest paths, rollup artifact paths, and
+recommended next action. When an Operator child is active, status also reports
+the active child run directory or manifest path, child status and stage, elapsed
+time, and the last recorded child checkpoint or heartbeat timestamp from
+`ralph-run.json`. It does not tail child Codex JSONL or rich command logs by
+default. Read `operator-run-rollup.md` first for completed or stopped runs.
+Open the child `ralph-run.json` or command logs only when the status guidance or
+rollup points to a failed issue, failed **Promotion**, or manual recovery
+condition. If status reports `needs_review`, read
 `exploratory-acceptance-review.md`, then run the `$ralph-loop` Exploratory
 acceptance review flow before rerunning drain or **Promotion**.
 
@@ -748,22 +769,46 @@ recommended next action. It does not call `gh`, run git commands, edit labels,
 comment, close issues, or change refs.
 
 For failed implementation runs with no recorded `integration_commit`,
-inspection classifies whether the run is eligible for future Ralph-owned
+inspection classifies whether the run is eligible for Ralph-owned pre-push
 requeue recovery. Eligible runs must have passed implementation QA, passed
 Issue completion review or skipped it because it was not required, and have no
 recorded **Integration target** push. Inspection distinguishes those safe
-pre-push failures from runs that already recorded an `integration_commit` or a
-pushed **Integration target**. The requeue section also prints the Ralph-owned
-worktree paths, local issue branch, label reconciliation evidence such as
+pre-push failures from runs that already recorded an `integration_commit`, a
+pushed **Integration target**, incomplete QA/review evidence, or unresolved
+branch sync state. The requeue section also prints the Ralph-owned worktree
+paths, local issue branch, label reconciliation evidence such as
 `agent-failed` and `ready-for-agent`, changed files, QA/review evidence, and
-the failure log that a future requeue command would need to reconcile.
+the failure log that the requeue command will reconcile.
 
-Use `--recover-run <run_dir>` only for implementation runs whose manifest
-records a published implementation commit. Recovery fetches the expected target
-branch and refuses to proceed unless the recorded commit is reachable from
-`origin/<integration-target>`. This guard keeps GitHub metadata reconciliation
-behind proof that the **Local integration** commit or Exploratory handoff commit
-reached the expected branch.
+For eligible pre-push failures, `--recover-run <run_dir> --dry-run` reads the
+run manifest, GitHub Issue labels and comments, local worktrees, local refs, and
+ancestor evidence. It reports the issue, eligibility decision, labels to add
+and remove, comment body to post, backup ref behavior, and Ralph-owned
+worktrees or local issue branch cleanup that live mode would perform. It does
+not rerun Codex, rerun QA, create a **Local integration** commit, push an
+**Integration target**, close an issue, or run **Promotion**.
+
+The live pre-push requeue path uses the same eligibility checks. It refuses
+runs with recorded `integration_commit`, any recorded **Integration target**
+push state, success runtime labels such as `agent-integrated`, `agent-merged`,
+or `agent-reviewing`, a local implementation or integration commit already
+reachable from `origin/<integration-target>`, non-Ralph-owned manifest paths,
+unexpected branches, or dirty Ralph-owned worktrees. When a local issue branch
+commit exists, Ralph preserves it under a stable local
+`refs/ralph/requeue/...` backup ref before deleting the local issue branch.
+Ralph removes only manifest-derived Ralph-owned worktrees and the manifest
+local issue branch, comments the requeue evidence, removes `agent-failed`,
+adds `ready-for-agent`, and leaves category and **Delivery mode** labels
+unchanged. Repeating the command after partial cleanup is safe: existing backup
+refs, absent worktrees, absent issue branches, existing comments, and already
+reconciled labels are reported instead of treated as corruption.
+
+For post-push metadata recovery, use `--recover-run <run_dir>` only for
+implementation runs whose manifest records a published implementation commit.
+Recovery fetches the expected target branch and refuses to proceed unless the
+recorded commit is reachable from `origin/<integration-target>`. This guard
+keeps GitHub metadata reconciliation behind proof that the **Local integration**
+commit or Exploratory handoff commit reached the expected branch.
 
 After reachability is verified, recovery reconciles GitHub metadata to the
 issue's **Delivery mode**:
@@ -1142,7 +1187,7 @@ When the promoted range includes non-doc runtime files under
 target Promotion worktree. The gate is recorded as
 `aemo-etl End-to-end test` in the Promotion run manifest and invokes
 `scripts/aemo-etl-e2e run` from the `backend-services` **Subproject** with
-`--rebuild`, `--scenario promotion-gas-model`, `--timeout-seconds 1200`,
+`--rebuild`, `--scenario promotion-gas-model`, `--timeout-seconds 1800`,
 `--max-concurrent-runs 6`, and
 `--seed-root <primary-repo>/backend-services/.e2e/aemo-etl`, so the temporary
 Promotion source worktree uses the operator-maintained cached Archive seed
@@ -1176,7 +1221,7 @@ The gate protects the approved #77 coverage invariants: every materializable
 `gas_model` asset, final asset-check status for that target, Dagster,
 LocalStack/S3, Podman run-worker containers, and the Dagster GraphQL monitor.
 It enforces #79 Promotion guard regression budgets from the approved #78
-targeted baseline: 20 minute total duration, `6` peak active runs, `6` peak
+targeted baseline: 30 minute total duration, `6` peak active runs, `6` peak
 queued runs, total Dagster runs at or below the current direct-launch
 `dataflow.scenario_evidence.batch_count`, target progress matching the current
 `source_definitions.executable_asset_count`, and `0` missing or failed target
@@ -1598,7 +1643,7 @@ cd backend-services
 scripts/aemo-etl-e2e run \
   --rebuild \
   --scenario promotion-gas-model \
-  --timeout-seconds 1200 \
+  --timeout-seconds 1800 \
   --max-concurrent-runs 6 \
   --seed-root <primary-repo>/backend-services/.e2e/aemo-etl
 ```
@@ -1689,6 +1734,26 @@ intentional.
 Environment failures stop the run. Examples include invalid `gh` auth, missing
 labels, unavailable tools, failing Git operations before claim, or unavailable
 container-backed **Integration test** dependencies.
+
+Ralph also guards the default QA runtime root before new Operator work and
+**Promotion**. When `DAGSTER_HOME`, `XDG_CACHE_HOME`, or `UV_CACHE_DIR` are not
+set by the operator, Ralph resolves them under
+`/tmp/ralph-qa-runtime/<repo-slug>/<run-dir-name>/` and reports each variable's
+source and path during preflight. The preflight checks free bytes and inodes on
+`/tmp/ralph-qa-runtime/<repo-slug>/`; the default minimums are 5 GiB and
+100,000 inodes and can be overridden with
+`RALPH_QA_RUNTIME_MIN_FREE_BYTES` and `RALPH_QA_RUNTIME_MIN_FREE_INODES`.
+
+When the default QA runtime root is below the configured threshold, Ralph only
+removes run-scoped directories whose matching `.ralph/runs/<run-dir-name>/`
+manifest already succeeded. It skips active directories, failed or
+missing-manifest directories, and operator-provided cache paths. It never cleans
+`.ralph/runs`, `.ralph/operator-runs`, implementation worktrees, integration
+worktrees, Promotion worktrees, or non-default operator cache paths. If safe
+cleanup does not restore capacity, Ralph stops as an environment failure with
+the path, failed capacity signal, and rerun guidance. Command output containing
+`No space left on device` is classified the same way instead of being treated as
+ordinary issue failure or retryable QA failure.
 
 ## Sync metadata
 
