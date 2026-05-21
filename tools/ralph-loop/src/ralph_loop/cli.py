@@ -1319,6 +1319,7 @@ class RalphLoop:
         ],
     ) -> None:
         message_emitted = False
+        completed_while_gate_active: list[RunManifest] = []
         while self._ready_issue_refresh_claim_gate.snapshot().claims_paused:
             if not message_emitted:
                 snapshot = self._ready_issue_refresh_claim_gate.snapshot()
@@ -1337,6 +1338,7 @@ class RalphLoop:
             fatal_error = self._collect_exploratory_results(
                 active_exploratory,
                 wait_for_one=False,
+                completed_manifests=completed_while_gate_active,
             )
             if fatal_error is not None:
                 self._raise_after_exploratory_workers_finish(
@@ -1372,6 +1374,7 @@ class RalphLoop:
         *,
         wait_for_one: bool,
         fatal_stop_error: RalphError | None = None,
+        completed_manifests: list[RunManifest] | None = None,
     ) -> RalphError | None:
         if not active_exploratory:
             return None
@@ -1384,7 +1387,7 @@ class RalphLoop:
             )
 
         first_fatal_error: RalphError | None = None
-        completed_manifests: list[RunManifest] = []
+        current_completed_manifests: list[RunManifest] = []
         for future in done_futures:
             candidate = active_exploratory.pop(future)
             try:
@@ -1399,7 +1402,7 @@ class RalphLoop:
                         active_issue_numbers=active_issue_numbers,
                     )
                 elif manifest is not None:
-                    completed_manifests.append(manifest)
+                    current_completed_manifests.append(manifest)
             except EnvironmentFailure as error:
                 if first_fatal_error is None:
                     first_fatal_error = error
@@ -1412,12 +1415,20 @@ class RalphLoop:
             active_issue_numbers = [
                 item.issue.number for item in active_exploratory.values()
             ]
-            for manifest in completed_manifests:
+            observed_manifests = [
+                *(completed_manifests or []),
+                *current_completed_manifests,
+            ]
+            for manifest in observed_manifests:
                 manifest.record_drain_scheduler_fatal_stop(
                     "observed",
                     error=first_fatal_error,
                     active_issue_numbers=active_issue_numbers,
                 )
+            if completed_manifests is not None:
+                completed_manifests.clear()
+        elif completed_manifests is not None:
+            completed_manifests.extend(current_completed_manifests)
         return first_fatal_error
 
     def _wait_for_exploratory_workers(

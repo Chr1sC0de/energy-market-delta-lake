@@ -215,6 +215,105 @@ const nodes: ArchitectureNode[] = ([
   handles: nodeHandles,
 }));
 
+const mobileNodes: ArchitectureNode[] = ([
+  {
+    id: "aemo",
+    type: "architecture",
+    position: { x: 20, y: 20 },
+    width: nodeWidth,
+    height: nodeHeight,
+    data: {
+      label: "AEMO files",
+      detail: "Market source inputs",
+      meta: "source",
+      tone: "green",
+    },
+  },
+  {
+    id: "dagster-assets",
+    type: "architecture",
+    position: { x: 214, y: 20 },
+    width: nodeWidth,
+    height: nodeHeight,
+    data: {
+      label: "Dagster assets",
+      detail: "Orchestrated ETL",
+      meta: "runtime",
+      tone: "slate",
+    },
+  },
+  {
+    id: "delta",
+    type: "architecture",
+    position: { x: 214, y: 118 },
+    width: nodeWidth,
+    height: nodeHeight,
+    data: {
+      label: "Delta lake",
+      detail: "Curated tables",
+      meta: "storage",
+      tone: "green",
+    },
+  },
+  {
+    id: "caddy",
+    type: "architecture",
+    position: { x: 20, y: 167 },
+    width: nodeWidth,
+    height: nodeHeight,
+    data: {
+      label: "Caddy edge",
+      detail: "Public entrypoint",
+      meta: "access",
+      tone: "blue",
+    },
+  },
+  {
+    id: "dagster-ui",
+    type: "architecture",
+    position: { x: 214, y: 216 },
+    width: nodeWidth,
+    height: nodeHeight,
+    data: {
+      label: "Dagster UI",
+      detail: "Guest and admin",
+      meta: "service",
+      tone: "blue",
+    },
+  },
+  {
+    id: "marimo",
+    type: "architecture",
+    position: { x: 214, y: 314 },
+    width: nodeWidth,
+    height: nodeHeight,
+    data: {
+      label: "Marimo",
+      detail: "Protected notebooks",
+      meta: "service",
+      tone: "green",
+    },
+  },
+  {
+    id: "delivery",
+    type: "architecture",
+    position: { x: 20, y: 314 },
+    width: nodeWidth,
+    height: nodeHeight,
+    data: {
+      label: "AI delivery system",
+      detail: "Checked changes",
+      meta: "automation",
+      tone: "slate",
+    },
+  },
+] as ArchitectureNode[]).map((node) => ({
+  ...node,
+  initialWidth: nodeWidth,
+  initialHeight: nodeHeight,
+  handles: nodeHandles,
+}));
+
 function withEdgeStyle(edges: Edge[]) {
   return edges.map((edge) => ({
     ...edge,
@@ -271,6 +370,49 @@ const edges: Edge[] = withEdgeStyle([
     sourceHandle: "source-left",
     target: "dagster-assets",
     targetHandle: "target-right",
+    type: "smoothstep",
+  },
+]);
+
+const mobileEdges: Edge[] = withEdgeStyle([
+  {
+    id: "aemo-dagster-mobile",
+    source: "aemo",
+    sourceHandle: "source-right",
+    target: "dagster-assets",
+    targetHandle: "target-left",
+    type: "smoothstep",
+  },
+  {
+    id: "dagster-delta-mobile",
+    source: "dagster-assets",
+    sourceHandle: "source-bottom",
+    target: "delta",
+    targetHandle: "target-top",
+    type: "smoothstep",
+  },
+  {
+    id: "caddy-dagster-mobile",
+    source: "caddy",
+    sourceHandle: "source-right",
+    target: "dagster-ui",
+    targetHandle: "target-left",
+    type: "smoothstep",
+  },
+  {
+    id: "caddy-marimo-mobile",
+    source: "caddy",
+    sourceHandle: "source-right",
+    target: "marimo",
+    targetHandle: "target-left",
+    type: "smoothstep",
+  },
+  {
+    id: "delivery-dagster-mobile",
+    source: "delivery",
+    sourceHandle: "source-right",
+    target: "dagster-assets",
+    targetHandle: "target-left",
     type: "smoothstep",
   },
 ]);
@@ -944,6 +1086,10 @@ function useArchitectureLayout() {
 
 export default function HeroArchitectureFlow() {
   const layoutName = useArchitectureLayout();
+  const previewNodes = layoutName === "mobile" ? mobileNodes : nodes;
+  const previewEdges = layoutName === "mobile" ? mobileEdges : edges;
+  const previewFitViewPadding = layoutName === "mobile" ? 0.06 : 0.12;
+  const previewMinZoom = layoutName === "mobile" ? 0.48 : layoutName === "tablet" ? 0.64 : 0.8;
   const [isDetailActive, setIsDetailActive] = useState(false);
   const [isDetailClosing, setIsDetailClosing] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -1041,12 +1187,12 @@ export default function HeroArchitectureFlow() {
         </div>
         <div className="architecture-flow">
           <ReactFlow
-            nodes={nodes}
-            edges={edges}
+            nodes={previewNodes}
+            edges={previewEdges}
             nodeTypes={nodeTypes}
             fitView
-            fitViewOptions={{ padding: 0.12 }}
-            minZoom={0.8}
+            fitViewOptions={{ padding: previewFitViewPadding }}
+            minZoom={previewMinZoom}
             maxZoom={1.2}
             nodesDraggable={false}
             nodesConnectable={false}
