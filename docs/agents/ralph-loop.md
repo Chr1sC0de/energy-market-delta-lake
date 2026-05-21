@@ -495,9 +495,12 @@ operator should start from a known repo state.
 ## Operator run
 
 `python3 scripts/ralph.py --drain-promote-all` runs the Operator orchestration
-loop. Ready work in each cycle is handed to the same lane-aware drain scheduler
-used by plain `--drain`: Gitflow and Trunk issue attempts remain serial, while
-eligible Exploratory issues run up to `--exploratory-concurrency` in parallel.
+loop. After preflight and recovery checks, open `agent-integrated` backlog is
+handled through **Promotion** before the Operator claims more
+`ready-for-agent` work. Ready work in cycles without integrated backlog is
+handed to the same lane-aware drain scheduler used by plain `--drain`: Gitflow
+and Trunk issue attempts remain serial, while eligible Exploratory issues run
+up to `--exploratory-concurrency` in parallel.
 The Operator records compact checkpoints under
 `.ralph/operator-runs/.../operator-run.json` and links each checkpoint to the
 detailed child `.ralph/runs/.../ralph-run.json` manifest for the issue or
@@ -554,16 +557,23 @@ Checkpoints are recorded for:
 - queue clean
 - stopped-by-guard
 
-The `before_promotion` checkpoint is written only after the scheduler pass has
-returned. That means active Exploratory workers have finished, implementation
-**Ready issue refresh** claim gates have opened, and child metadata updates have
-either completed or produced recorded recovery evidence.
+The `before_promotion` checkpoint is written before **Promotion** starts. For
+startup or post-refresh `agent-integrated` backlog, this can happen before a new
+ready-work scheduler pass. When **Promotion** follows a scheduler pass, active
+Exploratory workers have finished, implementation **Ready issue refresh** claim
+gates have opened, and child metadata updates have either completed or produced
+recorded recovery evidence.
 If a successful Gitflow or Trunk child implementation manifest changed
 `scripts/ralph.py` or `tools/ralph-loop/**`, the Operator records
 `ralph_self_update_restart_required` and stops before **Promotion** or another
 issue claim. The running process does not try to apply newly integrated Ralph
 loop code in-place; restart the Operator command from a clean root worktree so
 later issue claims use the updated review gates and workflow code.
+When the drain scheduler selects a Gitflow or Trunk ready issue whose
+`## Context anchors` name `scripts/ralph.py` or `tools/ralph-loop/**`, it treats
+that candidate as an isolated Ralph loop self-update pass. It waits for already
+active Exploratory workers before claiming the self-update issue and does not
+start unrelated Exploratory claims in the same scheduler pass.
 Deployment checkpoints are written only after successful Promotion metadata
 updates, **Post-promotion review**, follow-up creation, and post-Promotion
 **Ready issue refresh** have completed in the Promotion child run.

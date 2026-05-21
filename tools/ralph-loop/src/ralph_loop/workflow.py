@@ -1922,6 +1922,23 @@ def context_anchor_targets_agent_workflow(anchor: ContextAnchorPath) -> bool:
     )
 
 
+def context_anchor_targets_ralph_loop_self_update(
+    anchor: ContextAnchorPath,
+) -> bool:
+    return (
+        anchor.path == RALPH_SCRIPT_PATH
+        or anchor.path == RALPH_LOOP_PREFIX.rstrip("/")
+        or anchor.path.startswith(RALPH_LOOP_PREFIX)
+    )
+
+
+def issue_declares_ralph_loop_self_update(issue: Issue) -> bool:
+    return any(
+        context_anchor_targets_ralph_loop_self_update(anchor)
+        for anchor in context_anchor_paths(issue.body)
+    )
+
+
 def issue_implementation_access_plan(issue: Issue) -> ImplementationAccessPlan:
     anchors = context_anchor_paths(issue.body)
     return ImplementationAccessPlan(

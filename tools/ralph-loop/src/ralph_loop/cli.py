@@ -1221,6 +1221,11 @@ class RalphLoop:
                     serial_candidate is not None
                     and issue_requests_operator_smoke(serial_candidate.issue)
                 )
+                serial_candidate_requires_self_update_isolation = (
+                    serial_candidate is not None
+                    and serial_candidate.delivery_plan.mode != EXPLORATORY_MODE
+                    and issue_declares_ralph_loop_self_update(serial_candidate.issue)
+                )
                 if serial_candidate is not None:
                     if (
                         serial_candidate_requires_exclusive_worker
@@ -1237,11 +1242,39 @@ class RalphLoop:
                         if fatal_error is not None:
                             raise fatal_error
                         continue
+                    if (
+                        serial_candidate_requires_self_update_isolation
+                        and active_exploratory
+                    ):
+                        emit(
+                            "Ralph loop self-update candidate "
+                            f"#{serial_candidate.issue.number} is waiting for "
+                            "active Exploratory worker(s) to finish before claim."
+                        )
+                        fatal_error = self._wait_for_exploratory_workers(
+                            active_exploratory
+                        )
+                        if fatal_error is not None:
+                            raise fatal_error
+                        continue
                     reserved_serial_candidate = serial_candidate
                     attempts_started += 1
                     made_progress = True
 
-                if not serial_candidate_requires_exclusive_worker:
+                if (
+                    serial_candidate_requires_self_update_isolation
+                    and exploratory_candidates
+                ):
+                    emit(
+                        "Ralph loop self-update candidate "
+                        f"#{serial_candidate.issue.number} is running isolated "
+                        "before unrelated ready work."
+                    )
+
+                if not (
+                    serial_candidate_requires_exclusive_worker
+                    or serial_candidate_requires_self_update_isolation
+                ):
                     for candidate in exploratory_candidates:
                         if (
                             len(active_exploratory)
@@ -7102,6 +7135,9 @@ class RalphOperatorRun:
                 if active_deploy_repair_step:
                     continue
                 return
+            if snapshot.integrated:
+                self._run_promotion_checkpoint()
+                continue
             ready_issue = self._next_ready_issue()
             if ready_issue is not None:
                 self._run_drain_scheduler_checkpoint()
@@ -7119,9 +7155,6 @@ class RalphOperatorRun:
                     snapshot=snapshot,
                 )
                 return
-            if snapshot.integrated:
-                self._run_promotion_checkpoint()
-                continue
             if snapshot.reviewing:
                 self._stop_for_exploratory_acceptance_review(snapshot)
                 return

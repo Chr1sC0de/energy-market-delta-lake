@@ -151,12 +151,17 @@ their queue snapshot. When no unblocked ready issue can proceed and
 `exploratory_acceptance_review_required` and writes a non-mutating
 **Exploratory acceptance review** artifact instead of marking the queue as a
 generic failure.
-When unblocked ready work exists, checkpointed Operator runs use the same
+Checkpointed Operator runs handle open `agent-integrated` backlog through
+**Promotion** before claiming more `ready-for-agent` work, unless recovery state
+such as `agent-running`, `agent-failed`, or active deploy-repair targeting must
+be resolved first. If recovery state blocks **Promotion**, Operator status and
+rollup guidance list the blocking runtime labels and the integrated backlog.
+When no integrated backlog is waiting, unblocked ready work uses the same
 parallel drain scheduler as plain `--drain`. A single Operator cycle may record
 multiple issue checkpoints from serial Gitflow or Trunk attempts and bounded
-Exploratory workers before a **Promotion** checkpoint. Promotion starts only
-after active Exploratory workers and implementation **Ready issue refresh**
-claim gates have settled.
+Exploratory workers before a **Promotion** checkpoint. Promotion after a drain
+pass starts only after active Exploratory workers and implementation **Ready
+issue refresh** claim gates have settled.
 Operator-smoke Exploratory issues are an exclusive serial lane exception: Ralph
 does not submit them to the Exploratory worker pool, waits for active issue
 workers to finish before claiming them, and does not overlap the smoke issue

@@ -56,6 +56,20 @@ None
 - Doc: `docs/agents/ralph-loop.md`
 """
 
+RALPH_SELF_UPDATE_BODY = """## What to build
+Update the Ralph loop.
+
+## Acceptance criteria
+- [ ] The Operator restart checkpoint remains stable.
+
+## Blocked by
+None
+
+## Context anchors
+- Path: `tools/ralph-loop/src/ralph_loop/cli.py`
+- Path: `scripts/ralph.py`
+"""
+
 EXPLORATORY_IMPLEMENTATION_BODY = """## What to build
 Build it.
 
@@ -7386,6 +7400,171 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn("Promotion commit `promotion-1-sha`", markdown)
         self.assertIn("- clean=yes", markdown)
 
+    def test_operator_promotes_integrated_backlog_before_ready_claim_at_startup(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE
+            )
+            ready_issue = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=99,
+                title="Ready follow-up",
+            )
+            integrated_issue = make_issue(
+                {ralph.AGENT_INTEGRATED_LABEL},
+                IMPLEMENTATION_BODY,
+                number=42,
+                title="Integrated backlog",
+            )
+            ready_integrated_issue = make_issue(
+                {ralph.AGENT_INTEGRATED_LABEL},
+                IMPLEMENTATION_BODY,
+                number=99,
+                title="Ready follow-up",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = ScriptedOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=4,
+                snapshots=[
+                    operator_snapshot(
+                        ready=[ready_issue],
+                        integrated=[integrated_issue],
+                    ),
+                    operator_snapshot(ready=[ready_issue]),
+                    operator_snapshot(integrated=[ready_integrated_issue]),
+                    operator_snapshot(),
+                ],
+            )
+
+            with redirect_stdout(io.StringIO()):
+                operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+
+        checkpoints = [entry["checkpoint"] for entry in manifest["checkpoints"]]
+        first_promotion_index = checkpoints.index("before_promotion")
+        first_issue_index = checkpoints.index("issue_succeeded")
+        self.assertLess(first_promotion_index, first_issue_index)
+        self.assertEqual(operator.issue_runs, 1)
+        self.assertEqual(operator.promotion_runs, 2)
+        self.assertEqual(manifest["status"], "succeeded")
+
+    def test_operator_starts_ready_queue_when_no_integrated_backlog(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE
+            )
+            oldest_ready = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=42,
+                title="Oldest ready work",
+            )
+            newer_ready = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=99,
+                title="Newer ready work",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = ScriptedOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=2,
+                snapshots=[
+                    operator_snapshot(ready=[oldest_ready, newer_ready]),
+                    operator_snapshot(),
+                ],
+            )
+
+            with redirect_stdout(io.StringIO()):
+                operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+
+        checkpoints = [entry["checkpoint"] for entry in manifest["checkpoints"]]
+        succeeded_issues = [
+            entry["issue"]["number"]
+            for entry in manifest["checkpoints"]
+            if entry["checkpoint"] == "issue_succeeded"
+        ]
+        self.assertLess(
+            checkpoints.index("issue_succeeded"),
+            checkpoints.index("queue_clean"),
+        )
+        self.assertNotIn("before_promotion", checkpoints)
+        self.assertEqual(succeeded_issues, [42, 99])
+
+    def test_operator_recovery_guidance_names_integrated_backlog_when_blocked(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            integrated_issue = make_issue(
+                {ralph.AGENT_INTEGRATED_LABEL},
+                IMPLEMENTATION_BODY,
+                number=42,
+                title="Integrated backlog",
+            )
+            failed_issue = make_issue(
+                {ralph.AGENT_FAILED_LABEL},
+                IMPLEMENTATION_BODY,
+                number=77,
+                title="Needs recovery",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = ScriptedOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=2,
+                snapshots=[
+                    operator_snapshot(
+                        integrated=[integrated_issue],
+                        failed=[failed_issue],
+                    )
+                ],
+            )
+
+            with self.assertRaises(ralph.RalphError):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    operator.run()
+
+            status_output = io.StringIO()
+            with redirect_stdout(status_output):
+                ralph.inspect_operator_run_status(str(run_dir), runner)
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+            rollup = json.loads(
+                (run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME).read_text(encoding="utf-8")
+            )
+
+        guidance = manifest["recovery_guidance"]
+        self.assertIn("agent-failed issue(s)", guidance)
+        self.assertIn("#77", guidance)
+        self.assertIn("agent-integrated issue(s)", guidance)
+        self.assertIn("#42", guidance)
+        self.assertIn("#42", status_output.getvalue())
+        self.assertIn("#77", status_output.getvalue())
+        self.assertIn("#42", rollup["stop_reason"]["recovery_guidance"])
+        self.assertIn("#77", rollup["stop_reason"]["recovery_guidance"])
+        self.assertEqual(rollup["final_queue"]["counts"]["integrated"], 1)
+        self.assertEqual(rollup["final_queue"]["counts"]["failed"], 1)
+
     def test_operator_stops_after_ralph_loop_self_update_before_next_claim(
         self,
     ) -> None:
@@ -7443,6 +7622,66 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn(
             "tools/ralph-loop/src/ralph_loop/cli.py",
             manifest["recovery_guidance"],
+        )
+
+    def test_operator_isolates_ralph_loop_self_update_from_exploratory_claims(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                drain=True,
+                delivery_mode=ralph.GITFLOW_MODE,
+                exploratory_concurrency=2,
+            )
+            exploratory_issue = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL},
+                EXPLORATORY_IMPLEMENTATION_BODY,
+                number=172,
+                title="Explore unrelated work",
+            )
+            self_update_issue = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                RALPH_SELF_UPDATE_BODY,
+                number=173,
+                title="Update Ralph loop",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = SelfUpdateGuardOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=3,
+                snapshots=[
+                    operator_snapshot(ready=[exploratory_issue, self_update_issue])
+                ],
+                issues=[exploratory_issue, self_update_issue],
+                changed_files_by_issue={
+                    172: ["README.md"],
+                    173: ["scripts/ralph.py"],
+                },
+            )
+
+            with self.assertRaises(ralph.RalphSelfUpdateRestartRequired):
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    operator.run()
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+
+        checkpoints = [entry["checkpoint"] for entry in manifest["checkpoints"]]
+        self.assertEqual(operator.guard_loop.handled_issue_numbers, [173])
+        self.assertEqual(checkpoints.count("issue_succeeded"), 1)
+        self.assertIn("ralph_self_update_restart_required", checkpoints)
+        self.assertNotIn(
+            172,
+            [
+                child["issue"]["number"]
+                for child in manifest["child_run_manifests"]
+                if isinstance(child.get("issue"), dict)
+            ],
         )
 
     def test_operator_records_parallel_scheduler_issue_checkpoints_before_promotion(
