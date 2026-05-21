@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -466,6 +467,32 @@ def make_issue(
 def load_run_manifest(tmp_path: Path, run_glob: str = "issue-42-*") -> dict[str, Any]:
     manifest_path = next((tmp_path / "logs").glob(f"{run_glob}/ralph-run.json"))
     return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+
+def write_minimal_child_manifest(
+    log_root: Path,
+    *,
+    name: str,
+    status: str = "succeeded",
+    run_kind: str = "implementation",
+) -> Path:
+    run_dir = log_root / name
+    run_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = run_dir / ralph.MANIFEST_NAME
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": ralph.MANIFEST_SCHEMA_VERSION,
+                "run_kind": run_kind,
+                "status": status,
+                "paths": {"run_dir": str(run_dir)},
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return manifest_path
 
 
 @dataclass(frozen=True)
@@ -4244,6 +4271,167 @@ Build it.
                 self.assertEqual(runtime_env.metadata[name]["source"], "ralph_default")
                 self.assertTrue(Path(value).is_dir())
 
+    def test_qa_runtime_cleanup_removes_only_succeeded_default_run_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = f"example/cleanup-{tmp_path.name}"
+            log_root = tmp_path / "logs"
+            repo_runtime_root = ralph.default_qa_runtime_repo_root(repo)
+            shutil.rmtree(repo_runtime_root, ignore_errors=True)
+            try:
+                succeeded = repo_runtime_root / "issue-1-succeeded"
+                failed = repo_runtime_root / "issue-2-failed"
+                active = repo_runtime_root / "issue-3-active"
+                missing_manifest = repo_runtime_root / "issue-4-missing"
+                for path in (succeeded, failed, active, missing_manifest):
+                    (path / "uv-cache").mkdir(parents=True)
+                    (path / "uv-cache" / "payload.txt").write_text(
+                        "payload",
+                        encoding="utf-8",
+                    )
+                write_minimal_child_manifest(log_root, name=succeeded.name)
+                write_minimal_child_manifest(
+                    log_root, name=failed.name, status="failed"
+                )
+                write_minimal_child_manifest(log_root, name=active.name)
+
+                actions = ralph.cleanup_completed_qa_runtime_dirs(
+                    repo=repo,
+                    log_root=log_root,
+                    active_run_dirs=(log_root / active.name,),
+                )
+            finally:
+                shutil.rmtree(repo_runtime_root, ignore_errors=True)
+
+        statuses = {action.path.name: action.status for action in actions}
+        reasons = {action.path.name: action.reason for action in actions}
+        self.assertEqual(statuses[succeeded.name], "removed")
+        self.assertEqual(statuses[failed.name], "skipped")
+        self.assertEqual(statuses[active.name], "skipped")
+        self.assertEqual(statuses[missing_manifest.name], "skipped")
+        self.assertIn("did not succeed", reasons[failed.name])
+        self.assertIn("active run directory", reasons[active.name])
+        self.assertIn("manifest not found", reasons[missing_manifest.name])
+
+    def test_qa_runtime_cleanup_refuses_non_ralph_owned_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            outside = tmp_path / "not-ralph-owned"
+            outside.mkdir()
+
+            with self.assertRaises(ralph.QARuntimeCleanupRefusal):
+                ralph.validate_qa_runtime_cleanup_target(
+                    outside,
+                    repo="example/repo",
+                    log_root=tmp_path / "logs",
+                )
+
+    def test_qa_runtime_preflight_reports_sources_and_cleans_before_failure(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = f"example/preflight-{tmp_path.name}"
+            log_root = tmp_path / "logs"
+            run_dir = log_root / "issue-10-current"
+            old_run = "issue-9-old"
+            repo_runtime_root = ralph.default_qa_runtime_repo_root(repo)
+            shutil.rmtree(repo_runtime_root, ignore_errors=True)
+            try:
+                (repo_runtime_root / old_run / "uv-cache").mkdir(parents=True)
+                write_minimal_child_manifest(log_root, name=old_run)
+                current_runtime_root = ralph.default_qa_runtime_root(repo, run_dir)
+                readings = [
+                    ralph.QARuntimeCapacity(
+                        repo_runtime_root, free_bytes=10, free_inodes=10
+                    ),
+                    ralph.QARuntimeCapacity(
+                        repo_runtime_root, free_bytes=200, free_inodes=200
+                    ),
+                ]
+
+                def capacity_reader(path: Path) -> ralph.QARuntimeCapacity:
+                    self.assertEqual(path, repo_runtime_root)
+                    if len(readings) == 2:
+                        self.assertFalse(current_runtime_root.exists())
+                    return readings.pop(0)
+
+                result = ralph.qa_runtime_disk_preflight(
+                    repo=repo,
+                    run_dir=run_dir,
+                    log_root=log_root,
+                    label="unit preflight",
+                    base_env={
+                        ralph.QA_RUNTIME_MIN_FREE_BYTES_ENV: "100",
+                        ralph.QA_RUNTIME_MIN_FREE_INODES_ENV: "100",
+                    },
+                    capacity_reader=capacity_reader,
+                )
+                created_default_dirs = all(
+                    Path(value).is_dir()
+                    for value in result.qa_runtime_env.values.values()
+                )
+            finally:
+                shutil.rmtree(repo_runtime_root, ignore_errors=True)
+
+        lines = "\n".join(ralph.qa_runtime_preflight_lines(result))
+        statuses = {
+            action.path.name: action.status for action in result.cleanup_actions
+        }
+        self.assertEqual(statuses[old_run], "removed")
+        self.assertNotIn(run_dir.name, statuses)
+        self.assertEqual(result.failed_signals, ())
+        self.assertTrue(created_default_dirs)
+        self.assertIn("DAGSTER_HOME: ralph_default ->", lines)
+        self.assertIn("XDG_CACHE_HOME: ralph_default ->", lines)
+        self.assertIn("UV_CACHE_DIR: ralph_default ->", lines)
+
+    def test_qa_runtime_preflight_preserves_operator_provided_cache_paths(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = f"example/operator-cache-{tmp_path.name}"
+            log_root = tmp_path / "logs"
+            run_dir = log_root / "issue-11-current"
+            old_run = "issue-8-old"
+            repo_runtime_root = ralph.default_qa_runtime_repo_root(repo)
+            shutil.rmtree(repo_runtime_root, ignore_errors=True)
+            try:
+                (repo_runtime_root / old_run / "uv-cache").mkdir(parents=True)
+                write_minimal_child_manifest(log_root, name=old_run)
+                capacity = ralph.QARuntimeCapacity(
+                    repo_runtime_root,
+                    free_bytes=10,
+                    free_inodes=10,
+                )
+
+                result = ralph.qa_runtime_disk_preflight(
+                    repo=repo,
+                    run_dir=run_dir,
+                    log_root=log_root,
+                    label="operator cache preflight",
+                    base_env={
+                        "DAGSTER_HOME": str(tmp_path / "operator-dagster"),
+                        "XDG_CACHE_HOME": str(tmp_path / "operator-cache"),
+                        "UV_CACHE_DIR": str(tmp_path / "operator-uv"),
+                        ralph.QA_RUNTIME_MIN_FREE_BYTES_ENV: "100",
+                        ralph.QA_RUNTIME_MIN_FREE_INODES_ENV: "100",
+                    },
+                    capacity_reader=lambda path: capacity,
+                )
+                preserved = (repo_runtime_root / old_run).is_dir()
+            finally:
+                shutil.rmtree(repo_runtime_root, ignore_errors=True)
+
+        self.assertEqual(result.cleanup_actions, ())
+        self.assertTrue(preserved)
+        self.assertFalse(ralph.qa_runtime_capacity_failed(result))
+        self.assertEqual(
+            result.qa_runtime_env.metadata["UV_CACHE_DIR"]["source"],
+            "operator",
+        )
+
     def test_sandbox_token_uses_parent_gh_token_first(self) -> None:
         runner = FakeRunner()
         with patch.dict(
@@ -6612,6 +6800,50 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
 
 
 class RalphOperatorRunTests(unittest.TestCase):
+    def test_operator_preflight_reports_runtime_env_sources(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = ScriptedOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=1,
+                snapshots=[],
+            )
+
+            with patch.dict(
+                ralph.os.environ,
+                {
+                    "PATH": "/usr/bin",
+                    "UV_CACHE_DIR": "/operator/uv-cache",
+                    ralph.QA_RUNTIME_MIN_FREE_BYTES_ENV: "0",
+                    ralph.QA_RUNTIME_MIN_FREE_INODES_ENV: "0",
+                },
+                clear=True,
+            ):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    operator._preflight_qa_runtime_disk(label="Operator launch")
+
+            manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
+
+        text = output.getvalue()
+        self.assertIn("QA runtime disk preflight (Operator launch)", text)
+        self.assertIn("DAGSTER_HOME: ralph_default ->", text)
+        self.assertIn("UV_CACHE_DIR: operator -> /operator/uv-cache", text)
+        preflight_event = next(
+            event
+            for event in manifest["events"]
+            if event["state"] == "qa_runtime_disk_preflight"
+        )
+        self.assertEqual(
+            preflight_event["details"]["variables"]["UV_CACHE_DIR"]["source"],
+            "operator",
+        )
+
     def test_operator_skips_post_promotion_deployment_when_classifier_has_no_deploy(
         self,
     ) -> None:
@@ -9012,6 +9244,140 @@ Build it.
             str(runtime_root / "uv-cache"),
         )
         self.assertEqual(manifest_payload["qa_results"][0]["status"], "passed")
+
+    def test_no_space_qa_command_failure_is_environment_failure(self) -> None:
+        runner = FakeRunner(
+            fail_command_attempts={
+                ("make", "run-prek"): [
+                    (
+                        1,
+                        "OSError: [Errno 28] No space left on device: '/tmp/uv-cache'",
+                    )
+                ]
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            branch, worktree_path, integration_path = loop._branch_and_worktrees(issue)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch=branch,
+                worktree_path=worktree_path,
+                integration_path=integration_path,
+                config=loop.config,
+            )
+
+            with patch.dict(
+                ralph.os.environ,
+                {
+                    "PATH": "/usr/bin",
+                    ralph.QA_RUNTIME_MIN_FREE_BYTES_ENV: "0",
+                    ralph.QA_RUNTIME_MIN_FREE_INODES_ENV: "0",
+                },
+                clear=True,
+            ):
+                with self.assertRaises(ralph.EnvironmentFailure) as caught:
+                    with redirect_stdout(io.StringIO()):
+                        loop._run_qa_commands(
+                            ["scripts/ralph.py"],
+                            loop.config.repo_root,
+                            run_dir,
+                            log_prefix="qa",
+                            subject="#42",
+                            manifest=manifest,
+                        )
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        self.assertEqual(caught.exception.failure_type, "qa_runtime_no_space_left")
+        self.assertIn("No space left on device", str(caught.exception))
+        self.assertIn("Capacity signal", str(caught.exception))
+        self.assertIn("Next action", str(caught.exception))
+        self.assertIn("/tmp/uv-cache", str(caught.exception))
+        self.assertIn(
+            "rerun the Operator command or targeted issue",
+            caught.exception.recovery_guidance or "",
+        )
+        self.assertEqual(manifest_payload["qa_results"][0]["status"], "failed")
+
+    def test_no_space_qa_command_failure_names_operator_cache_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            operator_uv_cache = tmp_path / "operator-uv-cache"
+            runner = FakeRunner(
+                fail_command_attempts={
+                    ("make", "run-prek"): [
+                        (
+                            1,
+                            "OSError: [Errno 28] No space left on device: "
+                            f"'{operator_uv_cache}'",
+                        )
+                    ]
+                }
+            )
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            branch, worktree_path, integration_path = loop._branch_and_worktrees(issue)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch=branch,
+                worktree_path=worktree_path,
+                integration_path=integration_path,
+                config=loop.config,
+            )
+
+            with patch.dict(
+                ralph.os.environ,
+                {
+                    "PATH": "/usr/bin",
+                    "DAGSTER_HOME": str(tmp_path / "operator-dagster"),
+                    "XDG_CACHE_HOME": str(tmp_path / "operator-xdg-cache"),
+                    "UV_CACHE_DIR": str(operator_uv_cache),
+                    ralph.QA_RUNTIME_MIN_FREE_BYTES_ENV: str(sys.maxsize),
+                    ralph.QA_RUNTIME_MIN_FREE_INODES_ENV: str(sys.maxsize),
+                },
+                clear=True,
+            ):
+                with self.assertRaises(ralph.EnvironmentFailure) as caught:
+                    with redirect_stdout(io.StringIO()):
+                        loop._run_qa_commands(
+                            ["scripts/ralph.py"],
+                            loop.config.repo_root,
+                            run_dir,
+                            log_prefix="qa",
+                            subject="#42",
+                            manifest=manifest,
+                        )
+
+        text = str(caught.exception)
+        default_runtime_root = ralph.default_qa_runtime_root("example/repo", run_dir)
+        self.assertEqual(caught.exception.failure_type, "qa_runtime_no_space_left")
+        self.assertIn(str(operator_uv_cache), text)
+        self.assertNotIn(str(default_runtime_root), text)
+        self.assertIn("Capacity signal: free bytes, free inodes", text)
+        self.assertIn("Next action", text)
+        self.assertIn(str(operator_uv_cache), caught.exception.recovery_guidance or "")
+        self.assertIn(
+            "rerun the Operator command or targeted issue",
+            caught.exception.recovery_guidance or "",
+        )
 
     def test_docs_only_aemo_etl_qa_selection_records_manifest_command(self) -> None:
         runner = FakeRunner()

@@ -1721,6 +1721,26 @@ Environment failures stop the run. Examples include invalid `gh` auth, missing
 labels, unavailable tools, failing Git operations before claim, or unavailable
 container-backed **Integration test** dependencies.
 
+Ralph also guards the default QA runtime root before new Operator work and
+**Promotion**. When `DAGSTER_HOME`, `XDG_CACHE_HOME`, or `UV_CACHE_DIR` are not
+set by the operator, Ralph resolves them under
+`/tmp/ralph-qa-runtime/<repo-slug>/<run-dir-name>/` and reports each variable's
+source and path during preflight. The preflight checks free bytes and inodes on
+`/tmp/ralph-qa-runtime/<repo-slug>/`; the default minimums are 5 GiB and
+100,000 inodes and can be overridden with
+`RALPH_QA_RUNTIME_MIN_FREE_BYTES` and `RALPH_QA_RUNTIME_MIN_FREE_INODES`.
+
+When the default QA runtime root is below the configured threshold, Ralph only
+removes run-scoped directories whose matching `.ralph/runs/<run-dir-name>/`
+manifest already succeeded. It skips active directories, failed or
+missing-manifest directories, and operator-provided cache paths. It never cleans
+`.ralph/runs`, `.ralph/operator-runs`, implementation worktrees, integration
+worktrees, Promotion worktrees, or non-default operator cache paths. If safe
+cleanup does not restore capacity, Ralph stops as an environment failure with
+the path, failed capacity signal, and rerun guidance. Command output containing
+`No space left on device` is classified the same way instead of being treated as
+ordinary issue failure or retryable QA failure.
+
 ## Sync metadata
 
 - `sync.owner`: `agents`

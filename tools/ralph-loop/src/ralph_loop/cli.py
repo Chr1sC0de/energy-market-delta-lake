@@ -1027,6 +1027,34 @@ class RalphLoop:
         self._ready_issue_refresh_claim_gate = ReadyIssueRefreshClaimGate()
         self._stop_after_ralph_loop_self_update = False
 
+    def _preflight_qa_runtime_disk(
+        self,
+        *,
+        run_dir: Path,
+        label: str,
+        manifest: RunManifest | None = None,
+        active_run_dirs: tuple[Path, ...] = (),
+    ) -> QARuntimePreflightResult:
+        result = qa_runtime_disk_preflight(
+            repo=self.config.repo,
+            run_dir=run_dir,
+            log_root=self.config.log_root,
+            label=label,
+            active_run_dirs=active_run_dirs,
+        )
+        for line in qa_runtime_preflight_lines(result):
+            emit(line)
+        if manifest is not None:
+            manifest.record_event(
+                "qa_runtime_disk_preflight",
+                details=qa_runtime_preflight_manifest_payload(result),
+            )
+        raise_if_qa_runtime_capacity_failed(
+            result,
+            next_action="free capacity, then rerun Ralph for the same issue or Operator run",
+        )
+        return result
+
     def run(self) -> None:
         self._validate_tools()
         self._validate_clean_root_worktree_for_live_run()
@@ -3564,6 +3592,15 @@ class RalphLoop:
             promote_path=promote_path,
             config=self.config,
         )
+        try:
+            self._preflight_qa_runtime_disk(
+                run_dir=run_dir,
+                label="Promotion startup",
+                manifest=manifest,
+            )
+        except EnvironmentFailure as error:
+            manifest.record_failure(error, log_path=error.log_path)
+            raise
         pushed = False
         source_worktree_created = False
         promote_worktree_created = False
@@ -4774,6 +4811,11 @@ class RalphLoop:
                 worktree_path=worktree_path,
                 integration_path=integration_path,
                 config=self.config,
+            )
+            self._preflight_qa_runtime_disk(
+                run_dir=run_dir,
+                label=f"issue #{issue.number} startup",
+                manifest=manifest,
             )
             access_plan = issue_implementation_access_plan(issue)
             if access_plan.full_access_required:
@@ -6525,29 +6567,46 @@ class RalphLoop:
             run_dir=log_path.parent,
             allowed_issue_commands=allowed_issue_commands,
         )
-        qa_runtime_env = resolve_qa_runtime_env(
-            repo=self.config.repo,
+        preflight_result = self._preflight_qa_runtime_disk(
             run_dir=log_path.parent,
+            label=phase,
+            manifest=manifest,
         )
+        qa_runtime_env = preflight_result.qa_runtime_env
         if manifest is not None:
             manifest.record_sandboxed_issue_access(sandbox_issue_access)
             manifest.record_qa_runtime_env(qa_runtime_env)
-        return self.runner.run(
-            codex_exec_command(
-                cwd,
-                sandbox_mode=sandbox_mode,
-                output_last_message=output_last_message,
-            ),
-            cwd=cwd,
-            input_text=prompt,
-            log_path=log_path,
-            phase=phase,
-            execute_in_dry_run=False,
-            env=codex_env_for_sandbox_issue_access(
-                sandbox_issue_access,
-                qa_runtime_env=qa_runtime_env,
-            ),
-        )
+        try:
+            return self.runner.run(
+                codex_exec_command(
+                    cwd,
+                    sandbox_mode=sandbox_mode,
+                    output_last_message=output_last_message,
+                ),
+                cwd=cwd,
+                input_text=prompt,
+                log_path=log_path,
+                phase=phase,
+                execute_in_dry_run=False,
+                env=codex_env_for_sandbox_issue_access(
+                    sandbox_issue_access,
+                    qa_runtime_env=qa_runtime_env,
+                ),
+            )
+        except CommandFailure as error:
+            if is_no_space_left_failure(error):
+                raise no_space_environment_failure(
+                    error,
+                    repo=self.config.repo,
+                    run_dir=log_path.parent,
+                    log_root=self.config.log_root,
+                    qa_runtime_env=qa_runtime_env,
+                    next_action=(
+                        "free capacity, then rerun the Operator command or targeted "
+                        "issue"
+                    ),
+                ) from error
+            raise
 
     def _run_operator_smoke(
         self,
@@ -6755,7 +6814,12 @@ class RalphLoop:
         manifest: RunManifest | None = None,
     ) -> list[QAResult]:
         results: list[QAResult] = []
-        qa_runtime_env = resolve_qa_runtime_env(repo=self.config.repo, run_dir=run_dir)
+        preflight_result = self._preflight_qa_runtime_disk(
+            run_dir=run_dir,
+            label=f"{subject}: QA runtime",
+            manifest=manifest,
+        )
+        qa_runtime_env = preflight_result.qa_runtime_env
         qa_env = env_with_qa_runtime(qa_runtime_env)
         if manifest is not None:
             manifest.record_qa_runtime_env(qa_runtime_env)
@@ -6785,10 +6849,28 @@ class RalphLoop:
                             status="failed",
                             error=str(error),
                         )
+                    if is_no_space_left_failure(error):
+                        raise no_space_environment_failure(
+                            error,
+                            repo=self.config.repo,
+                            run_dir=run_dir,
+                            log_root=self.config.log_root,
+                            qa_runtime_env=qa_runtime_env,
+                            next_action=(
+                                "free capacity, then rerun the Operator command "
+                                "or targeted issue"
+                            ),
+                        ) from error
+                    guidance = (
+                        "Resolve the local environment failure, then rerun the "
+                        "Operator command or targeted issue."
+                    )
                     raise EnvironmentFailure(
                         f"Environment failure while running {command.name}: "
-                        f"{format_command(command.args)}",
+                        f"{format_command(command.args)}. Next action: {guidance}",
                         log_path=error.log_path,
+                        failure_type="environment_command_failure",
+                        recovery_guidance=guidance,
                     ) from error
                 if manifest is not None:
                     manifest.record_qa(
@@ -7003,6 +7085,7 @@ class RalphOperatorRun:
 
             cycle += 1
             self.manifest.record_cycle(cycle)
+            self._preflight_qa_runtime_disk(label=f"Operator cycle {cycle}")
             active_deploy_repair_step = self._run_active_deploy_repair_step(snapshot)
             if active_deploy_repair_step is not None:
                 if active_deploy_repair_step:
@@ -7041,8 +7124,29 @@ class RalphOperatorRun:
     def _validate_operator_preflight(self) -> None:
         self.loop._validate_tools()
         self.loop._validate_clean_root_worktree_for_live_run()
+        self._preflight_qa_runtime_disk(label="Operator launch")
         self.github.auth_status()
         self.loop._validate_labels()
+
+    def _preflight_qa_runtime_disk(self, *, label: str) -> QARuntimePreflightResult:
+        result = qa_runtime_disk_preflight(
+            repo=self.config.repo,
+            run_dir=self.run_dir,
+            log_root=self.config.log_root,
+            label=label,
+            active_run_dirs=(self.run_dir,),
+        )
+        for line in qa_runtime_preflight_lines(result):
+            emit(line)
+        self.manifest.record_event(
+            "qa_runtime_disk_preflight",
+            details=qa_runtime_preflight_manifest_payload(result),
+        )
+        raise_if_qa_runtime_capacity_failed(
+            result,
+            next_action="free capacity, then rerun the Operator command",
+        )
+        return result
 
     def _queue_snapshot(self) -> OperatorQueueSnapshot:
         ready: list[Issue] = []
@@ -11715,6 +11819,19 @@ def operator_status_command(run_dir: Path) -> str:
 def launch_detached_operator_run(args: CliArgs, runner: CommandRunner) -> None:
     config = build_config(args, runner)
     run_dir = new_operator_run_dir(config.log_root)
+    result = qa_runtime_disk_preflight(
+        repo=config.repo,
+        run_dir=run_dir,
+        log_root=config.log_root,
+        label="Operator detached launch",
+        active_run_dirs=(run_dir,),
+    )
+    for line in qa_runtime_preflight_lines(result):
+        emit(line)
+    raise_if_qa_runtime_capacity_failed(
+        result,
+        next_action="free capacity, then launch the detached Operator again",
+    )
     run_dir.mkdir(parents=True, exist_ok=False)
     stdout_log = run_dir / "operator-stdout.log"
     stderr_log = run_dir / "operator-stderr.log"
