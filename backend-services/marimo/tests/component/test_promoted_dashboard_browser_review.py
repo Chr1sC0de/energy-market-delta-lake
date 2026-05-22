@@ -124,6 +124,7 @@ def test_print_plan_cli_outputs_json_without_playwright_dependency() -> None:
         [
             "/marimo/aws_bounded_read_diagnostics/",
             "/marimo/capacity_outlook/",
+            "/marimo/capacity_auction/",
             "/marimo/citation_chain_explorer/",
             "/marimo/concept_to_asset_explorer/",
             "/marimo/connection_point_explainer/",
@@ -131,16 +132,24 @@ def test_print_plan_cli_outputs_json_without_playwright_dependency() -> None:
             "/marimo/data_readiness_overview/",
             "/marimo/facility_flow_storage/",
             "/marimo/facility_explainer/",
+            "/marimo/forecast_vs_actual/",
             "/marimo/flow_operations/",
             "/marimo/gas_bid_offer_stack/",
             "/marimo/gas_day_explainer/",
             "/marimo/gas_market_prices/",
+            "/marimo/gas_scheduled_quantities/",
+            "/marimo/gas_sttm_capacity_settlement/",
+            "/marimo/gas_sttm_contingency_gas/",
+            "/marimo/gas_sttm_market_settlement/",
             "/marimo/glossary_explorer/",
+            "/marimo/heating_value_pressure/",
             "/marimo/hub_zone_explainer/",
             "/marimo/linepack_adequacy/",
             "/marimo/materialization_freshness/",
             "/marimo/nomination_demand_forecast/",
+            "/marimo/operational_meter_flow/",
             "/marimo/participant_explainer/",
+            "/marimo/pipeline_connection_operations/",
             "/marimo/s3_bucket_health/",
             "/marimo/schema_data_dictionary_explorer/",
             "/marimo/source_coverage_matrix/",
@@ -153,7 +162,7 @@ def test_print_plan_cli_outputs_json_without_playwright_dependency() -> None:
         {"name": "desktop", "width": 1440, "height": 1100},
         {"name": "narrow", "width": 390, "height": 900},
     ]
-    assert len(payload["runs"]) == 50
+    assert len(payload["runs"]) == 68
     assert all(run["screenshot_path"] is None for run in payload["runs"])
 
 
@@ -272,6 +281,129 @@ def test_issue_258_batch_declares_browser_review_surface(tmp_path: Path) -> None
         "Data Health"
         in route_payloads["/marimo/source_table_lineage_explorer/"]["required_texts"]
     )
+
+
+def test_c47c461_batch_declares_browser_review_surface(tmp_path: Path) -> None:
+    review = _load_review_script()
+
+    runs = review.build_review_plan(
+        "http://example.test:8000",
+        tmp_path,
+        routes=review.PROMOTED_DASHBOARD_ROUTES_C47C461,
+    )
+    route_payloads = {
+        run["route"]: run
+        for run in review.review_plan_payload(runs)["runs"]
+        if run["viewport"] == "desktop"
+    }
+
+    assert set(route_payloads) == set(review.PROMOTED_DASHBOARD_ROUTES_C47C461)
+
+    forecast_payload = route_payloads["/marimo/forecast_vs_actual/"]
+    assert "Data Health" in forecast_payload["required_texts"]
+    assert "Forecast-vs-actual read diagnostics" in forecast_payload["required_texts"]
+    assert {probe["description"] for probe in forecast_payload["control_probes"]} == {
+        "refresh data run button",
+        "gas-day dropdown",
+        "source-facility dropdown",
+        "source-system dropdown",
+    }
+
+    pipeline_payload = route_payloads["/marimo/pipeline_connection_operations/"]
+    assert pipeline_payload["control_probes"] == [
+        {
+            "description": "refresh data run button",
+            "text": "Refresh data",
+            "optional": False,
+        }
+    ]
+    assert "Relationship Gaps" in pipeline_payload["required_texts"]
+
+    heating_payload = route_payloads["/marimo/heating_value_pressure/"]
+    assert (
+        "Heating value and pressure read diagnostics"
+        in heating_payload["required_texts"]
+    )
+    assert {probe["description"] for probe in heating_payload["control_probes"]} == {
+        "refresh data run button",
+        "source-system dropdown",
+        "source-table dropdown",
+        "source-qualified-identifier dropdown",
+    }
+
+    operational_payload = route_payloads["/marimo/operational_meter_flow/"]
+    assert "Data Health" in operational_payload["required_texts"]
+    assert "Relationship Coverage Gaps" in operational_payload["required_texts"]
+
+    capacity_auction_payload = route_payloads["/marimo/capacity_auction/"]
+    assert {
+        probe["description"] for probe in capacity_auction_payload["control_probes"]
+    } == {
+        "refresh data run button",
+        "auction-date dropdown",
+        "zone dropdown",
+        "capacity-period dropdown",
+        "auction-metric dropdown",
+        "source-system dropdown",
+    }
+
+    scheduled_quantity_payload = route_payloads["/marimo/gas_scheduled_quantities/"]
+    assert (
+        "Scheduled quantity read diagnostics"
+        in scheduled_quantity_payload["required_texts"]
+    )
+    assert {
+        probe["description"] for probe in scheduled_quantity_payload["control_probes"]
+    } == {
+        "refresh data run button",
+        "gas-day dropdown",
+        "source-system dropdown",
+        "schedule-type dropdown",
+    }
+
+    contingency_payload = route_payloads["/marimo/gas_sttm_contingency_gas/"]
+    assert "Source Identifier Coverage" in contingency_payload["required_texts"]
+    assert {
+        probe["description"] for probe in contingency_payload["control_probes"]
+    } == {
+        "refresh data run button",
+        "contingency-grain dropdown",
+        "quantity-type dropdown",
+        "hub dropdown",
+        "source-system dropdown",
+    }
+
+    market_settlement_payload = route_payloads["/marimo/gas_sttm_market_settlement/"]
+    assert {
+        probe["description"] for probe in market_settlement_payload["control_probes"]
+    } == {
+        "refresh data run button",
+        "gas-day dropdown",
+        "settlement-period dropdown",
+        "settlement-stage dropdown",
+        "settlement-component dropdown",
+    }
+
+    capacity_settlement_payload = route_payloads[
+        "/marimo/gas_sttm_capacity_settlement/"
+    ]
+    assert {
+        probe["description"] for probe in capacity_settlement_payload["control_probes"]
+    } == {
+        "refresh data run button",
+        "gas-day dropdown",
+        "settlement-stage dropdown",
+        "capacity-settlement-component dropdown",
+        "hub dropdown",
+        "facility dropdown",
+    }
+
+
+def test_existing_promoted_dashboard_coverage_is_preserved() -> None:
+    review = _load_review_script()
+
+    assert "/marimo/gas_market_prices/" in review.PROMOTED_DASHBOARD_ROUTES
+    assert "/marimo/gas_bid_offer_stack/" in review.PROMOTED_DASHBOARD_ROUTES
 
 
 def test_review_run_checks_shadow_dom_text_and_controls() -> None:
