@@ -301,6 +301,7 @@ Gas market knowledge base responsibility:
   - `backend-services/marimo/notebooks/gas_settlement_activity.py`
   - `backend-services/marimo/notebooks/gas_sttm_market_settlement.py`
   - `backend-services/marimo/notebooks/gas_sttm_capacity_settlement.py`
+  - `backend-services/marimo/notebooks/gas_sttm_mos_allocation.py`
   - `backend-services/marimo/notebooks/gas_customer_transfer_activity.py`
   - `backend-services/marimo/notebooks/facility_flow_storage.py`
   - `backend-services/marimo/notebooks/forecast_vs_actual.py`
