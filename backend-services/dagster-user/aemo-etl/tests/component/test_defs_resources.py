@@ -1,10 +1,13 @@
 """Unit tests for defs/resources.py IO managers."""
 
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
 import polars as pl
+import pytest
 from dagster import Definitions
+from polars.exceptions import ComputeError
 from pytest_mock import MockerFixture
 
 from aemo_etl.configs import DAGSTER_URI
@@ -14,6 +17,8 @@ from aemo_etl.defs.resources import (
     PolarsDataFrameReadOnlyDeltaIoManager,
     SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY,
     _parquet_dataset_glob,
+    _parquet_output_row_count,
+    _parquet_part_uri,
     defs,
 )
 
@@ -253,7 +258,23 @@ def test_parquet_dataset_glob() -> None:
     assert _parquet_dataset_glob("/tmp/test-table/") == "/tmp/test-table/*.parquet"
 
 
-def test_handle_output_parquet_builds_metadata_before_write(
+def test_parquet_part_uri() -> None:
+    assert (
+        _parquet_part_uri("s3://test-bucket/table")
+        == "s3://test-bucket/table/part-00000.parquet"
+    )
+    assert _parquet_part_uri("/tmp/test-table/") == "/tmp/test-table/part-00000.parquet"
+
+
+def test_parquet_output_row_count(tmp_path: Path) -> None:
+    table_path = tmp_path / "test-table"
+    table_path.mkdir()
+    pl.DataFrame({"a": [1, 2, 3]}).write_parquet(table_path / "part-00000.parquet")
+
+    assert _parquet_output_row_count(str(table_path)) == 3
+
+
+def test_handle_output_parquet_counts_rows_after_write(
     mocker: MockerFixture,
 ) -> None:
     io_mgr = PolarsDataFrameSinkParquetIoManager()
@@ -263,7 +284,7 @@ def test_handle_output_parquet_builds_metadata_before_write(
     )
     events: list[str] = []
 
-    def _get_lazyframe_num_rows(_: pl.LazyFrame) -> int:
+    def _parquet_output_row_count(_: str) -> int:
         events.append("row_count")
         return 3
 
@@ -271,19 +292,65 @@ def test_handle_output_parquet_builds_metadata_before_write(
         events.append("sink_parquet")
 
     mocker.patch(
-        "aemo_etl.defs.resources.get_lazyframe_num_rows", _get_lazyframe_num_rows
+        "aemo_etl.defs.resources._parquet_output_row_count", _parquet_output_row_count
     )
     mocker.patch.object(pl.LazyFrame, "sink_parquet", _sink_parquet)
 
     io_mgr.handle_output(ctx, _SMALL_DF)
 
-    assert events == ["row_count", "sink_parquet"]
+    assert events == ["sink_parquet", "row_count"]
+
+
+def test_handle_output_parquet_retries_transient_file_spec_error(
+    mocker: MockerFixture,
+) -> None:
+    io_mgr = PolarsDataFrameSinkParquetIoManager()
+    ctx = _make_output_context(
+        mocker,
+        definition_metadata={"dagster/column_schema": "pre-defined"},
+    )
+    events: list[str] = []
+
+    def _sink_parquet(_: pl.LazyFrame, *_args: object, **_kwargs: object) -> None:
+        events.append("sink_parquet")
+        if len(events) == 1:
+            raise ComputeError("parquet: File out of specification: Invalid thrift")
+
+    mocker.patch.object(pl.LazyFrame, "sink_parquet", _sink_parquet)
+    mocker.patch("aemo_etl.defs.resources.sleep")
+    mocker.patch("aemo_etl.defs.resources._parquet_output_row_count", return_value=3)
+
+    io_mgr.handle_output(ctx, _SMALL_DF)
+
+    assert events == ["sink_parquet", "sink_parquet"]
+
+
+def test_handle_output_parquet_does_not_retry_other_compute_errors(
+    mocker: MockerFixture,
+) -> None:
+    io_mgr = PolarsDataFrameSinkParquetIoManager()
+    ctx = _make_output_context(
+        mocker,
+        definition_metadata={"dagster/column_schema": "pre-defined"},
+    )
+    sink_parquet = mocker.patch.object(
+        pl.LazyFrame,
+        "sink_parquet",
+        side_effect=ComputeError("not a retryable parquet error"),
+    )
+    mocker.patch("aemo_etl.defs.resources.sleep")
+
+    with pytest.raises(ComputeError, match="not a retryable parquet error"):
+        io_mgr.handle_output(ctx, _SMALL_DF)
+
+    sink_parquet.assert_called_once()
 
 
 def test_handle_output_parquet_auto_schema(mocker: MockerFixture) -> None:
     io_mgr = PolarsDataFrameSinkParquetIoManager()
     ctx = _make_output_context(mocker, definition_metadata={})
     sink_parquet = mocker.patch.object(pl.LazyFrame, "sink_parquet", return_value=None)
+    mocker.patch("aemo_etl.defs.resources._parquet_output_row_count", return_value=3)
 
     io_mgr.handle_output(ctx, _SMALL_DF)
 
@@ -304,6 +371,7 @@ def test_handle_output_parquet_with_column_description(
         definition_metadata={"column_description": {"a": "col a desc"}},
     )
     mocker.patch.object(pl.LazyFrame, "sink_parquet", return_value=None)
+    mocker.patch("aemo_etl.defs.resources._parquet_output_row_count", return_value=3)
 
     io_mgr.handle_output(ctx, _SMALL_DF)
 
@@ -320,6 +388,7 @@ def test_handle_output_parquet_skips_schema_when_defined(
         definition_metadata={"dagster/column_schema": "pre-defined"},
     )
     mocker.patch.object(pl.LazyFrame, "sink_parquet", return_value=None)
+    mocker.patch("aemo_etl.defs.resources._parquet_output_row_count", return_value=3)
 
     io_mgr.handle_output(ctx, _SMALL_DF)
 
@@ -333,6 +402,7 @@ def test_handle_output_parquet_uses_local_writer_for_local_paths(
     io_mgr = PolarsDataFrameSinkParquetIoManager()
     ctx = _make_output_context(mocker, uri="/tmp/test-table")
     sink_parquet = mocker.patch.object(pl.LazyFrame, "sink_parquet", return_value=None)
+    mocker.patch("aemo_etl.defs.resources._parquet_output_row_count", return_value=3)
 
     io_mgr.handle_output(ctx, _SMALL_DF)
 
