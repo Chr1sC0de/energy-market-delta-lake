@@ -1867,6 +1867,7 @@ def write_child_manifest(
     post_promotion_review_artifact: Path | None = None,
     followups_status: str | None = None,
     created_followups: int = 0,
+    failure: dict[str, Any] | None = None,
 ) -> Path:
     run_dir = log_root / name
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -1950,6 +1951,8 @@ def write_child_manifest(
             "validation_downgrades": [],
             "failures": [],
         }
+    if failure is not None:
+        payload["failure"] = failure
     manifest_path = run_dir / ralph.MANIFEST_NAME
     manifest_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return manifest_path
@@ -8187,6 +8190,369 @@ class RalphOperatorRunTests(unittest.TestCase):
         )
         self.assertIn("Manual recovery: #102 Recover issue integration", markdown)
         self.assertIn("Checkpoint: `stopped_by_guard`", markdown)
+
+    def test_operator_rollup_summarizes_local_integration_commit_failure(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            issue = make_issue(
+                {ralph.READY_LABEL},
+                IMPLEMENTATION_BODY,
+                number=234,
+                title="Local integration failure",
+            )
+            commit_log = (
+                loop.config.log_root
+                / "issue-234-local-integration-failed"
+                / "integration-git-commit.log"
+            )
+            child_manifest_path = write_child_manifest(
+                loop.config.log_root,
+                name="issue-234-local-integration-failed",
+                run_kind="implementation",
+                status="failed",
+                issue=issue,
+                qa_results=[
+                    {
+                        "name": "Ralph loop Unit test",
+                        "command": ["make", "unit-test"],
+                        "cwd": str(tmp_path / "repo" / "tools" / "ralph-loop"),
+                        "log_path": str(
+                            loop.config.log_root
+                            / "issue-234-local-integration-failed"
+                            / "ralph-loop-unit-test.log"
+                        ),
+                        "status": "passed",
+                    }
+                ],
+                failure={
+                    "message": "Command failed (1): git commit -m Local integration",
+                    "log_path": str(commit_log),
+                },
+            )
+            ralph.write_command_log(
+                commit_log,
+                ["git", "commit", "-m", "Ralph Local integration for issue 234"],
+                tmp_path / "repo" / "tools" / "ralph-loop",
+                "",
+                (
+                    "Ralph loop Unit test failed during the root Commit check.\n"
+                    "tools/ralph-loop tests/unit/test_ralph.py::test_rollup FAILED\n"
+                ),
+                1,
+            )
+            manifest = ralph.OperatorRunManifest.start(
+                run_dir=run_dir,
+                config=loop.config,
+                max_cycles=1,
+            )
+            manifest.record_checkpoint(
+                "issue_failed",
+                message="Issue #234 failed.",
+                child_manifest_path=child_manifest_path,
+                issue=issue,
+                status="failed",
+                recovery_guidance="Inspect issue #234 before rerunning.",
+            )
+
+            rollup = json.loads(
+                (run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME).read_text(encoding="utf-8")
+            )
+            markdown = (run_dir / ralph.OPERATOR_ROLLUP_MARKDOWN_NAME).read_text(
+                encoding="utf-8"
+            )
+
+        summary = rollup["issues"]["failed"][0]["failure_summary"]
+        self.assertEqual(summary["failure_type"], "issue_failed")
+        self.assertEqual(summary["phase"], "Local integration commit")
+        self.assertEqual(
+            summary["command_text"],
+            "git commit -m 'Ralph Local integration for issue 234'",
+        )
+        self.assertEqual(summary["exit_code"], 1)
+        self.assertEqual(summary["primary_log_path"], str(commit_log))
+        self.assertIn("Ralph loop Unit test failed", summary["excerpt"])
+        self.assertIn("Failure summary", markdown)
+        self.assertIn("Local integration commit", markdown)
+        self.assertIn("Ralph loop Unit test failed", markdown)
+
+    def test_operator_rollup_summarizes_formatter_recovery_commit_check_failure(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            issue = make_issue(
+                {ralph.READY_LABEL},
+                IMPLEMENTATION_BODY,
+                number=242,
+                title="Formatter recovery failure",
+            )
+            commit_check_log = (
+                loop.config.log_root
+                / "issue-242-formatter-recovery-failed"
+                / "formatter-recovery-commit-check-1-gas-market-knowledge-base-commit-check.log"
+            )
+            child_manifest_path = write_child_manifest(
+                loop.config.log_root,
+                name="issue-242-formatter-recovery-failed",
+                run_kind="implementation",
+                status="failed",
+                issue=issue,
+                qa_results=[
+                    {
+                        "name": "gas-market-knowledge-base Commit check",
+                        "command": ["make", "run-prek"],
+                        "cwd": str(
+                            tmp_path / "repo" / "tools" / "gas-market-knowledge-base"
+                        ),
+                        "log_path": str(commit_check_log),
+                        "status": "failed",
+                    }
+                ],
+                failure={
+                    "message": (
+                        "Formatter-rewrite recovery failure: Commit check failed "
+                        "during formatter recovery"
+                    ),
+                    "type": ralph.FORMATTER_REWRITE_RECOVERY_FAILURE_TYPE,
+                    "log_path": str(commit_check_log),
+                    "commit_check_log_paths": [str(commit_check_log)],
+                },
+            )
+            ralph.write_command_log(
+                commit_check_log,
+                ["make", "run-prek"],
+                tmp_path / "repo" / "tools" / "gas-market-knowledge-base",
+                "",
+                (
+                    "check-added-large-files...................................Failed\n"
+                    "generated/silver/aemo-gas-statement-1.md (624 KB) exceeds 500 KB\n"
+                    "generated/silver/aemo-gas-statement-2.md (612 KB) exceeds 500 KB\n"
+                    "generated/silver/aemo-gas-statement-3.md (601 KB) exceeds 500 KB\n"
+                    "generated/silver/aemo-gas-statement-4.md (599 KB) exceeds 500 KB\n"
+                    "generated/silver/aemo-gas-statement-5.md (588 KB) exceeds 500 KB\n"
+                    "generated/silver/aemo-gas-statement-6.md (577 KB) exceeds 500 KB\n"
+                ),
+                1,
+            )
+            manifest = ralph.OperatorRunManifest.start(
+                run_dir=run_dir,
+                config=loop.config,
+                max_cycles=1,
+            )
+            manifest.record_checkpoint(
+                "issue_failed",
+                message="Issue #242 failed.",
+                child_manifest_path=child_manifest_path,
+                issue=issue,
+                status="failed",
+                recovery_guidance="Inspect issue #242 before rerunning.",
+            )
+
+            rollup = json.loads(
+                (run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME).read_text(encoding="utf-8")
+            )
+            markdown = (run_dir / ralph.OPERATOR_ROLLUP_MARKDOWN_NAME).read_text(
+                encoding="utf-8"
+            )
+
+        summary = rollup["issues"]["failed"][0]["failure_summary"]
+        self.assertEqual(
+            summary["failure_type"],
+            ralph.FORMATTER_REWRITE_RECOVERY_FAILURE_TYPE,
+        )
+        self.assertEqual(summary["test_lane"], "gas-market-knowledge-base Commit check")
+        self.assertEqual(summary["phase"], "formatter recovery Commit check")
+        self.assertEqual(summary["command"], ["make", "run-prek"])
+        self.assertEqual(summary["exit_code"], 1)
+        self.assertEqual(summary["primary_log_path"], str(commit_check_log))
+        self.assertIn("check-added-large-files", summary["excerpt"])
+        self.assertIn("generated/silver/aemo-gas-statement-6.md", summary["excerpt"])
+        self.assertIn("gas-market-knowledge-base Commit check", markdown)
+        self.assertIn("check-added-large-files", markdown)
+
+    def test_operator_rollup_summarizes_failed_promotion_commit_check(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            promotion_log = (
+                loop.config.log_root
+                / "promote-dev-to-main-failed"
+                / "promotion-qa-1-ralph-loop-commit-check.log"
+            )
+            child_manifest_path = write_child_manifest(
+                loop.config.log_root,
+                name="promote-dev-to-main-failed",
+                run_kind="promotion",
+                status="failed",
+                qa_results=[
+                    {
+                        "name": "Ralph loop Commit check",
+                        "command": ["make", "run-prek"],
+                        "cwd": str(tmp_path / "repo" / "tools" / "ralph-loop"),
+                        "log_path": str(promotion_log),
+                        "status": "failed",
+                    }
+                ],
+                failure={
+                    "message": "Command failed (1): make run-prek",
+                    "log_path": str(promotion_log),
+                },
+            )
+            ralph.write_command_log(
+                promotion_log,
+                ["make", "run-prek"],
+                tmp_path / "repo" / "tools" / "ralph-loop",
+                "",
+                "zuban failed on Promotion-only type checks\n",
+                1,
+            )
+            manifest = ralph.OperatorRunManifest.start(
+                run_dir=run_dir,
+                config=loop.config,
+                max_cycles=1,
+            )
+            manifest.record_checkpoint(
+                "promotion_failed",
+                message="Promotion failed.",
+                child_manifest_path=child_manifest_path,
+                status="failed",
+                recovery_guidance="Inspect the failed Promotion.",
+            )
+
+            rollup = json.loads(
+                (run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME).read_text(encoding="utf-8")
+            )
+            markdown = (run_dir / ralph.OPERATOR_ROLLUP_MARKDOWN_NAME).read_text(
+                encoding="utf-8"
+            )
+
+        summary = rollup["promotions"][0]["failure_summary"]
+        self.assertEqual(summary["failure_type"], "qa_failed")
+        self.assertEqual(summary["checkpoint"], "promotion_failed")
+        self.assertEqual(summary["test_lane"], "Ralph loop Commit check")
+        self.assertEqual(summary["phase"], "Promotion QA")
+        self.assertEqual(summary["command"], ["make", "run-prek"])
+        self.assertEqual(summary["exit_code"], 1)
+        self.assertEqual(summary["primary_log_path"], str(promotion_log))
+        self.assertIn("zuban failed", summary["excerpt"])
+        self.assertIn("Ralph loop Commit check", markdown)
+        self.assertIn("zuban failed", markdown)
+
+    def test_operator_rollup_failure_summary_handles_bad_manifest_and_missing_log(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, drain=True)
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            missing_manifest_issue = make_issue(
+                {ralph.READY_LABEL},
+                IMPLEMENTATION_BODY,
+                number=301,
+                title="Missing manifest",
+            )
+            malformed_manifest_issue = make_issue(
+                {ralph.READY_LABEL},
+                IMPLEMENTATION_BODY,
+                number=302,
+                title="Malformed manifest",
+            )
+            missing_log_issue = make_issue(
+                {ralph.READY_LABEL},
+                IMPLEMENTATION_BODY,
+                number=303,
+                title="Missing log",
+            )
+            missing_manifest_path = (
+                loop.config.log_root / "issue-301-missing" / ralph.MANIFEST_NAME
+            )
+            malformed_manifest_path = (
+                loop.config.log_root / "issue-302-malformed" / ralph.MANIFEST_NAME
+            )
+            malformed_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            malformed_manifest_path.write_text("{not-json", encoding="utf-8")
+            missing_log_path = (
+                loop.config.log_root / "issue-303-missing-log" / "missing.log"
+            )
+            child_manifest_path = write_child_manifest(
+                loop.config.log_root,
+                name="issue-303-missing-log",
+                run_kind="implementation",
+                status="failed",
+                issue=missing_log_issue,
+                failure={
+                    "message": "Command failed (1): make run-prek",
+                    "log_path": str(missing_log_path),
+                },
+            )
+            comment_path = child_manifest_path.parent / "issue-303-comment.md"
+            comment_path.write_text(
+                "Agent issue loop failed: Commit check log vanished.\n",
+                encoding="utf-8",
+            )
+            manifest = ralph.OperatorRunManifest.start(
+                run_dir=run_dir,
+                config=loop.config,
+                max_cycles=1,
+            )
+            manifest.record_checkpoint(
+                "issue_failed",
+                message="Issue #301 failed.",
+                child_manifest_path=missing_manifest_path,
+                issue=missing_manifest_issue,
+                status="failed",
+            )
+            manifest.record_checkpoint(
+                "issue_failed",
+                message="Issue #302 failed.",
+                child_manifest_path=malformed_manifest_path,
+                issue=malformed_manifest_issue,
+                status="failed",
+            )
+            manifest.record_checkpoint(
+                "issue_failed",
+                message="Issue #303 failed.",
+                child_manifest_path=child_manifest_path,
+                issue=missing_log_issue,
+                status="failed",
+            )
+
+            rollup = json.loads(
+                (run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME).read_text(encoding="utf-8")
+            )
+            markdown = (run_dir / ralph.OPERATOR_ROLLUP_MARKDOWN_NAME).read_text(
+                encoding="utf-8"
+            )
+
+        summaries = {
+            entry["issue"]["number"]: entry["failure_summary"]
+            for entry in rollup["issues"]["failed"]
+        }
+        self.assertEqual(summaries[301]["failure_type"], "manifest_missing")
+        self.assertEqual(summaries[302]["failure_type"], "manifest_invalid")
+        self.assertEqual(summaries[303]["log_read_status"], "missing")
+        self.assertEqual(summaries[303]["excerpt_source"], "failure_comment")
+        self.assertIn("Commit check log vanished", summaries[303]["excerpt"])
+        self.assertIn("manifest_missing", markdown)
+        self.assertIn("manifest_invalid", markdown)
+        self.assertIn("Commit check log vanished", markdown)
 
     def test_operator_status_reports_compact_issue_boundary_state(self) -> None:
         runner = FakeRunner()
