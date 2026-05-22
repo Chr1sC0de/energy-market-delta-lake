@@ -1666,6 +1666,9 @@ class RefreshGateSchedulerProbeLoop(ralph.RalphLoop):
         self.fatal_release_events = {
             issue_number: threading.Event() for issue_number in self.fatal_kinds
         }
+        self.fatal_started_events = {
+            issue_number: threading.Event() for issue_number in self.fatal_kinds
+        }
         self.claimed_numbers: list[int] = []
         self.completed_numbers: list[int] = []
         self._claimed_issue_numbers: set[int] = set()
@@ -1783,6 +1786,7 @@ class RefreshGateSchedulerProbeLoop(ralph.RalphLoop):
             fatal_release = self.fatal_release_events.get(issue.number)
             if fatal_release is not None:
                 fatal_release.wait(timeout=5)
+                self.fatal_started_events[issue.number].set()
                 error = self._fatal_error_for_issue(
                     issue,
                     Path(manifest.data["paths"]["run_dir"]),
@@ -6083,6 +6087,7 @@ Build it.
                         self.assertTrue(probe.started_events[41].wait(timeout=1))
                         self.assertTrue(probe.started_events[42].wait(timeout=1))
                         probe.fatal_release_events[41].set()
+                        self.assertTrue(probe.fatal_started_events[41].wait(timeout=1))
                         self.assertFalse(probe.started_events[43].wait(timeout=0.05))
                         probe.release_events[42].set()
                         self.assertTrue(probe.completed_events[42].wait(timeout=1))

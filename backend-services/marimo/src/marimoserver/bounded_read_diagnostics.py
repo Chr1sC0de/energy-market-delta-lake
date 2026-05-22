@@ -14,8 +14,11 @@ from marimoserver.dashboard_registry import (
 from marimoserver.gas_dashboard import (
     GAS_MODEL_TABLES,
     GasDashboardConfig,
+    connection_point_table_specs,
     facility_table_specs,
     gas_day_table_specs,
+    hub_zone_table_specs,
+    participant_table_specs,
     source_coverage_table_specs,
 )
 from marimoserver.gas_model_loader import (
@@ -309,7 +312,10 @@ def _dashboard_read_behavior_row(
         "source-coverage-matrix",
         "source-table-lineage-explorer",
         "gas-day-context",
+        "participant-context",
         "facility-context",
+        "connection-point-context",
+        "hub-zone-context",
     }:
         return _forced_bounded_registry_row(entry, route, gas_config)
     if concept_id == "gas-market-overview":
@@ -358,9 +364,23 @@ def _forced_bounded_registry_row(
     if entry.concept_id == "gas-day-context":
         read_behavior = "Registry-backed Gas Day date-field inspection"
         scope = f"{len(gas_day_table_specs())} registry-backed gas_model tables"
+    elif entry.concept_id == "participant-context":
+        read_behavior = "Registry-backed Participant relationship inspection"
+        scope = (
+            f"{len(participant_table_specs())} participant-oriented gas_model tables"
+        )
     elif entry.concept_id == "facility-context":
         read_behavior = "Registry-backed Facility relationship inspection"
         scope = f"{len(facility_table_specs())} facility-oriented gas_model tables"
+    elif entry.concept_id == "connection-point-context":
+        read_behavior = "Registry-backed Connection Point relationship inspection"
+        scope = (
+            f"{len(connection_point_table_specs())} "
+            "connection-point-oriented gas_model tables"
+        )
+    elif entry.concept_id == "hub-zone-context":
+        read_behavior = "Registry-backed Hub / Zone relationship inspection"
+        scope = f"{len(hub_zone_table_specs())} hub/zone-oriented gas_model tables"
     else:
         read_behavior = "Registry-backed source metadata inspection"
         scope = f"{len(source_coverage_table_specs())} registry-backed gas_model tables"
