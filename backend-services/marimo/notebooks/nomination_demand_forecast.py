@@ -68,12 +68,7 @@ def _():
 
 
 @app.cell
-def _(
-    NOMINATION_FORECAST_CONTEXT_ID,
-    mo,
-    render_dashboard_context_panel,
-    render_nomination_forecast_context_links,
-):
+def _(mo):
     mo.vstack(
         [
             mo.md("""
@@ -94,8 +89,6 @@ def _(
             filter misses, and missing columns render as designed empty states
             instead of notebook tracebacks.
             """),
-            mo.Html(render_dashboard_context_panel(NOMINATION_FORECAST_CONTEXT_ID)),
-            mo.Html(render_nomination_forecast_context_links()),
         ]
     )
     return
@@ -258,6 +251,22 @@ def _(
             this forecast-only fact and are not mixed into these summaries.
             """),
             kpi_view,
+        ]
+    )
+    return
+
+
+@app.cell
+def _(
+    NOMINATION_FORECAST_CONTEXT_ID,
+    mo,
+    render_dashboard_context_panel,
+    render_nomination_forecast_context_links,
+):
+    mo.vstack(
+        [
+            mo.Html(render_dashboard_context_panel(NOMINATION_FORECAST_CONTEXT_ID)),
+            mo.Html(render_nomination_forecast_context_links()),
         ]
     )
     return

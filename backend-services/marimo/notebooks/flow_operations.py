@@ -45,7 +45,7 @@ def _():
 
 
 @app.cell
-def _(FLOW_CONTEXT_ID, mo, render_dashboard_context_panel, render_flow_context_links):
+def _(mo):
     mo.vstack(
         [
             mo.md("""
@@ -67,8 +67,6 @@ def _(FLOW_CONTEXT_ID, mo, render_dashboard_context_panel, render_flow_context_l
             unavailable tables, empty tables, and missing columns render as
             designed empty states instead of notebook tracebacks.
             """),
-            mo.Html(render_dashboard_context_panel(FLOW_CONTEXT_ID)),
-            mo.Html(render_flow_context_links()),
         ]
     )
     return
@@ -185,6 +183,17 @@ def _(config, flow_specs, mo, pl):
     mo.accordion(
         {"Flow read configuration": mo.ui.table(config_frame, selection=None)},
         multiple=False,
+    )
+    return
+
+
+@app.cell
+def _(FLOW_CONTEXT_ID, mo, render_dashboard_context_panel, render_flow_context_links):
+    mo.vstack(
+        [
+            mo.Html(render_dashboard_context_panel(FLOW_CONTEXT_ID)),
+            mo.Html(render_flow_context_links()),
+        ]
     )
     return
 

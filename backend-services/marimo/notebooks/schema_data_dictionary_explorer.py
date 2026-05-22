@@ -43,7 +43,7 @@ def _():
 
 
 @app.cell
-def _(mo, render_dashboard_context_panel):
+def _(mo):
     mo.vstack(
         [
             mo.md("""
@@ -60,7 +60,6 @@ def _(mo, render_dashboard_context_panel):
             GraphQL, missing Dagster asset metadata, and assets without parsed
             schema metadata render as explicit data dictionary states.
             """),
-            mo.Html(render_dashboard_context_panel("schema-data-dictionary-explorer")),
         ]
     )
     return
@@ -183,6 +182,12 @@ def _(data_dictionary, mo):
         ]
     )
     return concept_filter, dictionary_search, mart_filter, schema_state_filter
+
+
+@app.cell
+def _(mo, render_dashboard_context_panel):
+    mo.Html(render_dashboard_context_panel("schema-data-dictionary-explorer"))
+    return
 
 
 @app.cell

@@ -1416,7 +1416,7 @@ uv run --with playwright python scripts/review_promoted_dashboards.py \
 ```
 
 The default promoted-dashboard route set keeps the issue #248 batch and adds
-the issue #256 post-**Promotion** batch.
+the issue #256 and issue #258 post-**Promotion** batches.
 
 Issue #248 routes:
 
@@ -1438,6 +1438,19 @@ Issue #256 routes:
 - `/marimo/facility_explainer/`
 - `/marimo/hub_zone_explainer/`
 - `/marimo/participant_explainer/`
+
+Issue #258 routes:
+
+- `/marimo/materialization_freshness/`
+- `/marimo/source_table_lineage_explorer/`
+- `/marimo/citation_chain_explorer/`
+- `/marimo/connection_point_explainer/`
+- `/marimo/schema_data_dictionary_explorer/`
+- `/marimo/flow_operations/`
+- `/marimo/facility_flow_storage/`
+- `/marimo/nomination_demand_forecast/`
+- `/marimo/linepack_adequacy/`
+- `/marimo/capacity_outlook/`
 
 Screenshots are off by default. When durable local review artifacts are useful,
 write them outside the repository:

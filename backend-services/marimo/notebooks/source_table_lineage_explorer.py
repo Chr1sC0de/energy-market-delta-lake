@@ -61,27 +61,22 @@ def _():
 
 
 @app.cell
-def _(mo, render_dashboard_context_panel):
+def _(mo):
     mo.vstack(
         [
             mo.md("""
             # Source Table Lineage Explorer
 
             **Dashboard brief**: **Dashboard intent**: Analytical. Analysts,
-            operators, and data engineers use this explorer to start from a
-            curated `silver.gas_model` table, inspect represented source
-            systems and source tables, and follow registry mappings to concept
-            cards, generated Market context paths, table explorer metadata,
-            and asset metadata. Data scope is read-only bounded Parquet reads
-            under `silver/gas_model`, plus S3/Dagster table catalogue metadata
-            and the code-local Marimo dashboard registry. Freshness, load
-            timing, cache status, and row-limit policy come from the shared
-            gas model loader. Missing `source_system`, `source_systems`,
-            `source_table`, `source_tables`, extra source lineage fields,
-            unavailable GraphQL, empty storage, and bounded AWS preview mode
-            render as explicit states instead of notebook tracebacks.
+            operators, and data engineers start from curated `silver.gas_model`
+            tables, inspect represented source systems and tables, and follow
+            registry mappings to concept cards, generated Market context paths,
+            table metadata, and asset metadata. Data scope is bounded Parquet
+            reads plus S3/Dagster catalogue metadata and the code-local Marimo
+            dashboard registry. Freshness, load timing, cache state, row-limit
+            policy, missing lineage fields, unavailable GraphQL, empty storage,
+            and bounded AWS preview mode render as explicit states.
             """),
-            mo.Html(render_dashboard_context_panel("source-table-lineage-explorer")),
         ]
     )
     return
@@ -148,6 +143,7 @@ def _(
 ):
     mo.vstack(
         [
+            mo.md("## Data Health"),
             mo.callout(
                 mo.md(gas_table_load_status_message(lineage_loads)),
                 kind="neutral",
@@ -222,6 +218,12 @@ def _(lineage_kpis, mo):
             mo.ui.table(lineage_kpis, selection=None),
         ]
     )
+    return
+
+
+@app.cell
+def _(mo, render_dashboard_context_panel):
+    mo.Html(render_dashboard_context_panel("source-table-lineage-explorer"))
     return
 
 

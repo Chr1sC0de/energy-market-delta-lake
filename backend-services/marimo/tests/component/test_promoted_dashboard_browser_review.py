@@ -123,18 +123,28 @@ def test_print_plan_cli_outputs_json_without_playwright_dependency() -> None:
     assert payload["dashboards"] == sorted(
         [
             "/marimo/aws_bounded_read_diagnostics/",
+            "/marimo/capacity_outlook/",
+            "/marimo/citation_chain_explorer/",
             "/marimo/concept_to_asset_explorer/",
+            "/marimo/connection_point_explainer/",
             "/marimo/dagster_asset_catalogue_status/",
             "/marimo/data_readiness_overview/",
+            "/marimo/facility_flow_storage/",
             "/marimo/facility_explainer/",
+            "/marimo/flow_operations/",
             "/marimo/gas_bid_offer_stack/",
             "/marimo/gas_day_explainer/",
             "/marimo/gas_market_prices/",
             "/marimo/glossary_explorer/",
             "/marimo/hub_zone_explainer/",
+            "/marimo/linepack_adequacy/",
+            "/marimo/materialization_freshness/",
+            "/marimo/nomination_demand_forecast/",
             "/marimo/participant_explainer/",
             "/marimo/s3_bucket_health/",
+            "/marimo/schema_data_dictionary_explorer/",
             "/marimo/source_coverage_matrix/",
+            "/marimo/source_table_lineage_explorer/",
             "/marimo/system_notices/",
             "/marimo/table_explorer/",
         ]
@@ -143,7 +153,7 @@ def test_print_plan_cli_outputs_json_without_playwright_dependency() -> None:
         {"name": "desktop", "width": 1440, "height": 1100},
         {"name": "narrow", "width": 390, "height": 900},
     ]
-    assert len(payload["runs"]) == 30
+    assert len(payload["runs"]) == 50
     assert all(run["screenshot_path"] is None for run in payload["runs"])
 
 
@@ -199,6 +209,69 @@ def test_issue_256_batch_declares_browser_review_surface(tmp_path: Path) -> None
         "row-limit input",
         "columns filter",
     }
+
+
+def test_issue_258_batch_declares_browser_review_surface(tmp_path: Path) -> None:
+    review = _load_review_script()
+
+    runs = review.build_review_plan(
+        "http://example.test:8000",
+        tmp_path,
+        routes=review.PROMOTED_DASHBOARD_ROUTES_258,
+    )
+    route_payloads = {
+        run["route"]: run
+        for run in review.review_plan_payload(runs)["runs"]
+        if run["viewport"] == "desktop"
+    }
+
+    assert set(route_payloads) == set(review.PROMOTED_DASHBOARD_ROUTES_258)
+    materialization_payload = route_payloads["/marimo/materialization_freshness/"]
+    assert "Asset Freshness Detail" in materialization_payload["required_texts"]
+    assert {
+        probe["description"] for probe in materialization_payload["control_probes"]
+    } == {
+        "refresh freshness run button",
+        "asset-group filter",
+        "layer/domain filter",
+        "freshness-state filter",
+        "minimum-gap-hours slider",
+        "asset-search filter",
+    }
+
+    citation_payload = route_payloads["/marimo/citation_chain_explorer/"]
+    assert citation_payload["control_probes"] == []
+    assert "Source hashes" in citation_payload["required_texts"]
+
+    assert {
+        probe["description"]
+        for probe in route_payloads["/marimo/capacity_outlook/"]["control_probes"]
+    } == {
+        "refresh data run button",
+        "capacity-source-coverage dropdown",
+        "date-range dropdown",
+        "capacity-type dropdown",
+        "direction dropdown",
+        "source-facility dropdown",
+        "source-system dropdown",
+    }
+
+    assert {
+        probe["description"]
+        for probe in route_payloads["/marimo/source_table_lineage_explorer/"][
+            "control_probes"
+        ]
+    } == {
+        "refresh data run button",
+        "curated-asset filter",
+        "source-system filter",
+        "lineage-state filter",
+        "lineage-search filter",
+    }
+    assert (
+        "Data Health"
+        in route_payloads["/marimo/source_table_lineage_explorer/"]["required_texts"]
+    )
 
 
 def test_review_run_checks_shadow_dom_text_and_controls() -> None:

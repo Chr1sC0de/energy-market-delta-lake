@@ -129,12 +129,6 @@ def _(
 
 
 @app.cell
-def _(mo, render_dashboard_context_panel):
-    mo.Html(render_dashboard_context_panel("materialization-freshness"))
-    return
-
-
-@app.cell
 def _(config, mo, pl):
     config_frame = pl.DataFrame(
         {
@@ -221,6 +215,12 @@ def _(MaterializationFreshnessState, freshness_rows, mo):
         ]
     )
     return asset_search, group_filter, layer_filter, minimum_gap_hours, state_filter
+
+
+@app.cell
+def _(mo, render_dashboard_context_panel):
+    mo.Html(render_dashboard_context_panel("materialization-freshness"))
+    return
 
 
 @app.cell

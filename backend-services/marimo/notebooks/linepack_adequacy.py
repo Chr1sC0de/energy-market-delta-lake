@@ -67,12 +67,7 @@ def _():
 
 
 @app.cell
-def _(
-    LINEPACK_CONTEXT_ID,
-    mo,
-    render_dashboard_context_panel,
-    render_linepack_context_links,
-):
+def _(mo):
     mo.vstack(
         [
             mo.md("""
@@ -93,8 +88,6 @@ def _(
             columns render as designed empty states instead of notebook
             tracebacks.
             """),
-            mo.Html(render_dashboard_context_panel(LINEPACK_CONTEXT_ID)),
-            mo.Html(render_linepack_context_links()),
         ]
     )
     return
@@ -250,6 +243,22 @@ def _(
         [
             mo.md("## Linepack Adequacy Health"),
             kpi_view,
+        ]
+    )
+    return
+
+
+@app.cell
+def _(
+    LINEPACK_CONTEXT_ID,
+    mo,
+    render_dashboard_context_panel,
+    render_linepack_context_links,
+):
+    mo.vstack(
+        [
+            mo.Html(render_dashboard_context_panel(LINEPACK_CONTEXT_ID)),
+            mo.Html(render_linepack_context_links()),
         ]
     )
     return
