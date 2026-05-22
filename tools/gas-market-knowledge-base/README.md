@@ -183,7 +183,9 @@ artifact output rather than maintained router documentation.
   outside the **Unit test** lane.
 - `generated/bronze`, `generated/silver`, `generated/gold`: reserved text
   artifact roots.
-- `.pre-commit-config.yaml`: Subproject `prek` hook surface.
+- `.pre-commit-config.yaml`: Subproject `prek` hook surface, with file-based
+  `uv run` hooks serialized so fresh Promotion worktrees do not race while
+  creating the Subproject environment.
 
 ## Sync metadata
 
