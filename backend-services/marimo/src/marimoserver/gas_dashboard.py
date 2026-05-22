@@ -34,6 +34,8 @@ from marimoserver.gas_model_loader import (
     row_limit_message,
 )
 
+type PolarsSchemaValue = type[pl.DataType] | pl.DataType
+
 DEFAULT_NAME_PREFIX = "energy-market"
 DEFAULT_DEVELOPMENT_ENVIRONMENT = "dev"
 DEFAULT_AWS_ENDPOINT_URL = "http://localstack:4566"
@@ -107,6 +109,18 @@ STTM_CAPACITY_SETTLEMENT_COMPONENT_FILTER_ALL = "All capacity settlement compone
 STTM_CAPACITY_SETTLEMENT_HUB_FILTER_ALL = "All hubs"
 STTM_CAPACITY_SETTLEMENT_FACILITY_FILTER_ALL = "All facilities"
 DEFAULT_STTM_CAPACITY_SETTLEMENT_PREVIEW_ROWS = 50
+STTM_MOS_ALLOCATION_CONTEXT_ID = "sttm-mos-allocation"
+STTM_MOS_STACK_TABLE_NAME = "silver_gas_fact_sttm_mos_stack"
+STTM_ALLOCATION_QUANTITY_TABLE_NAME = "silver_gas_fact_sttm_allocation_quantity"
+STTM_ALLOCATION_LIMIT_TABLE_NAME = "silver_gas_fact_sttm_allocation_limit"
+STTM_DEFAULT_ALLOCATION_NOTICE_TABLE_NAME = (
+    "silver_gas_fact_sttm_default_allocation_notice"
+)
+STTM_MOS_ALLOCATION_GAS_DATE_FILTER_ALL = "All gas dates"
+STTM_MOS_ALLOCATION_SOURCE_SYSTEM_FILTER_ALL = "All source systems"
+STTM_MOS_ALLOCATION_HUB_FILTER_ALL = "All hubs"
+STTM_MOS_ALLOCATION_FACILITY_FILTER_ALL = "All facilities"
+DEFAULT_STTM_MOS_ALLOCATION_PREVIEW_ROWS = 50
 CUSTOMER_TRANSFER_TABLE_NAME = "silver_gas_fact_customer_transfer"
 CUSTOMER_TRANSFER_GAS_DATE_FILTER_ALL = "All gas dates"
 CUSTOMER_TRANSFER_MARKET_CODE_FILTER_ALL = "All market codes"
@@ -566,6 +580,129 @@ STTM_CAPACITY_SETTLEMENT_TABLE_SPEC = GasTableSpec(
     ),
 )
 STTM_CAPACITY_SETTLEMENT_TABLE_SPECS = (STTM_CAPACITY_SETTLEMENT_TABLE_SPEC,)
+
+STTM_MOS_STACK_TABLE_SPEC = GasTableSpec(
+    section="MOS / Allocation",
+    label="STTM MOS stack",
+    table_name=STTM_MOS_STACK_TABLE_NAME,
+    date_columns=(
+        "gas_date",
+        "effective_from_date",
+        "effective_to_date",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "mos_stack_context",
+        "settlement_run_id",
+        "gas_date",
+        "effective_from_date",
+        "effective_to_date",
+        "source_system",
+        "source_table",
+        "source_report_id",
+        "source_hub_id",
+        "source_hub_name",
+        "source_facility_id",
+        "facility_name",
+        "stack_id",
+        "stack_type",
+        "stack_step_id",
+        "participant_id",
+        "participant_name",
+        "estimated_maximum_quantity_gj",
+        "step_quantity_gj",
+        "step_price",
+        "source_last_updated_timestamp",
+        "source_file",
+        "source_surrogate_key",
+    ),
+)
+STTM_ALLOCATION_QUANTITY_TABLE_SPEC = GasTableSpec(
+    section="MOS / Allocation",
+    label="STTM allocation quantity",
+    table_name=STTM_ALLOCATION_QUANTITY_TABLE_NAME,
+    date_columns=(
+        "gas_date",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "gas_date",
+        "allocation_version",
+        "source_system",
+        "source_table",
+        "source_report_id",
+        "source_hub_id",
+        "source_hub_name",
+        "source_facility_id",
+        "facility_name",
+        "flow_direction",
+        "allocation_qty_inc_mos_gj",
+        "allocation_qty_quality_type",
+        "source_last_updated_timestamp",
+        "source_file",
+        "source_surrogate_key",
+    ),
+)
+STTM_ALLOCATION_LIMIT_TABLE_SPEC = GasTableSpec(
+    section="MOS / Allocation",
+    label="STTM allocation limit",
+    table_name=STTM_ALLOCATION_LIMIT_TABLE_NAME,
+    date_columns=(
+        "gas_date",
+        "source_last_updated_timestamp",
+        "source_report_timestamp",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "gas_date",
+        "source_system",
+        "source_table",
+        "source_report_id",
+        "source_hub_id",
+        "source_hub_name",
+        "source_facility_id",
+        "facility_name",
+        "upper_warning_limit_gj",
+        "lower_warning_limit_gj",
+        "source_report_timestamp",
+        "source_last_updated_timestamp",
+        "source_file",
+        "source_surrogate_key",
+    ),
+)
+STTM_DEFAULT_ALLOCATION_NOTICE_TABLE_SPEC = GasTableSpec(
+    section="MOS / Allocation",
+    label="STTM default allocation notice",
+    table_name=STTM_DEFAULT_ALLOCATION_NOTICE_TABLE_NAME,
+    date_columns=(
+        "gas_date",
+        "source_last_updated_timestamp",
+        "ingested_timestamp",
+    ),
+    preview_columns=(
+        "notice_id",
+        "gas_date",
+        "source_system",
+        "source_table",
+        "source_report_id",
+        "source_hub_id",
+        "source_hub_name",
+        "source_facility_id",
+        "facility_name",
+        "notice_message",
+        "source_last_updated_timestamp",
+        "source_file",
+        "source_surrogate_key",
+    ),
+)
+STTM_MOS_ALLOCATION_TABLE_SPECS = (
+    STTM_MOS_STACK_TABLE_SPEC,
+    STTM_ALLOCATION_QUANTITY_TABLE_SPEC,
+    STTM_ALLOCATION_LIMIT_TABLE_SPEC,
+    STTM_DEFAULT_ALLOCATION_NOTICE_TABLE_SPEC,
+)
 
 CUSTOMER_TRANSFER_TABLE_SPEC = GasTableSpec(
     section="Retail activity",
@@ -2115,6 +2252,235 @@ _STTM_CAPACITY_SETTLEMENT_OBSERVATION_SCHEMA = {
     "accepted source identifier": pl.String,
     "source file": pl.String,
     "source updated": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_STTM_MOS_STACK_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "date_key": pl.String,
+    "effective_from_date_key": pl.String,
+    "effective_to_date_key": pl.String,
+    "participant_key": pl.String,
+    "facility_key": pl.String,
+    "zone_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "source_report_id": pl.String,
+    "mos_stack_context": pl.String,
+    "settlement_run_id": pl.String,
+    "gas_date": pl.Date,
+    "effective_from_date": pl.Date,
+    "effective_to_date": pl.Date,
+    "source_hub_id": pl.String,
+    "source_hub_name": pl.String,
+    "source_facility_id": pl.String,
+    "facility_name": pl.String,
+    "stack_id": pl.String,
+    "stack_type": pl.String,
+    "stack_step_id": pl.String,
+    "participant_id": pl.String,
+    "participant_name": pl.String,
+    "estimated_maximum_quantity_gj": pl.Float64,
+    "step_quantity_gj": pl.Float64,
+    "step_price": pl.Float64,
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_STTM_ALLOCATION_QUANTITY_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "date_key": pl.String,
+    "facility_key": pl.String,
+    "zone_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "source_report_id": pl.String,
+    "gas_date": pl.Date,
+    "allocation_version": pl.String,
+    "source_hub_id": pl.String,
+    "source_hub_name": pl.String,
+    "source_facility_id": pl.String,
+    "facility_name": pl.String,
+    "flow_direction": pl.String,
+    "allocation_qty_inc_mos_gj": pl.Float64,
+    "allocation_qty_quality_type": pl.String,
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_STTM_ALLOCATION_LIMIT_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "date_key": pl.String,
+    "facility_key": pl.String,
+    "zone_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "source_report_id": pl.String,
+    "gas_date": pl.Date,
+    "source_hub_id": pl.String,
+    "source_hub_name": pl.String,
+    "source_facility_id": pl.String,
+    "facility_name": pl.String,
+    "upper_warning_limit_gj": pl.Float64,
+    "lower_warning_limit_gj": pl.Float64,
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "source_report_timestamp": pl.Datetime("us"),
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_STTM_DEFAULT_ALLOCATION_NOTICE_RAW_SCHEMA = {
+    "surrogate_key": pl.String,
+    "date_key": pl.String,
+    "facility_key": pl.String,
+    "zone_key": pl.String,
+    "source_system": pl.String,
+    "source_tables": pl.List(pl.String),
+    "source_table": pl.String,
+    "source_report_id": pl.String,
+    "notice_id": pl.String,
+    "gas_date": pl.Date,
+    "source_hub_id": pl.String,
+    "source_hub_name": pl.String,
+    "source_facility_id": pl.String,
+    "facility_name": pl.String,
+    "notice_message": pl.String,
+    "source_last_updated": pl.String,
+    "source_last_updated_timestamp": pl.Datetime("us"),
+    "source_surrogate_key": pl.String,
+    "source_file": pl.String,
+    "ingested_timestamp": pl.Datetime("us"),
+}
+_STTM_MOS_ALLOCATION_KPI_SCHEMA = {
+    "metric": pl.String,
+    "value": pl.String,
+    "detail": pl.String,
+}
+_STTM_MOS_ALLOCATION_FACT_SUMMARY_SCHEMA = {
+    "fact": pl.String,
+    "rows": pl.UInt32,
+    "gas days": pl.UInt32,
+    "hubs": pl.UInt32,
+    "facilities": pl.UInt32,
+    "source reports": pl.UInt32,
+    "primary measure": pl.String,
+    "primary value": pl.String,
+    "latest gas date": pl.Date,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_STTM_MOS_STACK_SUMMARY_SCHEMA = {
+    "mos stack context": pl.String,
+    "settlement run": pl.String,
+    "stack type": pl.String,
+    "hub": pl.String,
+    "hub name": pl.String,
+    "facility": pl.String,
+    "facility name": pl.String,
+    "participant": pl.String,
+    "participant name": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+    "source report": pl.String,
+    "rows": pl.UInt32,
+    "gas days": pl.UInt32,
+    "stack ids": pl.UInt32,
+    "stack steps": pl.UInt32,
+    "estimated maximum rows": pl.UInt32,
+    "total estimated maximum gj": pl.Float64,
+    "step quantity rows": pl.UInt32,
+    "total step quantity gj": pl.Float64,
+    "price rows": pl.UInt32,
+    "min step price": pl.Float64,
+    "max step price": pl.Float64,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_STTM_ALLOCATION_QUANTITY_SUMMARY_SCHEMA = {
+    "allocation version": pl.String,
+    "flow direction": pl.String,
+    "allocation quality type": pl.String,
+    "hub": pl.String,
+    "hub name": pl.String,
+    "facility": pl.String,
+    "facility name": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+    "source report": pl.String,
+    "rows": pl.UInt32,
+    "gas days": pl.UInt32,
+    "allocation rows": pl.UInt32,
+    "total allocation qty inc mos gj": pl.Float64,
+    "min allocation qty inc mos gj": pl.Float64,
+    "max allocation qty inc mos gj": pl.Float64,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_STTM_ALLOCATION_LIMIT_SUMMARY_SCHEMA = {
+    "hub": pl.String,
+    "hub name": pl.String,
+    "facility": pl.String,
+    "facility name": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+    "source report": pl.String,
+    "rows": pl.UInt32,
+    "gas days": pl.UInt32,
+    "upper limit rows": pl.UInt32,
+    "min upper warning limit gj": pl.Float64,
+    "max upper warning limit gj": pl.Float64,
+    "lower limit rows": pl.UInt32,
+    "min lower warning limit gj": pl.Float64,
+    "max lower warning limit gj": pl.Float64,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest source report": pl.Datetime("us"),
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_STTM_DEFAULT_ALLOCATION_NOTICE_SUMMARY_SCHEMA = {
+    "notice": pl.String,
+    "hub": pl.String,
+    "hub name": pl.String,
+    "facility": pl.String,
+    "facility name": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+    "source report": pl.String,
+    "rows": pl.UInt32,
+    "gas days": pl.UInt32,
+    "notice messages": pl.UInt32,
+    "sample notice message": pl.String,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest source update": pl.Datetime("us"),
+    "latest ingest": pl.Datetime("us"),
+}
+_STTM_MOS_ALLOCATION_SOURCE_COVERAGE_SCHEMA = {
+    "fact": pl.String,
+    "source system": pl.String,
+    "source table": pl.String,
+    "source report": pl.String,
+    "rows": pl.UInt32,
+    "gas days": pl.UInt32,
+    "hubs": pl.UInt32,
+    "facilities": pl.UInt32,
+    "source identifiers": pl.UInt32,
+    "source files": pl.UInt32,
+    "first gas date": pl.Date,
+    "latest gas date": pl.Date,
+    "latest source update": pl.Datetime("us"),
     "latest ingest": pl.Datetime("us"),
 }
 _CUSTOMER_TRANSFER_RAW_SCHEMA = {
@@ -3762,6 +4128,7 @@ _GAS_DAY_KNOWN_TABLE_SPECS = (
     SETTLEMENT_ACTIVITY_TABLE_SPEC,
     STTM_MARKET_SETTLEMENT_TABLE_SPEC,
     STTM_CAPACITY_SETTLEMENT_TABLE_SPEC,
+    *STTM_MOS_ALLOCATION_TABLE_SPECS,
     CUSTOMER_TRANSFER_TABLE_SPEC,
     BID_STACK_TABLE_SPEC,
     STTM_CONTINGENCY_GAS_TABLE_SPEC,
@@ -4124,6 +4491,42 @@ def cached_load_sttm_capacity_settlement_table(
         refresh_token=refresh_token,
         clock=clock,
     )[0]
+
+
+def load_sttm_mos_allocation_tables(
+    config: GasDashboardConfig,
+    reader: TableReader = read_parquet_table,
+    *,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Load STTM MOS and allocation facts through the bounded table loader."""
+    return load_gas_model_tables(
+        config,
+        specs=STTM_MOS_ALLOCATION_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        clock=clock,
+    )
+
+
+def cached_load_sttm_mos_allocation_tables(
+    config: GasDashboardConfig,
+    cache: GasModelSessionCache,
+    reader: TableReader = read_parquet_table,
+    *,
+    refresh_token: Hashable = 0,
+    clock: Clock = perf_counter,
+) -> list[GasTableLoad]:
+    """Return cached STTM MOS and allocation facts for explicit refreshes."""
+    return cached_load_gas_model_tables(
+        config,
+        cache,
+        specs=STTM_MOS_ALLOCATION_TABLE_SPECS,
+        reader=reader,
+        view=GasModelTableView.RECENT,
+        refresh_token=refresh_token,
+        clock=clock,
+    )
 
 
 def load_customer_transfer_table(
@@ -10692,6 +11095,789 @@ def render_sttm_capacity_settlement_context_links(
     <div>
         <p class="sttm-capacity-settlement-links__eyebrow">Context links</p>
         <h2>Capacity settlement, market settlement, MOS, Allocation, Facility, and Hub / Zone context</h2>
+    </div>
+    <ul>
+{rows}
+    </ul>
+</section>"""
+
+
+def sttm_mos_allocation_gas_date_options(
+    loads: Sequence[GasTableLoad],
+) -> tuple[str, ...]:
+    """Return gas-date filter options across STTM MOS and allocation facts."""
+    return _sttm_mos_allocation_date_filter_options(
+        loads,
+        "gas_date",
+        STTM_MOS_ALLOCATION_GAS_DATE_FILTER_ALL,
+    )
+
+
+def sttm_mos_allocation_source_system_options(
+    loads: Sequence[GasTableLoad],
+) -> tuple[str, ...]:
+    """Return source-system filter options across MOS and allocation facts."""
+    return _sttm_mos_allocation_string_filter_options(
+        loads,
+        "source_system",
+        STTM_MOS_ALLOCATION_SOURCE_SYSTEM_FILTER_ALL,
+    )
+
+
+def sttm_mos_allocation_hub_options(
+    loads: Sequence[GasTableLoad],
+) -> tuple[str, ...]:
+    """Return Hub / Zone filter options across STTM MOS and allocation facts."""
+    return _sttm_mos_allocation_string_filter_options(
+        loads,
+        "source_hub_id",
+        STTM_MOS_ALLOCATION_HUB_FILTER_ALL,
+    )
+
+
+def sttm_mos_allocation_facility_options(
+    loads: Sequence[GasTableLoad],
+) -> tuple[str, ...]:
+    """Return Facility filter options across STTM MOS and allocation facts."""
+    return _sttm_mos_allocation_string_filter_options(
+        loads,
+        "source_facility_id",
+        STTM_MOS_ALLOCATION_FACILITY_FILTER_ALL,
+    )
+
+
+def sttm_mos_allocation_kpi_frame(
+    loads: Sequence[GasTableLoad],
+    gas_date_filter: str = STTM_MOS_ALLOCATION_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = STTM_MOS_ALLOCATION_SOURCE_SYSTEM_FILTER_ALL,
+    hub_filter: str = STTM_MOS_ALLOCATION_HUB_FILTER_ALL,
+    facility_filter: str = STTM_MOS_ALLOCATION_FACILITY_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return first-viewport KPIs for loaded STTM MOS and allocation rows."""
+    frames = _filtered_sttm_mos_allocation_frames(
+        loads,
+        gas_date_filter,
+        source_system_filter,
+        hub_filter,
+        facility_filter,
+    )
+    total_rows = sum(dataframe.height for dataframe in frames.values())
+    if total_rows == 0:
+        return pl.DataFrame(schema=_STTM_MOS_ALLOCATION_KPI_SCHEMA)
+
+    frame_values = tuple(frames.values())
+    mos_stack = frames[STTM_MOS_STACK_TABLE_NAME]
+    allocation_quantity = frames[STTM_ALLOCATION_QUANTITY_TABLE_NAME]
+    allocation_limit = frames[STTM_ALLOCATION_LIMIT_TABLE_NAME]
+    default_notice = frames[STTM_DEFAULT_ALLOCATION_NOTICE_TABLE_NAME]
+    upper_limit_rows = _sttm_measure_row_count(
+        allocation_limit,
+        "upper_warning_limit_gj",
+    )
+    lower_limit_rows = _sttm_measure_row_count(
+        allocation_limit,
+        "lower_warning_limit_gj",
+    )
+
+    return pl.DataFrame(
+        [
+            {
+                "metric": "Loaded STTM MOS/allocation rows",
+                "value": f"{total_rows:,}",
+                "detail": format_row_limit(_common_row_limit(loads)),
+            },
+            {
+                "metric": "MOS stack rows",
+                "value": f"{mos_stack.height:,}",
+                "detail": "Rows from silver_gas_fact_sttm_mos_stack",
+            },
+            {
+                "metric": "Allocation quantity rows",
+                "value": f"{allocation_quantity.height:,}",
+                "detail": "Rows from silver_gas_fact_sttm_allocation_quantity",
+            },
+            {
+                "metric": "Allocation limit rows",
+                "value": f"{allocation_limit.height:,}",
+                "detail": "Rows from silver_gas_fact_sttm_allocation_limit",
+            },
+            {
+                "metric": "Default allocation notice rows",
+                "value": f"{default_notice.height:,}",
+                "detail": ("Rows from silver_gas_fact_sttm_default_allocation_notice"),
+            },
+            {
+                "metric": "Gas Days",
+                "value": f"{_sttm_distinct_across_frames(frame_values, 'gas_date'):,}",
+                "detail": "Distinct gas_date values represented",
+            },
+            {
+                "metric": "Hubs",
+                "value": f"{_sttm_distinct_across_frames(frame_values, 'source_hub_id'):,}",
+                "detail": "Distinct source_hub_id values represented",
+            },
+            {
+                "metric": "Facilities",
+                "value": f"{_sttm_distinct_across_frames(frame_values, 'source_facility_id'):,}",
+                "detail": "Distinct source_facility_id values represented",
+            },
+            {
+                "metric": "Source reports",
+                "value": f"{_sttm_distinct_across_frames(frame_values, 'source_report_id'):,}",
+                "detail": "Distinct source_report_id values represented",
+            },
+            {
+                "metric": "Allocation quantity inc MOS",
+                "value": _format_measure_total(
+                    _sttm_measure_sum(
+                        allocation_quantity,
+                        "allocation_qty_inc_mos_gj",
+                    ),
+                    _sttm_measure_row_count(
+                        allocation_quantity,
+                        "allocation_qty_inc_mos_gj",
+                    ),
+                    suffix=" GJ",
+                ),
+                "detail": (
+                    f"{_sttm_measure_row_count(allocation_quantity, 'allocation_qty_inc_mos_gj'):,} "
+                    "populated allocation_qty_inc_mos_gj rows"
+                ),
+            },
+            {
+                "metric": "MOS step quantity",
+                "value": _format_measure_total(
+                    _sttm_measure_sum(mos_stack, "step_quantity_gj"),
+                    _sttm_measure_row_count(mos_stack, "step_quantity_gj"),
+                    suffix=" GJ",
+                ),
+                "detail": (
+                    f"{_sttm_measure_row_count(mos_stack, 'step_quantity_gj'):,} "
+                    "populated step_quantity_gj rows"
+                ),
+            },
+            {
+                "metric": "MOS estimated maximum",
+                "value": _format_measure_total(
+                    _sttm_measure_sum(mos_stack, "estimated_maximum_quantity_gj"),
+                    _sttm_measure_row_count(
+                        mos_stack,
+                        "estimated_maximum_quantity_gj",
+                    ),
+                    suffix=" GJ",
+                ),
+                "detail": (
+                    f"{_sttm_measure_row_count(mos_stack, 'estimated_maximum_quantity_gj'):,} "
+                    "populated estimated_maximum_quantity_gj rows"
+                ),
+            },
+            {
+                "metric": "Allocation warning limits",
+                "value": f"{upper_limit_rows + lower_limit_rows:,}",
+                "detail": (
+                    f"{upper_limit_rows:,} upper and {lower_limit_rows:,} lower "
+                    "warning-limit values"
+                ),
+            },
+            {
+                "metric": "Default allocation notices",
+                "value": f"{_sttm_distinct_non_empty(default_notice, 'notice_id'):,}",
+                "detail": "Distinct notice_id values represented",
+            },
+            {
+                "metric": "Latest Gas Day",
+                "value": _format_optional_value(
+                    _latest_sttm_date_across_frames(frame_values, "gas_date")
+                ),
+                "detail": "Maximum gas_date in the loaded bounded rows",
+            },
+        ],
+        schema=_STTM_MOS_ALLOCATION_KPI_SCHEMA,
+    )
+
+
+def sttm_mos_allocation_fact_summary_frame(
+    loads: Sequence[GasTableLoad],
+    gas_date_filter: str = STTM_MOS_ALLOCATION_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = STTM_MOS_ALLOCATION_SOURCE_SYSTEM_FILTER_ALL,
+    hub_filter: str = STTM_MOS_ALLOCATION_HUB_FILTER_ALL,
+    facility_filter: str = STTM_MOS_ALLOCATION_FACILITY_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return fact-level STTM MOS/allocation coverage and primary measures."""
+    frames = _filtered_sttm_mos_allocation_frames(
+        loads,
+        gas_date_filter,
+        source_system_filter,
+        hub_filter,
+        facility_filter,
+    )
+    rows = [
+        _sttm_mos_allocation_fact_summary_row(
+            "MOS stack",
+            frames[STTM_MOS_STACK_TABLE_NAME],
+            "step_quantity_gj",
+            "Total step quantity",
+        ),
+        _sttm_mos_allocation_fact_summary_row(
+            "Allocation quantity",
+            frames[STTM_ALLOCATION_QUANTITY_TABLE_NAME],
+            "allocation_qty_inc_mos_gj",
+            "Total allocation qty inc MOS",
+        ),
+        _sttm_mos_allocation_fact_summary_row(
+            "Allocation limit",
+            frames[STTM_ALLOCATION_LIMIT_TABLE_NAME],
+            "upper_warning_limit_gj",
+            "Upper warning limit range",
+            range_measure=True,
+        ),
+        _sttm_mos_allocation_notice_fact_summary_row(
+            frames[STTM_DEFAULT_ALLOCATION_NOTICE_TABLE_NAME]
+        ),
+    ]
+    populated_rows = [
+        row for row in rows if isinstance(row["rows"], int) and row["rows"] > 0
+    ]
+    if len(populated_rows) == 0:
+        return pl.DataFrame(schema=_STTM_MOS_ALLOCATION_FACT_SUMMARY_SCHEMA)
+
+    return pl.DataFrame(
+        populated_rows,
+        schema=_STTM_MOS_ALLOCATION_FACT_SUMMARY_SCHEMA,
+    )
+
+
+def sttm_mos_stack_summary_frame(
+    loads: Sequence[GasTableLoad],
+    gas_date_filter: str = STTM_MOS_ALLOCATION_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = STTM_MOS_ALLOCATION_SOURCE_SYSTEM_FILTER_ALL,
+    hub_filter: str = STTM_MOS_ALLOCATION_HUB_FILTER_ALL,
+    facility_filter: str = STTM_MOS_ALLOCATION_FACILITY_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_STTM_MOS_ALLOCATION_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return MOS stack summaries by context, stack, Hub / Zone, and Facility."""
+    dataframe = _filtered_sttm_mos_allocation_table_frame(
+        loads,
+        STTM_MOS_STACK_TABLE_NAME,
+        gas_date_filter,
+        source_system_filter,
+        hub_filter,
+        facility_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_STTM_MOS_STACK_SUMMARY_SCHEMA)
+
+    summary = (
+        dataframe.group_by(
+            "mos_stack_context",
+            "settlement_run_id",
+            "stack_type",
+            "source_hub_id",
+            "source_hub_name",
+            "source_facility_id",
+            "facility_name",
+            "participant_id",
+            "participant_name",
+            "source_system",
+            "source_table",
+            "source_report_id",
+        )
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("gas_date").drop_nulls().n_unique().alias("gas days"),
+            pl.col("stack_id").drop_nulls().n_unique().alias("stack ids"),
+            pl.col("stack_step_id").drop_nulls().n_unique().alias("stack steps"),
+            pl.col("estimated_maximum_quantity_gj")
+            .is_not_null()
+            .sum()
+            .alias("estimated maximum rows"),
+            pl.col("estimated_maximum_quantity_gj")
+            .sum()
+            .round(4)
+            .alias("total estimated maximum gj"),
+            pl.col("step_quantity_gj").is_not_null().sum().alias("step quantity rows"),
+            pl.col("step_quantity_gj").sum().round(4).alias("total step quantity gj"),
+            pl.col("step_price").is_not_null().sum().alias("price rows"),
+            pl.col("step_price").min().alias("min step price"),
+            pl.col("step_price").max().alias("max step price"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(
+            [
+                "rows",
+                "latest gas date",
+                "source_system",
+                "mos_stack_context",
+                "source_hub_id",
+                "source_facility_id",
+            ],
+            descending=[True, True, False, False, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("mos_stack_context").alias("mos stack context"),
+            pl.col("settlement_run_id").alias("settlement run"),
+            pl.col("stack_type").alias("stack type"),
+            pl.col("source_hub_id").alias("hub"),
+            pl.col("source_hub_name").alias("hub name"),
+            pl.col("source_facility_id").alias("facility"),
+            pl.col("facility_name").alias("facility name"),
+            pl.col("participant_id").alias("participant"),
+            pl.col("participant_name").alias("participant name"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("source_report_id").alias("source report"),
+            pl.col("rows"),
+            pl.col("gas days"),
+            pl.col("stack ids"),
+            pl.col("stack steps"),
+            pl.col("estimated maximum rows"),
+            pl.col("total estimated maximum gj"),
+            pl.col("step quantity rows"),
+            pl.col("total step quantity gj"),
+            pl.col("price rows"),
+            pl.col("min step price"),
+            pl.col("max step price"),
+            pl.col("first gas date"),
+            pl.col("latest gas date"),
+            pl.col("latest source update"),
+            pl.col("latest ingest"),
+        )
+        .head(max(1, preview_rows))
+    )
+    return summary.select([*list(_STTM_MOS_STACK_SUMMARY_SCHEMA)])
+
+
+def sttm_allocation_quantity_summary_frame(
+    loads: Sequence[GasTableLoad],
+    gas_date_filter: str = STTM_MOS_ALLOCATION_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = STTM_MOS_ALLOCATION_SOURCE_SYSTEM_FILTER_ALL,
+    hub_filter: str = STTM_MOS_ALLOCATION_HUB_FILTER_ALL,
+    facility_filter: str = STTM_MOS_ALLOCATION_FACILITY_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_STTM_MOS_ALLOCATION_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return allocation quantity summaries by version, direction, and facility."""
+    dataframe = _filtered_sttm_mos_allocation_table_frame(
+        loads,
+        STTM_ALLOCATION_QUANTITY_TABLE_NAME,
+        gas_date_filter,
+        source_system_filter,
+        hub_filter,
+        facility_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_STTM_ALLOCATION_QUANTITY_SUMMARY_SCHEMA)
+
+    summary = (
+        dataframe.group_by(
+            "allocation_version",
+            "flow_direction",
+            "allocation_qty_quality_type",
+            "source_hub_id",
+            "source_hub_name",
+            "source_facility_id",
+            "facility_name",
+            "source_system",
+            "source_table",
+            "source_report_id",
+        )
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("gas_date").drop_nulls().n_unique().alias("gas days"),
+            pl.col("allocation_qty_inc_mos_gj")
+            .is_not_null()
+            .sum()
+            .alias("allocation rows"),
+            pl.col("allocation_qty_inc_mos_gj")
+            .sum()
+            .round(4)
+            .alias("total allocation qty inc mos gj"),
+            pl.col("allocation_qty_inc_mos_gj")
+            .min()
+            .alias("min allocation qty inc mos gj"),
+            pl.col("allocation_qty_inc_mos_gj")
+            .max()
+            .alias("max allocation qty inc mos gj"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(
+            [
+                "rows",
+                "latest gas date",
+                "source_system",
+                "allocation_version",
+                "flow_direction",
+                "source_hub_id",
+                "source_facility_id",
+            ],
+            descending=[True, True, False, False, False, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("allocation_version").alias("allocation version"),
+            pl.col("flow_direction").alias("flow direction"),
+            pl.col("allocation_qty_quality_type").alias("allocation quality type"),
+            pl.col("source_hub_id").alias("hub"),
+            pl.col("source_hub_name").alias("hub name"),
+            pl.col("source_facility_id").alias("facility"),
+            pl.col("facility_name").alias("facility name"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("source_report_id").alias("source report"),
+            pl.col("rows"),
+            pl.col("gas days"),
+            pl.col("allocation rows"),
+            pl.col("total allocation qty inc mos gj"),
+            pl.col("min allocation qty inc mos gj"),
+            pl.col("max allocation qty inc mos gj"),
+            pl.col("first gas date"),
+            pl.col("latest gas date"),
+            pl.col("latest source update"),
+            pl.col("latest ingest"),
+        )
+        .head(max(1, preview_rows))
+    )
+    return summary.select([*list(_STTM_ALLOCATION_QUANTITY_SUMMARY_SCHEMA)])
+
+
+def sttm_allocation_limit_summary_frame(
+    loads: Sequence[GasTableLoad],
+    gas_date_filter: str = STTM_MOS_ALLOCATION_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = STTM_MOS_ALLOCATION_SOURCE_SYSTEM_FILTER_ALL,
+    hub_filter: str = STTM_MOS_ALLOCATION_HUB_FILTER_ALL,
+    facility_filter: str = STTM_MOS_ALLOCATION_FACILITY_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_STTM_MOS_ALLOCATION_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return allocation warning-limit summaries by Hub / Zone and Facility."""
+    dataframe = _filtered_sttm_mos_allocation_table_frame(
+        loads,
+        STTM_ALLOCATION_LIMIT_TABLE_NAME,
+        gas_date_filter,
+        source_system_filter,
+        hub_filter,
+        facility_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_STTM_ALLOCATION_LIMIT_SUMMARY_SCHEMA)
+
+    summary = (
+        dataframe.group_by(
+            "source_hub_id",
+            "source_hub_name",
+            "source_facility_id",
+            "facility_name",
+            "source_system",
+            "source_table",
+            "source_report_id",
+        )
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("gas_date").drop_nulls().n_unique().alias("gas days"),
+            pl.col("upper_warning_limit_gj")
+            .is_not_null()
+            .sum()
+            .alias("upper limit rows"),
+            pl.col("upper_warning_limit_gj").min().alias("min upper warning limit gj"),
+            pl.col("upper_warning_limit_gj").max().alias("max upper warning limit gj"),
+            pl.col("lower_warning_limit_gj")
+            .is_not_null()
+            .sum()
+            .alias("lower limit rows"),
+            pl.col("lower_warning_limit_gj").min().alias("min lower warning limit gj"),
+            pl.col("lower_warning_limit_gj").max().alias("max lower warning limit gj"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("source_report_timestamp").max().alias("latest source report"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(
+            [
+                "rows",
+                "latest gas date",
+                "source_system",
+                "source_hub_id",
+                "source_facility_id",
+            ],
+            descending=[True, True, False, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("source_hub_id").alias("hub"),
+            pl.col("source_hub_name").alias("hub name"),
+            pl.col("source_facility_id").alias("facility"),
+            pl.col("facility_name").alias("facility name"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("source_report_id").alias("source report"),
+            pl.col("rows"),
+            pl.col("gas days"),
+            pl.col("upper limit rows"),
+            pl.col("min upper warning limit gj"),
+            pl.col("max upper warning limit gj"),
+            pl.col("lower limit rows"),
+            pl.col("min lower warning limit gj"),
+            pl.col("max lower warning limit gj"),
+            pl.col("first gas date"),
+            pl.col("latest gas date"),
+            pl.col("latest source report"),
+            pl.col("latest source update"),
+            pl.col("latest ingest"),
+        )
+        .head(max(1, preview_rows))
+    )
+    return summary.select([*list(_STTM_ALLOCATION_LIMIT_SUMMARY_SCHEMA)])
+
+
+def sttm_default_allocation_notice_summary_frame(
+    loads: Sequence[GasTableLoad],
+    gas_date_filter: str = STTM_MOS_ALLOCATION_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = STTM_MOS_ALLOCATION_SOURCE_SYSTEM_FILTER_ALL,
+    hub_filter: str = STTM_MOS_ALLOCATION_HUB_FILTER_ALL,
+    facility_filter: str = STTM_MOS_ALLOCATION_FACILITY_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_STTM_MOS_ALLOCATION_PREVIEW_ROWS,
+) -> pl.DataFrame:
+    """Return default allocation notice summaries by notice and facility."""
+    dataframe = _filtered_sttm_mos_allocation_table_frame(
+        loads,
+        STTM_DEFAULT_ALLOCATION_NOTICE_TABLE_NAME,
+        gas_date_filter,
+        source_system_filter,
+        hub_filter,
+        facility_filter,
+    )
+    if dataframe.is_empty():
+        return pl.DataFrame(schema=_STTM_DEFAULT_ALLOCATION_NOTICE_SUMMARY_SCHEMA)
+
+    summary = (
+        dataframe.group_by(
+            "notice_id",
+            "source_hub_id",
+            "source_hub_name",
+            "source_facility_id",
+            "facility_name",
+            "source_system",
+            "source_table",
+            "source_report_id",
+        )
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("gas_date").drop_nulls().n_unique().alias("gas days"),
+            pl.col("notice_message").drop_nulls().n_unique().alias("notice messages"),
+            pl.col("notice_message")
+            .drop_nulls()
+            .first()
+            .alias("sample notice message"),
+            pl.col("gas_date").min().alias("first gas date"),
+            pl.col("gas_date").max().alias("latest gas date"),
+            pl.col("source_last_updated_timestamp").max().alias("latest source update"),
+            pl.col("ingested_timestamp").max().alias("latest ingest"),
+        )
+        .sort(
+            [
+                "rows",
+                "latest gas date",
+                "source_system",
+                "notice_id",
+                "source_hub_id",
+                "source_facility_id",
+            ],
+            descending=[True, True, False, False, False, False],
+            nulls_last=True,
+        )
+        .select(
+            pl.col("notice_id").alias("notice"),
+            pl.col("source_hub_id").alias("hub"),
+            pl.col("source_hub_name").alias("hub name"),
+            pl.col("source_facility_id").alias("facility"),
+            pl.col("facility_name").alias("facility name"),
+            pl.col("source_system").alias("source system"),
+            pl.col("source_table").alias("source table"),
+            pl.col("source_report_id").alias("source report"),
+            pl.col("rows"),
+            pl.col("gas days"),
+            pl.col("notice messages"),
+            pl.col("sample notice message"),
+            pl.col("first gas date"),
+            pl.col("latest gas date"),
+            pl.col("latest source update"),
+            pl.col("latest ingest"),
+        )
+        .head(max(1, preview_rows))
+    )
+    return summary.select([*list(_STTM_DEFAULT_ALLOCATION_NOTICE_SUMMARY_SCHEMA)])
+
+
+def sttm_mos_allocation_source_coverage_frame(
+    loads: Sequence[GasTableLoad],
+    gas_date_filter: str = STTM_MOS_ALLOCATION_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = STTM_MOS_ALLOCATION_SOURCE_SYSTEM_FILTER_ALL,
+    hub_filter: str = STTM_MOS_ALLOCATION_HUB_FILTER_ALL,
+    facility_filter: str = STTM_MOS_ALLOCATION_FACILITY_FILTER_ALL,
+) -> pl.DataFrame:
+    """Return visible source coverage diagnostics for MOS/allocation facts."""
+    frames = _filtered_sttm_mos_allocation_frames(
+        loads,
+        gas_date_filter,
+        source_system_filter,
+        hub_filter,
+        facility_filter,
+    )
+    summaries: list[pl.DataFrame] = []
+    for table_name, dataframe in frames.items():
+        if dataframe.is_empty():
+            continue
+        summaries.append(
+            dataframe.group_by("source_system", "source_table", "source_report_id")
+            .agg(
+                pl.len().alias("rows"),
+                pl.col("gas_date").drop_nulls().n_unique().alias("gas days"),
+                pl.col("source_hub_id").drop_nulls().n_unique().alias("hubs"),
+                pl.col("source_facility_id")
+                .drop_nulls()
+                .n_unique()
+                .alias("facilities"),
+                pl.col("source_surrogate_key")
+                .drop_nulls()
+                .n_unique()
+                .alias("source identifiers"),
+                pl.col("source_file").drop_nulls().n_unique().alias("source files"),
+                pl.col("gas_date").min().alias("first gas date"),
+                pl.col("gas_date").max().alias("latest gas date"),
+                pl.col("source_last_updated_timestamp")
+                .max()
+                .alias("latest source update"),
+                pl.col("ingested_timestamp").max().alias("latest ingest"),
+            )
+            .with_columns(
+                pl.lit(_sttm_mos_allocation_fact_label(table_name)).alias("fact")
+            )
+            .rename(
+                {
+                    "source_system": "source system",
+                    "source_table": "source table",
+                    "source_report_id": "source report",
+                }
+            )
+            .select([*list(_STTM_MOS_ALLOCATION_SOURCE_COVERAGE_SCHEMA)])
+        )
+
+    if len(summaries) == 0:
+        return pl.DataFrame(schema=_STTM_MOS_ALLOCATION_SOURCE_COVERAGE_SCHEMA)
+    return pl.concat(summaries, how="vertical").sort(
+        ["fact", "rows", "source table"],
+        descending=[False, True, False],
+    )
+
+
+def sttm_mos_allocation_empty_state_markdown(
+    loads: Sequence[GasTableLoad],
+) -> str:
+    """Return empty-state copy for missing or unmatched MOS/allocation rows."""
+    table_labels = ", ".join(
+        _markdown_breakable_text(f"silver.gas_model.{spec.table_name}")
+        for spec in STTM_MOS_ALLOCATION_TABLE_SPECS
+    )
+    if len(loads) == 0:
+        return f"""
+        **No STTM MOS/allocation data is available for this view.**
+
+        The dashboard did not receive MOS/allocation load results. It expected
+        bounded reads from {table_labels}.
+
+        No read policy was reported.
+        """
+
+    loaded_rows = sum(
+        0 if load.dataframe is None else load.dataframe.height for load in loads
+    )
+    failed_count = sum(load.error is not None for load in loads)
+    empty_count = sum(
+        load.error is None and (load.dataframe is None or load.dataframe.is_empty())
+        for load in loads
+    )
+    if loaded_rows > 0:
+        status_detail = (
+            "The current filters do not match any loaded STTM MOS/allocation rows."
+        )
+    elif failed_count > 0:
+        errors = "; ".join(load.error for load in loads if load.error is not None)
+        status_detail = f"Read detail: {_markdown_breakable_text(errors)}"
+    else:
+        status_detail = f"`{empty_count}` MOS/allocation table reads completed but returned no rows."
+
+    return f"""
+    **No STTM MOS/allocation data is available for this view.**
+
+    The dashboard checked {table_labels}, which should contain MOS stack,
+    allocation quantity, allocation limit, and default allocation notice rows
+    with Gas Day, Hub / Zone, Facility, source-system, source-table, and accepted
+    source identifier fields where available.
+
+    {status_detail}
+
+    {row_limit_message(_common_row_limit(loads))}
+
+    Materialize or seed the `silver.gas_model` STTM MOS/allocation assets, then
+    use **Refresh data**.
+    """
+
+
+def render_sttm_mos_allocation_context_links(
+    entries: Sequence[DashboardRegistryEntry] | None = None,
+) -> str:
+    """Render STTM MOS/allocation links to related Market context panels."""
+    candidate_entries = tuple(dashboard_registry() if entries is None else entries)
+    concept_ids = (
+        STTM_MOS_ALLOCATION_CONTEXT_ID,
+        "mos-context",
+        "allocation-context",
+        "sttm-capacity-settlement",
+        "sttm-market-settlement",
+        "settlement-context",
+        "capacity-context",
+        "facility-context",
+        "hub-zone-context",
+        "gas-model-table-explorer",
+    )
+    rows = "\n".join(
+        _render_sttm_mos_allocation_context_link(entry)
+        for entry in (
+            registry_entry_by_concept_id(concept_id, candidate_entries)
+            for concept_id in concept_ids
+        )
+        if entry is not None
+    )
+    if rows == "":
+        rows = (
+            '<li class="sttm-mos-allocation-links__empty">'
+            "No STTM MOS/allocation, MOS, Allocation, Settlement, Capacity, "
+            "Facility, Hub / Zone, or table explorer context entries are "
+            "registered."
+            "</li>"
+        )
+
+    return f"""\
+<style>
+{_sttm_mos_allocation_context_links_css()}
+</style>
+<section
+    class="sttm-mos-allocation-links"
+    aria-label="STTM MOS and allocation context links"
+>
+    <div>
+        <p class="sttm-mos-allocation-links__eyebrow">Context links</p>
+        <h2>MOS, Allocation, Settlement, Capacity, Facility, and Hub / Zone context</h2>
     </div>
     <ul>
 {rows}
@@ -20093,6 +21279,423 @@ def _normalised_sttm_capacity_settlement_dataframe(
         pl.col("source_file").cast(pl.String, strict=False),
         _normalise_timestamp_column(dataframe, "ingested_timestamp"),
     )
+
+
+def _sttm_mos_allocation_string_filter_options(
+    loads: Sequence[GasTableLoad],
+    column: str,
+    all_label: str,
+) -> tuple[str, ...]:
+    values: set[str] = set()
+    for dataframe in _normalised_sttm_mos_allocation_frames(loads).values():
+        if dataframe.is_empty() or column not in dataframe.columns:
+            continue
+        for value in (
+            dataframe.get_column(column)
+            .drop_nulls()
+            .cast(pl.String, strict=False)
+            .unique()
+            .to_list()
+        ):
+            if value is not None and str(value).strip() != "":
+                values.add(str(value))
+    return (all_label, *sorted(values))
+
+
+def _sttm_mos_allocation_date_filter_options(
+    loads: Sequence[GasTableLoad],
+    column: str,
+    all_label: str,
+) -> tuple[str, ...]:
+    values: set[str] = set()
+    for dataframe in _normalised_sttm_mos_allocation_frames(loads).values():
+        if dataframe.is_empty() or column not in dataframe.columns:
+            continue
+        for value in dataframe.get_column(column).drop_nulls().unique().to_list():
+            if value is not None:
+                values.add(str(value))
+    return (all_label, *reversed(sorted(values)))
+
+
+def _filtered_sttm_mos_allocation_frames(
+    loads: Sequence[GasTableLoad],
+    gas_date_filter: str,
+    source_system_filter: str,
+    hub_filter: str,
+    facility_filter: str,
+) -> dict[str, pl.DataFrame]:
+    return {
+        table_name: _apply_sttm_mos_allocation_filters(
+            dataframe,
+            gas_date_filter,
+            source_system_filter,
+            hub_filter,
+            facility_filter,
+        )
+        for table_name, dataframe in _normalised_sttm_mos_allocation_frames(
+            loads
+        ).items()
+    }
+
+
+def _filtered_sttm_mos_allocation_table_frame(
+    loads: Sequence[GasTableLoad],
+    table_name: str,
+    gas_date_filter: str,
+    source_system_filter: str,
+    hub_filter: str,
+    facility_filter: str,
+) -> pl.DataFrame:
+    return _filtered_sttm_mos_allocation_frames(
+        loads,
+        gas_date_filter,
+        source_system_filter,
+        hub_filter,
+        facility_filter,
+    )[table_name]
+
+
+def _normalised_sttm_mos_allocation_frames(
+    loads: Sequence[GasTableLoad],
+) -> dict[str, pl.DataFrame]:
+    return {
+        spec.table_name: _normalised_sttm_mos_allocation_table_frame(
+            table_load_by_name(loads, spec.table_name),
+            spec.table_name,
+        )
+        for spec in STTM_MOS_ALLOCATION_TABLE_SPECS
+    }
+
+
+def _normalised_sttm_mos_allocation_table_frame(
+    load: GasTableLoad | None,
+    table_name: str,
+) -> pl.DataFrame:
+    if table_name == STTM_MOS_STACK_TABLE_NAME:
+        return _normalised_sttm_mos_allocation_dataframe(
+            load,
+            _STTM_MOS_STACK_RAW_SCHEMA,
+        )
+    if table_name == STTM_ALLOCATION_QUANTITY_TABLE_NAME:
+        return _normalised_sttm_mos_allocation_dataframe(
+            load,
+            _STTM_ALLOCATION_QUANTITY_RAW_SCHEMA,
+        )
+    if table_name == STTM_ALLOCATION_LIMIT_TABLE_NAME:
+        return _normalised_sttm_mos_allocation_dataframe(
+            load,
+            _STTM_ALLOCATION_LIMIT_RAW_SCHEMA,
+        )
+    return _normalised_sttm_mos_allocation_dataframe(
+        load,
+        _STTM_DEFAULT_ALLOCATION_NOTICE_RAW_SCHEMA,
+    )
+
+
+def _normalised_sttm_mos_allocation_dataframe(
+    load: GasTableLoad | None,
+    schema: Mapping[str, PolarsSchemaValue],
+) -> pl.DataFrame:
+    if load is None or load.dataframe is None or load.dataframe.is_empty():
+        return pl.DataFrame(schema=schema)
+
+    dataframe = load.dataframe
+    missing_columns = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in schema.items()
+        if column not in dataframe.columns
+    ]
+    if missing_columns:
+        dataframe = dataframe.with_columns(missing_columns)
+
+    return dataframe.with_columns(
+        [
+            _normalise_sttm_mos_allocation_column(dataframe, column, dtype)
+            for column, dtype in schema.items()
+        ]
+    )
+
+
+def _normalise_sttm_mos_allocation_column(
+    dataframe: pl.DataFrame,
+    column: str,
+    dtype: PolarsSchemaValue,
+) -> pl.Expr:
+    if dtype == pl.Date:
+        return _normalise_date_column(dataframe, column)
+    if column.endswith("_timestamp"):
+        return _normalise_timestamp_column(dataframe, column)
+    return pl.col(column).cast(dtype, strict=False)
+
+
+def _apply_sttm_mos_allocation_filters(
+    dataframe: pl.DataFrame,
+    gas_date_filter: str,
+    source_system_filter: str,
+    hub_filter: str,
+    facility_filter: str,
+) -> pl.DataFrame:
+    if dataframe.is_empty():
+        return dataframe
+
+    filtered = dataframe
+    if gas_date_filter != STTM_MOS_ALLOCATION_GAS_DATE_FILTER_ALL:
+        filtered = filtered.filter(
+            pl.col("gas_date").cast(pl.String) == gas_date_filter
+        )
+    if source_system_filter != STTM_MOS_ALLOCATION_SOURCE_SYSTEM_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_system") == source_system_filter)
+    if hub_filter != STTM_MOS_ALLOCATION_HUB_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_hub_id") == hub_filter)
+    if facility_filter != STTM_MOS_ALLOCATION_FACILITY_FILTER_ALL:
+        filtered = filtered.filter(pl.col("source_facility_id") == facility_filter)
+    return filtered
+
+
+def _sttm_mos_allocation_fact_summary_row(
+    fact: str,
+    dataframe: pl.DataFrame,
+    measure_column: str,
+    measure_label: str,
+    *,
+    range_measure: bool = False,
+) -> dict[str, object]:
+    measure_count = _sttm_measure_row_count(dataframe, measure_column)
+    primary_value = (
+        _format_measure_range(
+            _sttm_measure_min(dataframe, measure_column),
+            _sttm_measure_max(dataframe, measure_column),
+            measure_count,
+        )
+        if range_measure
+        else _format_measure_total(
+            _sttm_measure_sum(dataframe, measure_column),
+            measure_count,
+            suffix=" GJ",
+        )
+    )
+    return {
+        "fact": fact,
+        "rows": dataframe.height,
+        "gas days": _sttm_distinct_non_empty(dataframe, "gas_date"),
+        "hubs": _sttm_distinct_non_empty(dataframe, "source_hub_id"),
+        "facilities": _sttm_distinct_non_empty(dataframe, "source_facility_id"),
+        "source reports": _sttm_distinct_non_empty(dataframe, "source_report_id"),
+        "primary measure": measure_label,
+        "primary value": primary_value,
+        "latest gas date": _latest_sttm_date(dataframe, "gas_date"),
+        "latest source update": _latest_sttm_datetime(
+            dataframe,
+            "source_last_updated_timestamp",
+        ),
+        "latest ingest": _latest_sttm_datetime(dataframe, "ingested_timestamp"),
+    }
+
+
+def _sttm_mos_allocation_notice_fact_summary_row(
+    dataframe: pl.DataFrame,
+) -> dict[str, object]:
+    notice_count = _sttm_distinct_non_empty(dataframe, "notice_id")
+    return {
+        "fact": "Default allocation notice",
+        "rows": dataframe.height,
+        "gas days": _sttm_distinct_non_empty(dataframe, "gas_date"),
+        "hubs": _sttm_distinct_non_empty(dataframe, "source_hub_id"),
+        "facilities": _sttm_distinct_non_empty(dataframe, "source_facility_id"),
+        "source reports": _sttm_distinct_non_empty(dataframe, "source_report_id"),
+        "primary measure": "Distinct notices",
+        "primary value": f"{notice_count:,}" if dataframe.height > 0 else "unknown",
+        "latest gas date": _latest_sttm_date(dataframe, "gas_date"),
+        "latest source update": _latest_sttm_datetime(
+            dataframe,
+            "source_last_updated_timestamp",
+        ),
+        "latest ingest": _latest_sttm_datetime(dataframe, "ingested_timestamp"),
+    }
+
+
+def _sttm_distinct_across_frames(
+    frames: Sequence[pl.DataFrame],
+    column: str,
+) -> int:
+    values: set[str] = set()
+    for dataframe in frames:
+        if dataframe.is_empty() or column not in dataframe.columns:
+            continue
+        for value in (
+            dataframe.get_column(column)
+            .drop_nulls()
+            .cast(pl.String, strict=False)
+            .unique()
+            .to_list()
+        ):
+            if value is not None and str(value).strip() != "":
+                values.add(str(value))
+    return len(values)
+
+
+def _sttm_distinct_non_empty(dataframe: pl.DataFrame, column: str) -> int:
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return 0
+    return _distinct_non_empty_count(dataframe, column)
+
+
+def _sttm_measure_row_count(dataframe: pl.DataFrame, column: str) -> int:
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return 0
+    value = dataframe.select(pl.col(column).is_not_null().sum()).item()
+    return int(value) if isinstance(value, int) else 0
+
+
+def _sttm_measure_sum(dataframe: pl.DataFrame, column: str) -> float | None:
+    if _sttm_measure_row_count(dataframe, column) == 0:
+        return None
+    value = dataframe.select(pl.col(column).sum().round(4)).item()
+    return _numeric_value(value)
+
+
+def _sttm_measure_min(dataframe: pl.DataFrame, column: str) -> float | None:
+    if _sttm_measure_row_count(dataframe, column) == 0:
+        return None
+    return _numeric_value(dataframe.select(pl.col(column).min()).item())
+
+
+def _sttm_measure_max(dataframe: pl.DataFrame, column: str) -> float | None:
+    if _sttm_measure_row_count(dataframe, column) == 0:
+        return None
+    return _numeric_value(dataframe.select(pl.col(column).max()).item())
+
+
+def _latest_sttm_date_across_frames(
+    frames: Sequence[pl.DataFrame],
+    column: str,
+) -> date | None:
+    latest: date | None = None
+    for dataframe in frames:
+        latest = _latest_date(latest, _latest_sttm_date(dataframe, column))
+    return latest
+
+
+def _latest_sttm_date(dataframe: pl.DataFrame, column: str) -> date | None:
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return None
+    return _flow_date_value(dataframe.get_column(column).drop_nulls().max())
+
+
+def _latest_sttm_datetime(
+    dataframe: pl.DataFrame,
+    column: str,
+) -> datetime | None:
+    if dataframe.is_empty() or column not in dataframe.columns:
+        return None
+    value = dataframe.get_column(column).drop_nulls().max()
+    return value if isinstance(value, datetime) else None
+
+
+def _sttm_mos_allocation_fact_label(table_name: str) -> str:
+    if table_name == STTM_MOS_STACK_TABLE_NAME:
+        return "MOS stack"
+    if table_name == STTM_ALLOCATION_QUANTITY_TABLE_NAME:
+        return "Allocation quantity"
+    if table_name == STTM_ALLOCATION_LIMIT_TABLE_NAME:
+        return "Allocation limit"
+    return "Default allocation notice"
+
+
+def _render_sttm_mos_allocation_context_link(
+    entry: DashboardRegistryEntry,
+) -> str:
+    status_label = _dashboard_entry_status_label(entry)
+    title = escape(entry.title)
+    route = entry.notebook_route
+    if entry.status.value == "available" and route is not None:
+        title_html = f'<a href="{escape(route, quote=True)}">{title}</a>'
+    else:
+        title_html = f"<span>{title}</span>"
+
+    return f"""\
+        <li data-dashboard-status="{escape(entry.status.value, quote=True)}">
+            {title_html}
+            <span>{escape(status_label)}</span>
+            <code>{escape(entry.concept_id)}</code>
+        </li>"""
+
+
+def _sttm_mos_allocation_context_links_css() -> str:
+    return """\
+.sttm-mos-allocation-links {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.sttm-mos-allocation-links__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.sttm-mos-allocation-links h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.sttm-mos-allocation-links ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sttm-mos-allocation-links li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--emdl-line, #cfdbd6);
+}
+
+.sttm-mos-allocation-links li:first-child {
+    border-top: 0;
+}
+
+.sttm-mos-allocation-links a {
+    color: var(--emdl-blue, #166791);
+    font-weight: 720;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.sttm-mos-allocation-links span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.sttm-mos-allocation-links li > span:nth-child(2) {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.sttm-mos-allocation-links code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .sttm-mos-allocation-links li {
+        grid-template-columns: 1fr;
+    }
+}
+"""
 
 
 def _render_sttm_capacity_settlement_context_link(

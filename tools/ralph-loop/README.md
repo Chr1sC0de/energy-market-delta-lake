@@ -31,8 +31,8 @@ make run-prek
 - `src/ralph_loop/state.py`: Ralph run and Operator manifest state helpers,
   including **Issue completion review**, Operator smoke evidence,
   active child run status, deploy-repair issue state, and checkpointed
-  deploy-repair target state, rollup requeue recovery classification, and stale
-  detached Operator status inputs
+  deploy-repair target state, Operator rollup failed-command summaries, rollup
+  requeue recovery classification, and stale detached Operator status inputs
 - `tests/unit/`: Ralph unit tests
 - `.pre-commit-config.yaml`: Subproject `prek` hook surface
 

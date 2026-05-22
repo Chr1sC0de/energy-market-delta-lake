@@ -20,12 +20,14 @@ repos:
         name: ruff check
         language: system
         entry: uv run ruff check
+        require_serial: true
         types:
           - python
       - id: ruff-format
         name: ruff format
         language: system
         entry: uv run ruff format
+        require_serial: true
         types:
           - python
       - id: zuban-check

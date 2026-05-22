@@ -1306,6 +1306,46 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
     },
     {
+        "concept_id": "sttm-mos-allocation",
+        "title": "STTM MOS And Allocation",
+        "description": (
+            "Available analytical dashboard for STTM MOS stack, allocation "
+            "quantity, allocation warning limit, and default allocation notice "
+            "facts, including Gas Day, Hub / Zone, Facility, source coverage, "
+            "MOS stack quantity, allocation quantity, warning limit, and "
+            "default notice fields where available."
+        ),
+        "audiences": ("operator", "analyst", "stakeholder"),
+        "status": "available",
+        "notebook_name": "gas_sttm_mos_allocation",
+        "backing_assets": (
+            "silver.gas_model.silver_gas_fact_sttm_mos_stack",
+            "silver.gas_model.silver_gas_fact_sttm_allocation_quantity",
+            "silver.gas_model.silver_gas_fact_sttm_allocation_limit",
+            "silver.gas_model.silver_gas_fact_sttm_default_allocation_notice",
+        ),
+        "generated_gold_paths": (
+            "tools/gas-market-knowledge-base/generated/gold/glossary/mos.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/allocation.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md",
+            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
+        ),
+        "source_chunk_ids": (
+            "chunk-gbb-guide-gas-day",
+            "chunk-gbb-guide-nodes-facilities",
+            "chunk-dwgm-settlement-pricing-schedule-allocation",
+            "chunk-dwgm-settlement-withdrawal-allocation",
+            "chunk-sttm-procedures-definitions",
+            "chunk-sttm-procedures-settlement-terms",
+            "chunk-sttm-procedures-mos-estimates",
+            "chunk-sttm-procedures-mos-settlement",
+            "chunk-sttm-procedures-capacity-settlement",
+        ),
+    },
+    {
         "concept_id": "capacity-context",
         "title": "Capacity Context",
         "description": (

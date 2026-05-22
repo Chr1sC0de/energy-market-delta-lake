@@ -143,12 +143,26 @@ from marimoserver.gas_dashboard import (
     STTM_CAPACITY_SETTLEMENT_STAGE_FILTER_ALL,
     STTM_CAPACITY_SETTLEMENT_TABLE_NAME,
     STTM_CAPACITY_SETTLEMENT_TABLE_SPEC,
+    STTM_ALLOCATION_LIMIT_TABLE_NAME,
+    STTM_ALLOCATION_LIMIT_TABLE_SPEC,
+    STTM_ALLOCATION_QUANTITY_TABLE_NAME,
+    STTM_ALLOCATION_QUANTITY_TABLE_SPEC,
     STTM_MARKET_SETTLEMENT_COMPONENT_FILTER_ALL,
     STTM_MARKET_SETTLEMENT_GAS_DATE_FILTER_ALL,
     STTM_MARKET_SETTLEMENT_PERIOD_FILTER_ALL,
     STTM_MARKET_SETTLEMENT_STAGE_FILTER_ALL,
     STTM_MARKET_SETTLEMENT_TABLE_NAME,
     STTM_MARKET_SETTLEMENT_TABLE_SPEC,
+    STTM_MOS_ALLOCATION_CONTEXT_ID,
+    STTM_MOS_ALLOCATION_FACILITY_FILTER_ALL,
+    STTM_MOS_ALLOCATION_GAS_DATE_FILTER_ALL,
+    STTM_MOS_ALLOCATION_HUB_FILTER_ALL,
+    STTM_MOS_ALLOCATION_SOURCE_SYSTEM_FILTER_ALL,
+    STTM_MOS_ALLOCATION_TABLE_SPECS,
+    STTM_MOS_STACK_TABLE_NAME,
+    STTM_MOS_STACK_TABLE_SPEC,
+    STTM_DEFAULT_ALLOCATION_NOTICE_TABLE_NAME,
+    STTM_DEFAULT_ALLOCATION_NOTICE_TABLE_SPEC,
     SOURCE_COVERAGE_STATE_COVERED,
     SOURCE_COVERAGE_STATE_EMPTY,
     SOURCE_COVERAGE_STATE_GAP,
@@ -200,6 +214,7 @@ from marimoserver.gas_dashboard import (
     cached_load_settlement_activity_table,
     cached_load_sttm_capacity_settlement_table,
     cached_load_sttm_market_settlement_table,
+    cached_load_sttm_mos_allocation_tables,
     cached_load_source_coverage_tables,
     cached_load_system_notice_table,
     customer_transfer_daily_frame,
@@ -332,6 +347,7 @@ from marimoserver.gas_dashboard import (
     load_settlement_activity_table,
     load_sttm_capacity_settlement_table,
     load_sttm_market_settlement_table,
+    load_sttm_mos_allocation_tables,
     load_system_notice_table,
     market_price_bounded_scope_markdown,
     market_price_empty_state_markdown,
@@ -410,6 +426,7 @@ from marimoserver.gas_dashboard import (
     render_sttm_capacity_settlement_context_links,
     render_sttm_contingency_gas_context_links,
     render_sttm_market_settlement_context_links,
+    render_sttm_mos_allocation_context_links,
     render_source_coverage_matrix_html,
     scada_pressure_observation_frame,
     schedule_run_empty_state_markdown,
@@ -449,6 +466,18 @@ from marimoserver.gas_dashboard import (
     sttm_capacity_settlement_source_coverage_frame,
     sttm_capacity_settlement_stage_options,
     sttm_capacity_settlement_summary_frame,
+    sttm_allocation_limit_summary_frame,
+    sttm_allocation_quantity_summary_frame,
+    sttm_default_allocation_notice_summary_frame,
+    sttm_mos_allocation_empty_state_markdown,
+    sttm_mos_allocation_facility_options,
+    sttm_mos_allocation_fact_summary_frame,
+    sttm_mos_allocation_gas_date_options,
+    sttm_mos_allocation_hub_options,
+    sttm_mos_allocation_kpi_frame,
+    sttm_mos_allocation_source_coverage_frame,
+    sttm_mos_allocation_source_system_options,
+    sttm_mos_stack_summary_frame,
     sttm_market_settlement_component_options,
     sttm_market_settlement_empty_state_markdown,
     sttm_market_settlement_gas_date_options,
@@ -3583,6 +3612,505 @@ def test_sttm_capacity_settlement_helpers_cover_missing_data_and_filter_empty_st
         in missing_load_markdown
     )
     assert "No STTM capacity settlement, STTM market settlement" in empty_context_links
+    assert "Unavailable dashboard" in unmounted_context_links
+
+
+def test_sttm_mos_allocation_table_loader_uses_bounded_recent_view() -> None:
+    captured: list[tuple[str, int | None]] = []
+    config = discover_dashboard_config(
+        {
+            "DEVELOPMENT_LOCATION": "aws",
+            "AEMO_BUCKET": "prod-energy-market-aemo",
+            "MARIMO_MAX_PREVIEW_ROWS": "12",
+        }
+    )
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        captured.append((uri, row_limit))
+        assert storage_options == config.storage_options()
+        return pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 1), date(2024, 1, 3)],
+                "source_system": ["STTM", "STTM"],
+            }
+        )
+
+    loads = load_sttm_mos_allocation_tables(config, reader=reader)
+
+    assert [load.spec for load in loads] == list(STTM_MOS_ALLOCATION_TABLE_SPECS)
+    assert [load.row_limit for load in loads] == [12, 12, 12, 12]
+    assert captured == [
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_sttm_mos_stack",
+            12,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_sttm_allocation_quantity",
+            12,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_sttm_allocation_limit",
+            12,
+        ),
+        (
+            "s3://prod-energy-market-aemo/silver/gas_model/"
+            "silver_gas_fact_sttm_default_allocation_notice",
+            12,
+        ),
+    ]
+
+
+def test_cached_sttm_mos_allocation_table_loader_reuses_session_cache() -> None:
+    calls: list[int] = []
+    config = _dashboard_config()
+    cache: GasModelSessionCache = {}
+
+    def reader(
+        uri: str,
+        storage_options: Mapping[str, str],
+        row_limit: int | None,
+    ) -> pl.DataFrame:
+        calls.append(len(calls) + 1)
+        return pl.DataFrame({"source_system": [f"STTM-{calls[-1]}"]})
+
+    first_loads = cached_load_sttm_mos_allocation_tables(config, cache, reader=reader)
+    cached_loads = cached_load_sttm_mos_allocation_tables(config, cache, reader=reader)
+    refreshed_loads = cached_load_sttm_mos_allocation_tables(
+        config,
+        cache,
+        reader=reader,
+        refresh_token=1,
+    )
+
+    assert calls == [1, 2, 3, 4, 5, 6, 7, 8]
+    assert not any(load.cache_hit for load in first_loads)
+    assert all(load.cache_hit for load in cached_loads)
+    assert not any(load.cache_hit for load in refreshed_loads)
+    assert cached_loads[0].dataframe is not None
+    assert cached_loads[0].dataframe["source_system"].to_list() == ["STTM-1"]
+    assert refreshed_loads[0].dataframe is not None
+    assert refreshed_loads[0].dataframe["source_system"].to_list() == ["STTM-5"]
+
+
+def test_sttm_mos_allocation_summaries_filters_and_context_links() -> None:
+    mos_table = "silver.sttm.silver_int665_v1_mos_stack_data_rpt_1"
+    allocation_table = "silver.sttm.silver_int658_v1_latest_allocation_quantity_rpt_1"
+    limit_table = (
+        "silver.sttm.silver_int688_v1_allocation_warning_limit_thresholds_rpt_1"
+    )
+    notice_table = "silver.sttm.silver_int675_v1_default_allocation_notice_rpt_1"
+    loads = _sttm_mos_allocation_loads(
+        mos_stack=pl.DataFrame(
+            {
+                "mos_stack_context": ["estimate", "used_step"],
+                "settlement_run_id": [None, "SET-1"],
+                "gas_date": ["2024-01-03", "2024-01-04"],
+                "effective_from_date": ["2024-01-01", None],
+                "effective_to_date": ["2024-01-31", None],
+                "source_system": ["STTM", "STTM"],
+                "source_table": [mos_table, mos_table],
+                "source_report_id": ["INT665", "INT683"],
+                "source_hub_id": ["SYD", "SYD"],
+                "source_hub_name": ["Sydney", "Sydney"],
+                "source_facility_id": ["FAC-1", "FAC-1"],
+                "facility_name": ["Pipeline A", "Pipeline A"],
+                "stack_id": ["STACK-1", "STACK-1"],
+                "stack_type": ["price", "price"],
+                "stack_step_id": ["1", "2"],
+                "participant_id": ["P1", "P1"],
+                "participant_name": ["Participant 1", "Participant 1"],
+                "estimated_maximum_quantity_gj": [100.0, None],
+                "step_quantity_gj": [20.0, 5.0],
+                "step_price": [2.0, 7.0],
+                "source_last_updated_timestamp": [
+                    "2024-01-03 01:00:00",
+                    "2024-01-04 01:00:00",
+                ],
+                "source_surrogate_key": ["mos-1", "mos-2"],
+                "source_file": ["int665.csv", "int683.csv"],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 3, 2),
+                    datetime(2024, 1, 4, 2),
+                ],
+            }
+        ),
+        allocation_quantity=pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3), date(2024, 1, 4)],
+                "allocation_version": ["latest", "latest"],
+                "source_system": ["STTM", "STTM"],
+                "source_table": [allocation_table, allocation_table],
+                "source_report_id": ["INT658", "INT658"],
+                "source_hub_id": ["SYD", "BNE"],
+                "source_hub_name": ["Sydney", "Brisbane"],
+                "source_facility_id": ["FAC-1", "FAC-2"],
+                "facility_name": ["Pipeline A", "Pipeline B"],
+                "flow_direction": ["receipt", "delivery"],
+                "allocation_qty_inc_mos_gj": [12.0, 8.0],
+                "allocation_qty_quality_type": ["actual", "estimated"],
+                "source_last_updated_timestamp": [
+                    datetime(2024, 1, 3, 3),
+                    datetime(2024, 1, 4, 3),
+                ],
+                "source_surrogate_key": ["alloc-1", "alloc-2"],
+                "source_file": ["int658.csv", "int658.csv"],
+                "ingested_timestamp": [
+                    datetime(2024, 1, 3, 4),
+                    datetime(2024, 1, 4, 4),
+                ],
+            }
+        ),
+        allocation_limit=pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3)],
+                "source_system": ["STTM"],
+                "source_table": [limit_table],
+                "source_report_id": ["INT688"],
+                "source_hub_id": ["SYD"],
+                "source_hub_name": ["Sydney"],
+                "source_facility_id": ["FAC-1"],
+                "facility_name": ["Pipeline A"],
+                "upper_warning_limit_gj": [30.0],
+                "lower_warning_limit_gj": [3.0],
+                "source_report_timestamp": [datetime(2024, 1, 3, 5)],
+                "source_last_updated_timestamp": [datetime(2024, 1, 3, 5, 5)],
+                "source_surrogate_key": ["limit-1"],
+                "source_file": ["int688.csv"],
+                "ingested_timestamp": [datetime(2024, 1, 3, 6)],
+            }
+        ),
+        default_notice=pl.DataFrame(
+            {
+                "notice_id": ["NOTICE-1"],
+                "gas_date": [date(2024, 1, 3)],
+                "source_system": ["STTM"],
+                "source_table": [notice_table],
+                "source_report_id": ["INT675"],
+                "source_hub_id": ["SYD"],
+                "source_hub_name": ["Sydney"],
+                "source_facility_id": ["FAC-1"],
+                "facility_name": ["Pipeline A"],
+                "notice_message": ["Default allocation applied"],
+                "source_last_updated_timestamp": [datetime(2024, 1, 3, 7)],
+                "source_surrogate_key": ["notice-1"],
+                "source_file": ["int675.csv"],
+                "ingested_timestamp": [datetime(2024, 1, 3, 8)],
+            }
+        ),
+    )
+
+    kpis = sttm_mos_allocation_kpi_frame(loads)
+    fact_summary = sttm_mos_allocation_fact_summary_frame(loads)
+    mos_summary = sttm_mos_stack_summary_frame(loads)
+    allocation_summary = sttm_allocation_quantity_summary_frame(loads)
+    limit_summary = sttm_allocation_limit_summary_frame(loads)
+    notice_summary = sttm_default_allocation_notice_summary_frame(loads)
+    source_coverage = sttm_mos_allocation_source_coverage_frame(loads)
+    filtered_kpis = sttm_mos_allocation_kpi_frame(
+        loads,
+        "2024-01-03",
+        "STTM",
+        "SYD",
+        "FAC-1",
+    )
+    context_links = render_sttm_mos_allocation_context_links()
+
+    assert sttm_mos_allocation_gas_date_options(loads) == (
+        STTM_MOS_ALLOCATION_GAS_DATE_FILTER_ALL,
+        "2024-01-04",
+        "2024-01-03",
+    )
+    assert sttm_mos_allocation_source_system_options(loads) == (
+        STTM_MOS_ALLOCATION_SOURCE_SYSTEM_FILTER_ALL,
+        "STTM",
+    )
+    assert sttm_mos_allocation_hub_options(loads) == (
+        STTM_MOS_ALLOCATION_HUB_FILTER_ALL,
+        "BNE",
+        "SYD",
+    )
+    assert sttm_mos_allocation_facility_options(loads) == (
+        STTM_MOS_ALLOCATION_FACILITY_FILTER_ALL,
+        "FAC-1",
+        "FAC-2",
+    )
+    assert kpis.select("metric", "value").to_dict(as_series=False) == {
+        "metric": [
+            "Loaded STTM MOS/allocation rows",
+            "MOS stack rows",
+            "Allocation quantity rows",
+            "Allocation limit rows",
+            "Default allocation notice rows",
+            "Gas Days",
+            "Hubs",
+            "Facilities",
+            "Source reports",
+            "Allocation quantity inc MOS",
+            "MOS step quantity",
+            "MOS estimated maximum",
+            "Allocation warning limits",
+            "Default allocation notices",
+            "Latest Gas Day",
+        ],
+        "value": [
+            "6",
+            "2",
+            "2",
+            "1",
+            "1",
+            "2",
+            "2",
+            "2",
+            "5",
+            "20 GJ",
+            "25 GJ",
+            "100 GJ",
+            "2",
+            "1",
+            "2024-01-04",
+        ],
+    }
+    assert filtered_kpis.row(0, named=True) == {
+        "metric": "Loaded STTM MOS/allocation rows",
+        "value": "4",
+        "detail": "Full table scan",
+    }
+    assert fact_summary.select(
+        "fact", "rows", "primary measure", "primary value"
+    ).to_dict(as_series=False) == {
+        "fact": [
+            "MOS stack",
+            "Allocation quantity",
+            "Allocation limit",
+            "Default allocation notice",
+        ],
+        "rows": [2, 2, 1, 1],
+        "primary measure": [
+            "Total step quantity",
+            "Total allocation qty inc MOS",
+            "Upper warning limit range",
+            "Distinct notices",
+        ],
+        "primary value": ["25 GJ", "20 GJ", "30 to 30", "1"],
+    }
+    assert mos_summary.select(
+        "mos stack context",
+        "settlement run",
+        "stack type",
+        "hub",
+        "facility",
+        "source report",
+        "rows",
+        "stack steps",
+        "total step quantity gj",
+        "min step price",
+        "max step price",
+    ).sort("source report").to_dict(as_series=False) == {
+        "mos stack context": ["estimate", "used_step"],
+        "settlement run": [None, "SET-1"],
+        "stack type": ["price", "price"],
+        "hub": ["SYD", "SYD"],
+        "facility": ["FAC-1", "FAC-1"],
+        "source report": ["INT665", "INT683"],
+        "rows": [1, 1],
+        "stack steps": [1, 1],
+        "total step quantity gj": [20.0, 5.0],
+        "min step price": [2.0, 7.0],
+        "max step price": [2.0, 7.0],
+    }
+    assert allocation_summary.select(
+        "allocation version",
+        "flow direction",
+        "allocation quality type",
+        "hub",
+        "facility",
+        "rows",
+        "total allocation qty inc mos gj",
+    ).sort("hub").to_dict(as_series=False) == {
+        "allocation version": ["latest", "latest"],
+        "flow direction": ["delivery", "receipt"],
+        "allocation quality type": ["estimated", "actual"],
+        "hub": ["BNE", "SYD"],
+        "facility": ["FAC-2", "FAC-1"],
+        "rows": [1, 1],
+        "total allocation qty inc mos gj": [8.0, 12.0],
+    }
+    assert limit_summary.select(
+        "hub",
+        "facility",
+        "upper limit rows",
+        "min upper warning limit gj",
+        "lower limit rows",
+        "min lower warning limit gj",
+    ).to_dict(as_series=False) == {
+        "hub": ["SYD"],
+        "facility": ["FAC-1"],
+        "upper limit rows": [1],
+        "min upper warning limit gj": [30.0],
+        "lower limit rows": [1],
+        "min lower warning limit gj": [3.0],
+    }
+    assert notice_summary.select(
+        "notice",
+        "hub",
+        "facility",
+        "notice messages",
+        "sample notice message",
+    ).to_dict(as_series=False) == {
+        "notice": ["NOTICE-1"],
+        "hub": ["SYD"],
+        "facility": ["FAC-1"],
+        "notice messages": [1],
+        "sample notice message": ["Default allocation applied"],
+    }
+    assert source_coverage.select(
+        "fact",
+        "source table",
+        "source report",
+        "rows",
+        "gas days",
+        "source identifiers",
+    ).sort("source report").to_dict(as_series=False) == {
+        "fact": [
+            "Allocation quantity",
+            "MOS stack",
+            "Default allocation notice",
+            "MOS stack",
+            "Allocation limit",
+        ],
+        "source table": [
+            allocation_table,
+            mos_table,
+            notice_table,
+            mos_table,
+            limit_table,
+        ],
+        "source report": ["INT658", "INT665", "INT675", "INT683", "INT688"],
+        "rows": [2, 1, 1, 1, 1],
+        "gas days": [2, 1, 1, 1, 1],
+        "source identifiers": [2, 1, 1, 1, 1],
+    }
+    assert 'href="/marimo/gas_sttm_mos_allocation/"' in context_links
+    assert "MOS Context" in context_links
+    assert "Allocation Context" in context_links
+    assert "Settlement Context" in context_links
+    assert "Capacity Context" in context_links
+    assert "Facility Context" in context_links
+    assert "Hub / Zone Context" in context_links
+
+
+def test_sttm_mos_allocation_helpers_cover_missing_data_and_filter_empty_state() -> (
+    None
+):
+    empty_loads = _sttm_mos_allocation_loads(
+        mos_stack=pl.DataFrame(),
+        allocation_quantity=pl.DataFrame(),
+        allocation_limit=pl.DataFrame(),
+        default_notice=pl.DataFrame(),
+        row_limit=5,
+    )
+    partial_loads = _sttm_mos_allocation_loads(
+        mos_stack=pl.DataFrame(
+            {
+                "source_system": ["STTM"],
+                "source_hub_id": ["SYD"],
+                "source_facility_id": ["FAC-1"],
+                "step_quantity_gj": [5.0],
+            }
+        ),
+        allocation_quantity=pl.DataFrame(
+            {
+                "gas_date": [date(2024, 1, 3)],
+                "source_system": ["STTM"],
+                "source_hub_id": ["SYD"],
+                "source_facility_id": ["FAC-1"],
+                "allocation_qty_inc_mos_gj": [10.0],
+            }
+        ),
+        allocation_limit=pl.DataFrame(),
+        default_notice=pl.DataFrame(),
+    )
+    error_loads = [
+        GasTableLoad(
+            spec=STTM_MOS_STACK_TABLE_SPEC,
+            uri="s3://bucket/silver/gas_model/silver_gas_fact_sttm_mos_stack",
+            dataframe=None,
+            error="FileNotFoundError: no parquet files found",
+            row_limit=5,
+            load_duration_seconds=0.01,
+            cache_hit=False,
+        )
+    ]
+
+    assert sttm_mos_allocation_kpi_frame(empty_loads).is_empty()
+    assert sttm_mos_allocation_fact_summary_frame(empty_loads).is_empty()
+    assert sttm_mos_stack_summary_frame(empty_loads).is_empty()
+    assert sttm_allocation_quantity_summary_frame(empty_loads).is_empty()
+    assert sttm_allocation_limit_summary_frame(empty_loads).is_empty()
+    assert sttm_default_allocation_notice_summary_frame(empty_loads).is_empty()
+    assert sttm_mos_allocation_source_coverage_frame(empty_loads).is_empty()
+    assert sttm_mos_allocation_gas_date_options(empty_loads) == (
+        STTM_MOS_ALLOCATION_GAS_DATE_FILTER_ALL,
+    )
+    assert sttm_mos_allocation_source_system_options(empty_loads) == (
+        STTM_MOS_ALLOCATION_SOURCE_SYSTEM_FILTER_ALL,
+    )
+    assert sttm_mos_allocation_hub_options(empty_loads) == (
+        STTM_MOS_ALLOCATION_HUB_FILTER_ALL,
+    )
+    assert sttm_mos_allocation_facility_options(empty_loads) == (
+        STTM_MOS_ALLOCATION_FACILITY_FILTER_ALL,
+    )
+    assert sttm_mos_allocation_kpi_frame(
+        partial_loads,
+        hub_filter="MISSING",
+    ).is_empty()
+    assert sttm_mos_allocation_kpi_frame(partial_loads).row(14, named=True) == {
+        "metric": "Latest Gas Day",
+        "value": "2024-01-03",
+        "detail": "Maximum gas_date in the loaded bounded rows",
+    }
+    assert (
+        sttm_mos_stack_summary_frame(partial_loads).row(0, named=True)[
+            "total step quantity gj"
+        ]
+        == 5.0
+    )
+
+    empty_markdown = sttm_mos_allocation_empty_state_markdown(empty_loads)
+    missing_loads_markdown = sttm_mos_allocation_empty_state_markdown(())
+    error_markdown = sttm_mos_allocation_empty_state_markdown(error_loads)
+    filtered_markdown = sttm_mos_allocation_empty_state_markdown(partial_loads)
+    empty_context_links = render_sttm_mos_allocation_context_links(entries=())
+    unmounted_entry = DashboardRegistryEntry(
+        concept_id=STTM_MOS_ALLOCATION_CONTEXT_ID,
+        title="Unmounted STTM MOS And Allocation",
+        description="Available entry without a mounted notebook route.",
+        audiences=(DashboardAudience.ANALYST,),
+        status=DashboardStatus.AVAILABLE,
+        notebook_name=None,
+        backing_assets=("silver.gas_model.silver_gas_fact_sttm_mos_stack",),
+        generated_gold_paths=(),
+        source_chunks=(),
+    )
+    unmounted_context_links = render_sttm_mos_allocation_context_links(
+        entries=(unmounted_entry,)
+    )
+
+    assert "No STTM MOS/allocation data is available" in empty_markdown
+    assert "did not receive MOS/allocation load results" in missing_loads_markdown
+    assert "silver.gas_model.silver_gas_fact_sttm_mos_stack" in empty_markdown
+    assert "Bounded preview reads are capped at `5` rows per table" in empty_markdown
+    assert "FileNotFoundError: no parquet files found" in error_markdown
+    assert "current filters do not match" in filtered_markdown
+    assert "No STTM MOS/allocation, MOS, Allocation" in empty_context_links
     assert "Unavailable dashboard" in unmounted_context_links
 
 
@@ -13398,6 +13926,57 @@ def _sttm_capacity_settlement_load(
         load_duration_seconds=0.01,
         cache_hit=False,
     )
+
+
+def _sttm_mos_allocation_loads(
+    *,
+    mos_stack: pl.DataFrame,
+    allocation_quantity: pl.DataFrame,
+    allocation_limit: pl.DataFrame,
+    default_notice: pl.DataFrame,
+    row_limit: int | None = None,
+) -> list[GasTableLoad]:
+    return [
+        GasTableLoad(
+            spec=STTM_MOS_STACK_TABLE_SPEC,
+            uri=f"s3://bucket/silver/gas_model/{STTM_MOS_STACK_TABLE_NAME}",
+            dataframe=mos_stack,
+            error=None,
+            row_limit=row_limit,
+            load_duration_seconds=0.01,
+            cache_hit=False,
+        ),
+        GasTableLoad(
+            spec=STTM_ALLOCATION_QUANTITY_TABLE_SPEC,
+            uri=f"s3://bucket/silver/gas_model/{STTM_ALLOCATION_QUANTITY_TABLE_NAME}",
+            dataframe=allocation_quantity,
+            error=None,
+            row_limit=row_limit,
+            load_duration_seconds=0.01,
+            cache_hit=False,
+        ),
+        GasTableLoad(
+            spec=STTM_ALLOCATION_LIMIT_TABLE_SPEC,
+            uri=f"s3://bucket/silver/gas_model/{STTM_ALLOCATION_LIMIT_TABLE_NAME}",
+            dataframe=allocation_limit,
+            error=None,
+            row_limit=row_limit,
+            load_duration_seconds=0.01,
+            cache_hit=False,
+        ),
+        GasTableLoad(
+            spec=STTM_DEFAULT_ALLOCATION_NOTICE_TABLE_SPEC,
+            uri=(
+                "s3://bucket/silver/gas_model/"
+                f"{STTM_DEFAULT_ALLOCATION_NOTICE_TABLE_NAME}"
+            ),
+            dataframe=default_notice,
+            error=None,
+            row_limit=row_limit,
+            load_duration_seconds=0.01,
+            cache_hit=False,
+        ),
+    ]
 
 
 def _bid_stack_load(

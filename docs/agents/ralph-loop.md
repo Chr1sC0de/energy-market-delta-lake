@@ -516,6 +516,12 @@ is the stable tooling surface for issue outcomes, manual recoveries, **Local
 integration** commits, **Promotion** commits, QA surfaces,
 **Post-promotion review** follow-ups, post-Promotion deployment execution,
 deploy-repair issue creation, final queue state, and stop or failure reasons.
+Failed issue and failed **Promotion** entries include compact `failure_summary`
+objects when child manifests, command logs, or generated failure comments expose
+enough evidence. The summary records the failed command, exit code when known,
+failure type or checkpoint, failing **Test lane** or phase, primary log path,
+and a bounded excerpt so stopped Operator runs usually have an actionable first
+review surface.
 Rollups include `requeue_recovery` for open `agent-failed` issues in the final
 queue. That section identifies failed implementation manifests that are eligible
 for Ralph-owned pre-push requeue, prints the dry-run and live `--recover-run`
@@ -523,7 +529,7 @@ commands, and distinguishes post-push metadata recovery, manual Gitflow or
 branch-sync recovery, malformed issue contracts, and implementation failures
 that did not pass the gates needed for requeue.
 Both rollups record the underlying child `.ralph/runs/.../ralph-run.json` paths
-without tailing child Codex JSONL or rich command logs.
+without tailing child Codex JSONL by default.
 When open `agent-reviewing` issues remain and no unblocked ready work can
 proceed, the Operator run also writes `exploratory-acceptance-review.md` and
 `exploratory-acceptance-review.json` under the same run directory.
@@ -625,9 +631,9 @@ issue state before starting another Operator run. Status also reports
 Ralph-owned pre-push requeue eligibility for open `agent-failed` issues when
 the Operator queue or live issue scan exposes them. Read
 `operator-run-rollup.md` first for completed or stopped runs.
-Open the child `ralph-run.json` or command logs only when the status guidance or
-rollup points to a failed issue, failed **Promotion**, or manual recovery
-condition. If status reports `needs_review`, read
+Open the child `ralph-run.json` or full command logs when the rollup's
+`failure_summary` excerpt is insufficient, or when the rollup points to a manual
+recovery condition. If status reports `needs_review`, read
 `exploratory-acceptance-review.md`, then run the `$ralph-loop` Exploratory
 acceptance review flow before rerunning drain or **Promotion**.
 

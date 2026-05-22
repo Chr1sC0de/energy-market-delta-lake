@@ -9,6 +9,11 @@ from typing import Any
 
 from .workflow import *  # noqa: F403
 
+FAILURE_SUMMARY_ARTIFACT_MAX_BYTES = 256_000
+FAILURE_SUMMARY_MAX_CHARS = 1_000
+FAILURE_SUMMARY_MAX_LINES = 8
+FAILURE_SUMMARY_MARKDOWN_MAX_CHARS = 420
+
 
 def utc_now_text() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -2472,9 +2477,7 @@ def operator_rollup_issue_entries(
     child_sources: list[dict[str, Any]],
 ) -> dict[str, list[dict[str, Any]]]:
     child_by_path = {
-        str(source.get("manifest_path") or ""): source
-        for source in child_sources
-        if source.get("kind") == "implementation"
+        str(source.get("manifest_path") or ""): source for source in child_sources
     }
     entries: dict[str, list[dict[str, Any]]] = {"succeeded": [], "failed": []}
     seen_paths: set[str] = set()
@@ -2533,13 +2536,14 @@ def operator_issue_rollup_entry(
     manifest_path = (
         str(child_source.get("manifest_path") or "") if child_source is not None else ""
     )
+    status = (
+        str(child_source.get("status") or "unknown")
+        if child_source is not None
+        else "unknown"
+    )
     entry: dict[str, Any] = {
         "issue": issue,
-        "status": (
-            str(child_source.get("status") or "unknown")
-            if child_source is not None
-            else "unknown"
-        ),
+        "status": status,
         "checkpoint": checkpoint.get("checkpoint") if checkpoint is not None else None,
         "message": checkpoint.get("message") if checkpoint is not None else None,
         "manifest_path": manifest_path,
@@ -2564,6 +2568,15 @@ def operator_issue_rollup_entry(
     }
     if child_source is not None and child_source.get("manifest_error") is not None:
         entry["manifest_error"] = child_source.get("manifest_error")
+    if operator_rollup_entry_failed(status, checkpoint):
+        entry["failure_summary"] = operator_rollup_failure_summary(
+            run_kind="implementation",
+            child_data=child_data,
+            manifest_path=manifest_path,
+            manifest_read_status=entry.get("manifest_read_status"),
+            manifest_error=entry.get("manifest_error"),
+            checkpoint=checkpoint,
+        )
     return entry
 
 
@@ -2705,9 +2718,7 @@ def operator_rollup_promotion_entries(
     child_sources: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     child_by_path = {
-        str(source.get("manifest_path") or ""): source
-        for source in child_sources
-        if source.get("kind") == "promotion"
+        str(source.get("manifest_path") or ""): source for source in child_sources
     }
     entries: list[dict[str, Any]] = []
     seen_paths: set[str] = set()
@@ -2766,10 +2777,9 @@ def operator_promotion_rollup_entry(
     issues = metadata.get("issues")
     issues = issues if isinstance(issues, list) else []
     manual_recoveries = operator_rollup_manual_recoveries(issues, manifest_path)
-    return {
-        "status": (
-            str(source.get("status") or "unknown") if source is not None else "unknown"
-        ),
+    status = str(source.get("status") or "unknown") if source is not None else "unknown"
+    entry: dict[str, Any] = {
+        "status": status,
         "checkpoint": checkpoint.get("checkpoint") if checkpoint is not None else None,
         "message": checkpoint.get("message") if checkpoint is not None else None,
         "manifest_path": manifest_path,
@@ -2796,6 +2806,396 @@ def operator_promotion_rollup_entry(
         "deploy_repair_issues": deploy_repair_issues,
         "failure": child_data.get("failure"),
     }
+    if source is not None and source.get("manifest_error") is not None:
+        entry["manifest_error"] = source.get("manifest_error")
+    if operator_rollup_entry_failed(status, checkpoint):
+        entry["failure_summary"] = operator_rollup_failure_summary(
+            run_kind="promotion",
+            child_data=child_data,
+            manifest_path=manifest_path,
+            manifest_read_status=entry.get("manifest_read_status"),
+            manifest_error=entry.get("manifest_error"),
+            checkpoint=checkpoint,
+        )
+    return entry
+
+
+def operator_rollup_entry_failed(
+    status: str,
+    checkpoint: dict[str, Any] | None,
+) -> bool:
+    checkpoint_name = str(checkpoint.get("checkpoint") or "") if checkpoint else ""
+    return checkpoint_name in {"issue_failed", "promotion_failed"} or status not in {
+        "succeeded"
+    }
+
+
+def operator_rollup_failure_summary(
+    *,
+    run_kind: str,
+    child_data: dict[str, Any],
+    manifest_path: str,
+    manifest_read_status: Any,
+    manifest_error: Any,
+    checkpoint: dict[str, Any] | None,
+) -> dict[str, Any]:
+    checkpoint_name = str(checkpoint.get("checkpoint") or "") if checkpoint else None
+    read_status = str(manifest_read_status or "unknown")
+    if read_status != "loaded":
+        excerpt = f"Child manifest {read_status}: {manifest_path or '<missing path>'}."
+        if manifest_error:
+            excerpt = f"{excerpt} {manifest_error}"
+        return {
+            "status": "unavailable",
+            "failure_type": f"manifest_{read_status}",
+            "checkpoint": checkpoint_name,
+            "test_lane": None,
+            "phase": "child manifest read",
+            "command": [],
+            "command_text": None,
+            "exit_code": None,
+            "primary_log_path": None,
+            "log_read_status": "not_available",
+            "excerpt": operator_rollup_bounded_excerpt(excerpt),
+            "excerpt_source": "manifest_read_status",
+        }
+
+    failure = child_data.get("failure")
+    failure = failure if isinstance(failure, dict) else {}
+    failed_qa = operator_rollup_first_failed_qa_result(child_data)
+    primary_log_path = operator_rollup_failure_primary_log_path(
+        child_data,
+        failure=failure,
+        failed_qa=failed_qa,
+    )
+    log_summary = operator_rollup_command_log_summary(primary_log_path)
+    comment_summary = operator_rollup_failure_comment_summary(child_data)
+    command = operator_rollup_failure_command(failed_qa)
+    command_text = format_command(command) if command else log_summary["command_text"]
+    excerpt = log_summary["excerpt"]
+    excerpt_source = log_summary["excerpt_source"]
+    if excerpt is None and comment_summary["excerpt"] is not None:
+        excerpt = comment_summary["excerpt"]
+        excerpt_source = comment_summary["excerpt_source"]
+    if excerpt is None:
+        excerpt = operator_rollup_bounded_excerpt(str(failure.get("message") or ""))
+        excerpt_source = "failure_message" if excerpt else None
+    if excerpt is None and log_summary["log_read_status"] == "missing":
+        excerpt = f"Primary log path is missing: {primary_log_path}."
+        excerpt_source = "log_read_status"
+
+    return {
+        "status": "summarized",
+        "failure_type": operator_rollup_failure_type(
+            child_data,
+            failure=failure,
+            failed_qa=failed_qa,
+            checkpoint_name=checkpoint_name,
+        ),
+        "checkpoint": checkpoint_name,
+        "test_lane": operator_rollup_failure_test_lane(failed_qa),
+        "phase": operator_rollup_failure_phase(
+            run_kind=run_kind,
+            log_path=primary_log_path,
+            failed_qa=failed_qa,
+            failure_type=operator_rollup_failure_type(
+                child_data,
+                failure=failure,
+                failed_qa=failed_qa,
+                checkpoint_name=checkpoint_name,
+            ),
+            checkpoint_name=checkpoint_name,
+        ),
+        "command": command,
+        "command_text": command_text,
+        "exit_code": log_summary["exit_code"],
+        "primary_log_path": primary_log_path,
+        "log_read_status": log_summary["log_read_status"],
+        "excerpt": excerpt,
+        "excerpt_source": excerpt_source,
+    }
+
+
+def operator_rollup_first_failed_qa_result(
+    child_data: dict[str, Any],
+) -> dict[str, Any] | None:
+    results = child_data.get("qa_results")
+    if not isinstance(results, list):
+        return None
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        if str(result.get("status") or "") == "failed":
+            return result
+    return None
+
+
+def operator_rollup_failure_primary_log_path(
+    child_data: dict[str, Any],
+    *,
+    failure: dict[str, Any],
+    failed_qa: dict[str, Any] | None,
+) -> str | None:
+    if failed_qa is not None:
+        log_path = str(failed_qa.get("log_path") or "")
+        if log_path:
+            return log_path
+
+    formatter_recovery = child_data.get("formatter_recovery")
+    if isinstance(formatter_recovery, dict):
+        commit_check_paths = failure.get("commit_check_log_paths")
+        if isinstance(commit_check_paths, list):
+            for path in commit_check_paths:
+                path_text_value = str(path or "")
+                if path_text_value:
+                    return path_text_value
+        formatter_commit_results = formatter_recovery.get("commit_check_results")
+        if isinstance(formatter_commit_results, list):
+            for result in formatter_commit_results:
+                if not isinstance(result, dict):
+                    continue
+                if str(result.get("status") or "") != "failed":
+                    continue
+                log_path = str(result.get("log_path") or "")
+                if log_path:
+                    return log_path
+
+    log_path = str(failure.get("log_path") or "")
+    if log_path:
+        return log_path
+
+    for key in ("branch_sync", "ready_issue_refresh", "post_promotion_review"):
+        value = child_data.get(key)
+        if not isinstance(value, dict):
+            continue
+        nested_failure = value.get("failure")
+        if isinstance(nested_failure, dict):
+            log_path = str(nested_failure.get("log_path") or "")
+            if log_path:
+                return log_path
+        log_path = str(value.get("log_path") or "")
+        if log_path and str(value.get("status") or "") in {
+            "failed",
+            "failed_warning_only",
+        }:
+            return log_path
+    return None
+
+
+def operator_rollup_failure_command(failed_qa: dict[str, Any] | None) -> list[str]:
+    if failed_qa is None:
+        return []
+    command = failed_qa.get("command")
+    if not isinstance(command, list):
+        return []
+    return [str(part) for part in command]
+
+
+def operator_rollup_failure_test_lane(failed_qa: dict[str, Any] | None) -> str | None:
+    if failed_qa is None:
+        return None
+    name = str(failed_qa.get("name") or "")
+    return name or None
+
+
+def operator_rollup_failure_type(
+    child_data: dict[str, Any],
+    *,
+    failure: dict[str, Any],
+    failed_qa: dict[str, Any] | None,
+    checkpoint_name: str | None,
+) -> str | None:
+    failure_type = str(failure.get("type") or "")
+    if failure_type:
+        return failure_type
+    for key in ("formatter_recovery", "branch_sync", "promotion_worktree_preflight"):
+        value = child_data.get(key)
+        if not isinstance(value, dict):
+            continue
+        failure_type = str(value.get("failure_type") or "")
+        if failure_type:
+            return failure_type
+    if failed_qa is not None:
+        return "qa_failed"
+    return checkpoint_name
+
+
+def operator_rollup_failure_phase(
+    *,
+    run_kind: str,
+    log_path: str | None,
+    failed_qa: dict[str, Any] | None,
+    failure_type: str | None,
+    checkpoint_name: str | None,
+) -> str | None:
+    log_name = Path(str(log_path)).name if log_path else ""
+    if failed_qa is not None:
+        if "formatter-recovery-commit-check" in log_name:
+            return "formatter recovery Commit check"
+        if run_kind == "promotion":
+            return "Promotion QA"
+        return "QA"
+    if "integration-git-commit" in log_name:
+        return "Local integration commit"
+    if "issue-git-commit" in log_name:
+        return "implementation commit"
+    if "git-push" in log_name and run_kind == "promotion":
+        return "Promotion push"
+    if "git-push" in log_name:
+        return "Integration target push"
+    if failure_type == FORMATTER_REWRITE_RECOVERY_FAILURE_TYPE:
+        return "formatter recovery"
+    if checkpoint_name == "promotion_failed":
+        return "Promotion"
+    if checkpoint_name == "issue_failed":
+        return "issue implementation"
+    return None
+
+
+def operator_rollup_command_log_summary(log_path: str | None) -> dict[str, Any]:
+    if not log_path:
+        return {
+            "log_read_status": "missing_path",
+            "command_text": None,
+            "exit_code": None,
+            "excerpt": None,
+            "excerpt_source": None,
+        }
+    path = Path(log_path)
+    if path.suffix == ".jsonl":
+        return {
+            "log_read_status": "skipped_jsonl",
+            "command_text": None,
+            "exit_code": None,
+            "excerpt": None,
+            "excerpt_source": None,
+        }
+    if not path.exists():
+        return {
+            "log_read_status": "missing",
+            "command_text": None,
+            "exit_code": None,
+            "excerpt": None,
+            "excerpt_source": None,
+        }
+    try:
+        text = operator_rollup_read_text_bounded(path)
+    except OSError as error:
+        return {
+            "log_read_status": "unreadable",
+            "command_text": None,
+            "exit_code": None,
+            "excerpt": operator_rollup_bounded_excerpt(str(error)),
+            "excerpt_source": "log_read_error",
+        }
+    metadata = operator_rollup_command_log_metadata(text)
+    streams = operator_rollup_command_log_streams(text)
+    excerpt_source = "stderr" if streams["stderr"] else "stdout"
+    excerpt_text = streams["stderr"] or streams["stdout"] or text
+    return {
+        "log_read_status": "loaded",
+        "command_text": metadata["command_text"],
+        "exit_code": metadata["exit_code"],
+        "excerpt": operator_rollup_bounded_excerpt(excerpt_text),
+        "excerpt_source": excerpt_source if excerpt_text.strip() else None,
+    }
+
+
+def operator_rollup_read_text_bounded(path: Path) -> str:
+    size = path.stat().st_size
+    if size <= FAILURE_SUMMARY_ARTIFACT_MAX_BYTES:
+        return path.read_text(encoding="utf-8", errors="replace")
+    head_bytes = FAILURE_SUMMARY_ARTIFACT_MAX_BYTES // 4
+    tail_bytes = FAILURE_SUMMARY_ARTIFACT_MAX_BYTES - head_bytes
+    with path.open("rb") as handle:
+        head = handle.read(head_bytes)
+        handle.seek(max(0, size - tail_bytes))
+        tail = handle.read(tail_bytes)
+    omitted = max(0, size - len(head) - len(tail))
+    return (
+        head.decode("utf-8", "replace")
+        + f"\n[... omitted {omitted} bytes ...]\n"
+        + tail.decode("utf-8", "replace")
+    )
+
+
+def operator_rollup_command_log_metadata(text: str) -> dict[str, Any]:
+    command_text: str | None = None
+    exit_code: int | None = None
+    for line in text.splitlines()[:20]:
+        if line.startswith("$ "):
+            command_text = line[2:]
+            continue
+        if line.startswith("exit: "):
+            exit_code = operator_rollup_parse_exit_code(line.removeprefix("exit: "))
+    return {"command_text": command_text, "exit_code": exit_code}
+
+
+def operator_rollup_parse_exit_code(value: str) -> int | None:
+    stripped = value.strip()
+    if stripped.startswith("-") and stripped[1:].isdigit():
+        return int(stripped)
+    if stripped.isdigit():
+        return int(stripped)
+    return None
+
+
+def operator_rollup_command_log_streams(text: str) -> dict[str, str]:
+    streams: dict[str, list[str]] = {"stdout": [], "stderr": []}
+    section: str | None = None
+    for line in text.splitlines():
+        if line == "STDOUT:":
+            section = "stdout"
+            continue
+        if line == "STDERR:":
+            section = "stderr"
+            continue
+        if section in streams:
+            streams[section].append(line)
+    return {
+        "stdout": "\n".join(streams["stdout"]).strip(),
+        "stderr": "\n".join(streams["stderr"]).strip(),
+    }
+
+
+def operator_rollup_failure_comment_summary(
+    child_data: dict[str, Any],
+) -> dict[str, Any]:
+    comment_path = operator_rollup_failure_comment_path(child_data)
+    if comment_path is None or not comment_path.exists():
+        return {"excerpt": None, "excerpt_source": None}
+    try:
+        text = operator_rollup_read_text_bounded(comment_path)
+    except OSError:
+        return {"excerpt": None, "excerpt_source": None}
+    return {
+        "excerpt": operator_rollup_bounded_excerpt(text),
+        "excerpt_source": "failure_comment",
+    }
+
+
+def operator_rollup_failure_comment_path(child_data: dict[str, Any]) -> Path | None:
+    paths = child_data.get("paths")
+    issue = child_data.get("issue")
+    if not isinstance(paths, dict) or not isinstance(issue, dict):
+        return None
+    run_dir = str(paths.get("run_dir") or "")
+    issue_number = issue.get("number")
+    if run_dir == "" or issue_number is None:
+        return None
+    return Path(run_dir) / f"issue-{issue_number}-comment.md"
+
+
+def operator_rollup_bounded_excerpt(value: str | None) -> str | None:
+    if value is None:
+        return None
+    lines = [line.rstrip() for line in value.strip().splitlines() if line.strip()]
+    if not lines:
+        return None
+    excerpt = "\n".join(lines[-FAILURE_SUMMARY_MAX_LINES:])
+    if len(excerpt) <= FAILURE_SUMMARY_MAX_CHARS:
+        return excerpt
+    return "[...]" + excerpt[-FAILURE_SUMMARY_MAX_CHARS:]
 
 
 def operator_rollup_metadata_issue(issue: dict[str, Any]) -> dict[str, Any]:
@@ -3407,6 +3807,9 @@ def operator_rollup_issue_markdown_lines(
             + f"; QA `{entry.get('qa', {}).get('status')}`"
             + f"; manifest {markdown_path_link(entry.get('manifest_path'))}"
         )
+        lines.extend(
+            operator_rollup_failure_summary_markdown_lines(entry.get("failure_summary"))
+        )
     return lines
 
 
@@ -3460,6 +3863,9 @@ def operator_rollup_promotion_markdown_lines(
             + f"(created={len(created)}, failures={len(failures)})"
             + f"; manifest {markdown_path_link(entry.get('manifest_path'))}"
         )
+        lines.extend(
+            operator_rollup_failure_summary_markdown_lines(entry.get("failure_summary"))
+        )
         for recovery in entry.get("manual_recoveries", []):
             if not isinstance(recovery, dict):
                 continue
@@ -3471,6 +3877,40 @@ def operator_rollup_promotion_markdown_lines(
                 + operator_issue_title(issue)
                 + f" - `{recovery.get('metadata_status')}`"
             )
+    return lines
+
+
+def operator_rollup_failure_summary_markdown_lines(value: Any) -> list[str]:
+    if not isinstance(value, dict):
+        return []
+    pieces = []
+    failure_type = value.get("failure_type")
+    if failure_type:
+        pieces.append(f"type `{failure_type}`")
+    checkpoint = value.get("checkpoint")
+    if checkpoint:
+        pieces.append(f"checkpoint `{checkpoint}`")
+    test_lane = value.get("test_lane")
+    if test_lane:
+        pieces.append(f"Test lane `{test_lane}`")
+    phase = value.get("phase")
+    if phase:
+        pieces.append(f"phase `{phase}`")
+    command_text = value.get("command_text")
+    if command_text:
+        pieces.append(f"command {markdown_inline_code(str(command_text))}")
+    exit_code = value.get("exit_code")
+    if exit_code is not None:
+        pieces.append(f"exit `{exit_code}`")
+    primary_log_path = value.get("primary_log_path")
+    if primary_log_path:
+        pieces.append(f"log {markdown_artifact_link(primary_log_path, 'failure log')}")
+    elif value.get("log_read_status"):
+        pieces.append(f"log `{value.get('log_read_status')}`")
+    lines = ["  - Failure summary: " + ("; ".join(pieces) or "not recorded")]
+    excerpt = operator_rollup_markdown_excerpt(value.get("excerpt"))
+    if excerpt:
+        lines.append(f"    - Excerpt: {markdown_inline_code(excerpt)}")
     return lines
 
 
@@ -3656,6 +4096,19 @@ def markdown_artifact_link(value: Any, label: str) -> str:
     if path == "":
         return "`missing`"
     return f"[`{label}`](<{path}>)"
+
+
+def markdown_inline_code(value: str) -> str:
+    return "`" + value.replace("`", "'") + "`"
+
+
+def operator_rollup_markdown_excerpt(value: Any) -> str | None:
+    text = " ".join(str(value or "").split())
+    if text == "":
+        return None
+    if len(text) <= FAILURE_SUMMARY_MARKDOWN_MAX_CHARS:
+        return text
+    return text[: FAILURE_SUMMARY_MARKDOWN_MAX_CHARS - 3] + "..."
 
 
 def child_manifest_entry(child_manifest_path: Path) -> dict[str, Any]:

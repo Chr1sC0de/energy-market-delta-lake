@@ -178,6 +178,35 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         "chunk-sttm-procedures-capacity-settlement",
     )
 
+    sttm_mos_allocation = registry_entry_by_concept_id(
+        "sttm-mos-allocation",
+        entries,
+    )
+    assert sttm_mos_allocation is not None
+    assert sttm_mos_allocation.status is DashboardStatus.AVAILABLE
+    assert sttm_mos_allocation.notebook_name == "gas_sttm_mos_allocation"
+    assert sttm_mos_allocation.notebook_route == "/marimo/gas_sttm_mos_allocation/"
+    assert sttm_mos_allocation.backing_assets == (
+        "silver.gas_model.silver_gas_fact_sttm_mos_stack",
+        "silver.gas_model.silver_gas_fact_sttm_allocation_quantity",
+        "silver.gas_model.silver_gas_fact_sttm_allocation_limit",
+        "silver.gas_model.silver_gas_fact_sttm_default_allocation_notice",
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/mos.md"
+        in sttm_mos_allocation.generated_gold_paths
+    )
+    assert (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/allocation.md"
+        in sttm_mos_allocation.generated_gold_paths
+    )
+    assert "chunk-sttm-procedures-mos-estimates" in (
+        sttm_mos_allocation.source_chunk_ids
+    )
+    assert "chunk-dwgm-settlement-withdrawal-allocation" in (
+        sttm_mos_allocation.source_chunk_ids
+    )
+
     readiness = registry_entry_by_concept_id("data-readiness-overview", entries)
     assert readiness is not None
     assert readiness.status is DashboardStatus.AVAILABLE
