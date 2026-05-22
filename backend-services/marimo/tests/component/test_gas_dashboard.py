@@ -769,6 +769,50 @@ def test_dashboard_read_behavior_frame_renders_per_dashboard_policy() -> None:
     assert rows["Facility Context"]["row policy"] == "Bounded preview: 42 rows max"
 
 
+def test_dashboard_read_behavior_frame_forces_explainer_bounded_policy() -> None:
+    environment = {
+        "DEVELOPMENT_LOCATION": "aws",
+        "AEMO_BUCKET": "prod-energy-market-aemo",
+        "MARIMO_TABLE_BUCKETS": "prod-energy-market-aemo, prod-energy-market-io",
+        "MARIMO_FULL_TABLE_SCAN_ENABLED": "true",
+        "MARIMO_MAX_PREVIEW_ROWS": "42",
+    }
+    gas_config = discover_dashboard_config(environment)
+    table_config = discover_table_explorer_config(environment)
+
+    rows = {
+        row["dashboard"]: row
+        for row in dashboard_read_behavior_frame(gas_config, table_config).to_dicts()
+    }
+
+    assert rows["Participant Context"]["read behavior"] == (
+        "Registry-backed Participant relationship inspection"
+    )
+    assert rows["Participant Context"]["view"] == "Forced bounded sample"
+    assert rows["Participant Context"]["row policy"] == ("Bounded preview: 42 rows max")
+    assert rows["Participant Context"]["scope"] == (
+        f"{len(PARTICIPANT_TABLE_SPECS)} participant-oriented gas_model tables"
+    )
+    assert rows["Connection Point Context"]["read behavior"] == (
+        "Registry-backed Connection Point relationship inspection"
+    )
+    assert rows["Connection Point Context"]["view"] == "Forced bounded sample"
+    assert rows["Connection Point Context"]["row policy"] == (
+        "Bounded preview: 42 rows max"
+    )
+    assert rows["Connection Point Context"]["scope"] == (
+        f"{len(CONNECTION_POINT_TABLE_SPECS)} connection-point-oriented gas_model tables"
+    )
+    assert rows["Hub / Zone Context"]["read behavior"] == (
+        "Registry-backed Hub / Zone relationship inspection"
+    )
+    assert rows["Hub / Zone Context"]["view"] == "Forced bounded sample"
+    assert rows["Hub / Zone Context"]["row policy"] == ("Bounded preview: 42 rows max")
+    assert rows["Hub / Zone Context"]["scope"] == (
+        f"{len(HUB_ZONE_TABLE_SPECS)} hub/zone-oriented gas_model tables"
+    )
+
+
 def test_dashboard_read_behavior_frame_handles_unknown_available_dashboard() -> None:
     gas_config = discover_dashboard_config(
         {
