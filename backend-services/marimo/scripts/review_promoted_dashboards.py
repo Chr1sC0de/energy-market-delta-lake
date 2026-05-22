@@ -13,12 +13,30 @@ from types import TracebackType
 from typing import Protocol, cast
 from urllib.parse import urljoin
 
-PROMOTED_DASHBOARD_ROUTES: tuple[str, ...] = (
+PROMOTED_DASHBOARD_ROUTES_248: tuple[str, ...] = (
     "/marimo/data_readiness_overview/",
     "/marimo/glossary_explorer/",
     "/marimo/system_notices/",
     "/marimo/gas_market_prices/",
     "/marimo/gas_bid_offer_stack/",
+)
+
+PROMOTED_DASHBOARD_ROUTES_256: tuple[str, ...] = (
+    "/marimo/s3_bucket_health/",
+    "/marimo/dagster_asset_catalogue_status/",
+    "/marimo/source_coverage_matrix/",
+    "/marimo/aws_bounded_read_diagnostics/",
+    "/marimo/table_explorer/",
+    "/marimo/concept_to_asset_explorer/",
+    "/marimo/gas_day_explainer/",
+    "/marimo/facility_explainer/",
+    "/marimo/hub_zone_explainer/",
+    "/marimo/participant_explainer/",
+)
+
+PROMOTED_DASHBOARD_ROUTES: tuple[str, ...] = (
+    *PROMOTED_DASHBOARD_ROUTES_248,
+    *PROMOTED_DASHBOARD_ROUTES_256,
 )
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
@@ -312,6 +330,224 @@ REVIEW_SPECS: tuple[DashboardReviewSpec, ...] = (
                 description="source-system dropdown",
                 text="All source systems",
             ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/s3_bucket_health/",
+        required_texts=(
+            "S3 Bucket Health",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Storage Configuration",
+            "Bucket Health",
+            "Table Prefix Controls",
+        ),
+        control_probes=(
+            ControlProbe(
+                description="refresh storage health run button",
+                text="Refresh storage health",
+            ),
+            ControlProbe(description="bucket filter", text="Bucket"),
+            ControlProbe(description="table-format filter", text="Table format"),
+            ControlProbe(description="prefix-search filter", text="Prefix search"),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/dagster_asset_catalogue_status/",
+        required_texts=(
+            "Dagster Asset Catalogue Status",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Runtime Configuration",
+            "Catalogue Controls",
+            "Table Asset Catalogue",
+        ),
+        control_probes=(
+            ControlProbe(
+                description="refresh catalogue status run button",
+                text="Refresh catalogue status",
+            ),
+            ControlProbe(description="asset-group filter", text="Asset group"),
+            ControlProbe(
+                description="catalogue-status filter",
+                text="Catalogue status",
+            ),
+            ControlProbe(description="asset-search filter", text="Asset search"),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/source_coverage_matrix/",
+        required_texts=(
+            "Source Coverage Matrix",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Source coverage read diagnostics",
+            "Coverage Inputs",
+            "Coverage Health",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+            ControlProbe(
+                description="source-system filter",
+                text="Source system",
+                optional=True,
+            ),
+            ControlProbe(
+                description="coverage-state filter",
+                text="Coverage state",
+                optional=True,
+            ),
+            ControlProbe(
+                description="coverage-search filter",
+                text="Coverage search",
+                optional=True,
+            ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/aws_bounded_read_diagnostics/",
+        required_texts=(
+            "AWS Bounded Read Diagnostics",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Runtime Policy",
+            "Bounded Read States",
+            "Per-Dashboard Read Behavior",
+            "Participant Context",
+            "Connection Point Context",
+            "Hub / Zone Context",
+        ),
+        control_probes=(),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/table_explorer/",
+        required_texts=(
+            "Table Explorer",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Configuration",
+            "Bucket Health",
+            "Table Catalogue",
+        ),
+        control_probes=(
+            ControlProbe(
+                description="asset-group filter",
+                text="Asset group",
+                optional=True,
+            ),
+            ControlProbe(
+                description="layer-domain filter",
+                text="Layer/domain",
+                optional=True,
+            ),
+            ControlProbe(
+                description="live-status filter",
+                text="Live status",
+                optional=True,
+            ),
+            ControlProbe(
+                description="asset-search filter",
+                text="Asset search",
+                optional=True,
+            ),
+            ControlProbe(
+                description="table dropdown",
+                text="Table",
+                optional=True,
+            ),
+            ControlProbe(
+                description="refresh table scan run button",
+                text="Refresh table scan",
+                optional=True,
+            ),
+            ControlProbe(
+                description="row-limit input",
+                text="Row limit",
+                optional=True,
+            ),
+            ControlProbe(
+                description="columns filter",
+                text="Columns",
+                optional=True,
+            ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/concept_to_asset_explorer/",
+        required_texts=(
+            "Concept-to-Asset Explorer",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Source",
+            "Mapped assets",
+            "Coverage gaps",
+        ),
+        control_probes=(),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/gas_day_explainer/",
+        required_texts=(
+            "Gas Day Explainer",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Gas Day Coverage Health",
+            "Date And Gas-Date Fields",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+            ControlProbe(
+                description="field-role filter",
+                text="Field role",
+                optional=True,
+            ),
+            ControlProbe(
+                description="field-search filter",
+                text="Field search",
+                optional=True,
+            ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/facility_explainer/",
+        required_texts=(
+            "Facility Explainer",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Facility Coverage Health",
+            "Facility Relationships",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/hub_zone_explainer/",
+        required_texts=(
+            "Hub / Zone",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Hub / Zone Coverage Health",
+            "Source System Coverage",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/participant_explainer/",
+        required_texts=(
+            "Participant Explainer",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Participant Coverage Health",
+            "Participant Market Membership",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
         ),
     ),
 )

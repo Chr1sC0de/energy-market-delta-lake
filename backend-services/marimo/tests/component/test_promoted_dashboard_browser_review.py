@@ -122,19 +122,83 @@ def test_print_plan_cli_outputs_json_without_playwright_dependency() -> None:
 
     assert payload["dashboards"] == sorted(
         [
+            "/marimo/aws_bounded_read_diagnostics/",
+            "/marimo/concept_to_asset_explorer/",
+            "/marimo/dagster_asset_catalogue_status/",
             "/marimo/data_readiness_overview/",
+            "/marimo/facility_explainer/",
             "/marimo/gas_bid_offer_stack/",
+            "/marimo/gas_day_explainer/",
             "/marimo/gas_market_prices/",
             "/marimo/glossary_explorer/",
+            "/marimo/hub_zone_explainer/",
+            "/marimo/participant_explainer/",
+            "/marimo/s3_bucket_health/",
+            "/marimo/source_coverage_matrix/",
             "/marimo/system_notices/",
+            "/marimo/table_explorer/",
         ]
     )
     assert payload["viewports"] == [
         {"name": "desktop", "width": 1440, "height": 1100},
         {"name": "narrow", "width": 390, "height": 900},
     ]
-    assert len(payload["runs"]) == 10
+    assert len(payload["runs"]) == 30
     assert all(run["screenshot_path"] is None for run in payload["runs"])
+
+
+def test_issue_256_batch_declares_browser_review_surface(tmp_path: Path) -> None:
+    review = _load_review_script()
+
+    runs = review.build_review_plan(
+        "http://example.test:8000",
+        tmp_path,
+        routes=review.PROMOTED_DASHBOARD_ROUTES_256,
+    )
+    route_payloads = {
+        run["route"]: run
+        for run in review.review_plan_payload(runs)["runs"]
+        if run["viewport"] == "desktop"
+    }
+
+    assert set(route_payloads) == set(review.PROMOTED_DASHBOARD_ROUTES_256)
+    bounded_read_payload = route_payloads["/marimo/aws_bounded_read_diagnostics/"]
+
+    assert bounded_read_payload["control_probes"] == []
+    assert "Participant Context" in bounded_read_payload["required_texts"]
+    assert "Connection Point Context" in bounded_read_payload["required_texts"]
+    assert "Hub / Zone Context" in bounded_read_payload["required_texts"]
+    assert route_payloads["/marimo/s3_bucket_health/"]["control_probes"] == [
+        {
+            "description": "refresh storage health run button",
+            "text": "Refresh storage health",
+            "optional": False,
+        },
+        {"description": "bucket filter", "text": "Bucket", "optional": False},
+        {
+            "description": "table-format filter",
+            "text": "Table format",
+            "optional": False,
+        },
+        {
+            "description": "prefix-search filter",
+            "text": "Prefix search",
+            "optional": False,
+        },
+    ]
+    assert {
+        probe["description"]
+        for probe in route_payloads["/marimo/table_explorer/"]["control_probes"]
+    } == {
+        "asset-group filter",
+        "layer-domain filter",
+        "live-status filter",
+        "asset-search filter",
+        "table dropdown",
+        "refresh table scan run button",
+        "row-limit input",
+        "columns filter",
+    }
 
 
 def test_review_run_checks_shadow_dom_text_and_controls() -> None:

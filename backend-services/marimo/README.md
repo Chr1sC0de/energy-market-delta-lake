@@ -1415,13 +1415,29 @@ uv run --with playwright python scripts/review_promoted_dashboards.py \
   --base-url http://127.0.0.1:8000
 ```
 
-The default promoted-dashboard route set is:
+The default promoted-dashboard route set keeps the issue #248 batch and adds
+the issue #256 post-**Promotion** batch.
+
+Issue #248 routes:
 
 - `/marimo/data_readiness_overview/`
 - `/marimo/glossary_explorer/`
 - `/marimo/system_notices/`
 - `/marimo/gas_market_prices/`
 - `/marimo/gas_bid_offer_stack/`
+
+Issue #256 routes:
+
+- `/marimo/s3_bucket_health/`
+- `/marimo/dagster_asset_catalogue_status/`
+- `/marimo/source_coverage_matrix/`
+- `/marimo/aws_bounded_read_diagnostics/`
+- `/marimo/table_explorer/`
+- `/marimo/concept_to_asset_explorer/`
+- `/marimo/gas_day_explainer/`
+- `/marimo/facility_explainer/`
+- `/marimo/hub_zone_explainer/`
+- `/marimo/participant_explainer/`
 
 Screenshots are off by default. When durable local review artifacts are useful,
 write them outside the repository:
