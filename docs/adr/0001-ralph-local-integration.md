@@ -62,6 +62,12 @@ read-only analysis artifact, then its outer loop applies validated GitHub Issue
 metadata updates only. Refresh mutation failures stop the drain with
 per-candidate manifest evidence and recovery guidance, without rolling back the
 integrated commit or rewriting the **Integration target**.
+Checkpointed Operator drains also run a targeted **Integration target** baseline
+guard before new claims in high-risk states, using the Ralph loop **Commit
+check** on a detached target worktree. That guard catches target-branch health
+failures before unrelated issue work is claimed; it does not change the
+issue-specific QA, **Local integration**, or Promotion **Push check**
+responsibilities described by this ADR.
 
 ## Sync metadata
 

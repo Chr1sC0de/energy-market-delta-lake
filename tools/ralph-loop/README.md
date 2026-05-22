@@ -22,12 +22,12 @@ make run-prek
 ## Layout
 
 - `src/ralph_loop/cli.py`: Ralph CLI, side-effect adapters, loop controller,
-  operator-smoke execution, deploy-repair issue creation, and compatibility
-  re-exports
+  Operator **Integration target** baseline guard, operator-smoke execution,
+  deploy-repair issue creation, and compatibility re-exports
 - `src/ralph_loop/workflow.py`: pure label, **Delivery mode**, QA selection,
   comment, **Issue completion review** trigger, Operator smoke request,
-  deployment classification/execution selection, QA runtime disk guard, and
-  recovery policy helpers
+  deployment classification/execution selection, baseline guard command
+  selection, QA runtime disk guard, and recovery policy helpers
 - `src/ralph_loop/state.py`: Ralph run and Operator manifest state helpers,
   including **Issue completion review**, Operator smoke evidence,
   active child run status, deploy-repair issue state, and checkpointed

@@ -156,6 +156,14 @@ Checkpointed Operator runs handle open `agent-integrated` backlog through
 such as `agent-running`, `agent-failed`, or active deploy-repair targeting must
 be resolved first. If recovery state blocks **Promotion**, Operator status and
 rollup guidance list the blocking runtime labels and the integrated backlog.
+When the Operator scheduler is about to claim more ready work while an
+`agent-integrated` backlog is already present, or when the next candidate names
+Agent workflow paths in `## Context anchors`, Ralph first validates the
+**Integration target** baseline with the Ralph loop **Commit check** from
+`tools/ralph-loop`. This preclaim guard stops before issue claim when the target
+branch is already failing that baseline, and reports the command, **Test lane**,
+log path, and recovery guidance. It is separate from issue-specific QA,
+**Local integration**, and Promotion **Push check** validation.
 For open `agent-failed` issues, Operator status and rollup distinguish
 Ralph-owned pre-push requeue recovery from post-push metadata recovery, manual
 Gitflow recovery, malformed ready issue contracts, and implementation failures

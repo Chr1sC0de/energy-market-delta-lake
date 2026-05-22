@@ -165,6 +165,15 @@ those implementation subprocesses as a **Full-access implementation pass**, keep
 their GitHub Issue commands read-only, and hard-stops before QA if the resulting
 diff changes files outside the issue's `## Context anchors`.
 
+In high-risk Operator scheduling states, Ralph may stop even earlier with an
+**Integration target** baseline health failure. This guard runs the Ralph loop
+**Commit check** (`make run-prek` in `tools/ralph-loop`) from a detached
+`origin/<target>` worktree when `agent-integrated` backlog exists before a new
+claim, or when the candidate issue names Agent workflow paths. It reports the
+failing command, **Test lane**, log path, and recovery guidance. Repair the
+target baseline before restarting; this guard is separate from issue QA,
+**Local integration**, and Promotion **Push check** validation.
+
 Use `--max-issues` for the drain-level claimed issue budget. Plain `--drain`
 claims at most 10 implementation issues by default, and `--max-issues 0` means
 unlimited drain. Use `--max-codex-attempts` for the per-issue Codex

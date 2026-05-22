@@ -1027,6 +1027,10 @@ class RalphLoop:
         self.triaged_this_run: set[int] = set()
         self._ready_issue_refresh_claim_gate = ReadyIssueRefreshClaimGate()
         self._stop_after_ralph_loop_self_update = False
+        self._operator_integration_target_baseline_guard_enabled = False
+        self._integration_target_baseline_guard_verified: set[
+            tuple[str, str, tuple[str, ...], str]
+        ] = set()
         self.active_child_observer: Callable[[RunManifest], None] | None = None
 
     def _preflight_qa_runtime_disk(
@@ -1257,6 +1261,9 @@ class RalphLoop:
                         if fatal_error is not None:
                             raise fatal_error
                         continue
+                    self._ensure_operator_integration_target_baseline_health(
+                        serial_candidate
+                    )
                     reserved_serial_candidate = serial_candidate
                     attempts_started += 1
                     made_progress = True
@@ -1283,6 +1290,9 @@ class RalphLoop:
                             break
                         if self._drain_attempt_budget_reached(attempts_started):
                             break
+                        self._ensure_operator_integration_target_baseline_health(
+                            candidate
+                        )
                         future = executor.submit(
                             self._handle_exploratory_candidate,
                             candidate,
@@ -1343,6 +1353,154 @@ class RalphLoop:
                     return
                 self._run_triage(triage_issue)
                 self.triaged_this_run.add(triage_issue.number)
+
+    def _ensure_operator_integration_target_baseline_health(
+        self,
+        candidate: ReadyImplementationCandidate,
+    ) -> None:
+        reasons = self._operator_integration_target_baseline_guard_reasons(candidate)
+        if not reasons:
+            return
+
+        target_branch = self._operator_integration_target_baseline_branch(
+            candidate,
+            reasons=reasons,
+        )
+        run_dir = self._integration_target_baseline_run_dir(target_branch)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        self.git.fetch_base(target_branch, run_dir=run_dir)
+        target_sha = self.git.rev_parse(f"origin/{target_branch}")
+        commands = integration_target_baseline_health_commands(
+            self._integration_target_baseline_worktree_path(
+                target_branch=target_branch,
+                run_dir=run_dir,
+            )
+        )
+        for command in commands:
+            cache_key = (
+                target_branch,
+                target_sha,
+                command.args,
+                command.name,
+            )
+            if cache_key in self._integration_target_baseline_guard_verified:
+                continue
+            self._run_integration_target_baseline_command(
+                target_branch=target_branch,
+                target_sha=target_sha,
+                command=command,
+                run_dir=run_dir,
+                reasons=reasons,
+            )
+            self._integration_target_baseline_guard_verified.add(cache_key)
+
+    def _operator_integration_target_baseline_guard_reasons(
+        self,
+        candidate: ReadyImplementationCandidate,
+    ) -> tuple[str, ...]:
+        if not self._operator_integration_target_baseline_guard_enabled:
+            return ()
+        reasons: list[str] = []
+        snapshot = operator_queue_snapshot_from_issues(self._issue_pool())
+        if snapshot.integrated:
+            issues = issue_reference_list(
+                [issue.number for issue in snapshot.integrated]
+            )
+            reasons.append(
+                f"agent-integrated backlog exists before a new issue claim: {issues}"
+            )
+        if issue_declares_agent_workflow_change(candidate.issue):
+            reasons.append(
+                f"ready issue #{candidate.issue.number} declares Agent workflow "
+                "context anchors"
+            )
+        return tuple(reasons)
+
+    def _operator_integration_target_baseline_branch(
+        self,
+        candidate: ReadyImplementationCandidate,
+        *,
+        reasons: tuple[str, ...],
+    ) -> str:
+        if any(reason.startswith("agent-integrated backlog") for reason in reasons):
+            return self.config.source_branch
+        return implementation_base_branch_for_plan(candidate.delivery_plan)
+
+    def _integration_target_baseline_run_dir(self, target_branch: str) -> Path:
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        return (
+            self.config.log_root
+            / f"integration-baseline-{slugify(target_branch)}-{timestamp}"
+        )
+
+    def _integration_target_baseline_worktree_path(
+        self,
+        *,
+        target_branch: str,
+        run_dir: Path,
+    ) -> Path:
+        return self.config.worktree_container / (
+            f"agent-baseline-{slugify(target_branch)}-{run_dir.name}"
+        )
+
+    def _run_integration_target_baseline_command(
+        self,
+        *,
+        target_branch: str,
+        target_sha: str,
+        command: QACommand,
+        run_dir: Path,
+        reasons: tuple[str, ...],
+    ) -> None:
+        baseline_path = self._integration_target_baseline_worktree_path(
+            target_branch=target_branch,
+            run_dir=run_dir,
+        )
+        reason_text = "; ".join(reasons)
+        emit(
+            "Integration target baseline guard: running "
+            f"{command.name} for origin/{target_branch} ({target_sha}) before "
+            f"claim because {reason_text}: {format_command(command.args)}"
+        )
+        self.git.add_detached_worktree(
+            path=baseline_path,
+            ref=target_sha,
+            run_dir=run_dir,
+            log_name="git-worktree-add-integration-target-baseline.log",
+        )
+        log_path = run_dir / (
+            f"integration-target-baseline-1-{slugify(command.name)}.log"
+        )
+        try:
+            self._run_qa_command_sequence(
+                [command],
+                run_dir,
+                log_prefix="integration-target-baseline",
+                subject=f"Integration target baseline origin/{target_branch}",
+            )
+        except CommandFailure as error:
+            failure = IntegrationTargetBaselineFailure(
+                target_branch=target_branch,
+                command=command,
+                log_path=error.log_path or log_path,
+                reasons=reasons,
+                error=error,
+            )
+            emit(str(failure), err=True)
+            raise failure from error
+
+        emit(
+            "Integration target baseline guard passed "
+            f"{command.name} for origin/{target_branch}."
+        )
+        try:
+            self.git.remove_worktree(
+                baseline_path,
+                run_dir=run_dir,
+                log_name="git-worktree-remove-integration-target-baseline.log",
+            )
+        except CommandFailure as error:
+            emit(f"Baseline guard cleanup warning: {error}", err=True)
 
     def _raise_if_ralph_loop_self_update_requires_restart(
         self, manifest: RunManifest | None
@@ -7063,6 +7221,7 @@ class RalphOperatorRun:
         self.max_cycles = max_cycles
         self.loop = RalphLoop(config, runner)
         self.loop._stop_after_ralph_loop_self_update = True
+        self.loop._operator_integration_target_baseline_guard_enabled = True
         self.github = self.loop.github
         self.manifest = OperatorRunManifest.start(
             run_dir=run_dir,
@@ -7933,6 +8092,8 @@ def operator_drain_scheduler_failure_guidance(
     error: RalphError,
     child_manifest_paths: list[Path],
 ) -> str:
+    if isinstance(error, IntegrationTargetBaselineFailure):
+        return error.recovery_guidance or str(error)
     manifest_text = ""
     if child_manifest_paths:
         manifests = ", ".join(f"`{path}`" for path in child_manifest_paths)
