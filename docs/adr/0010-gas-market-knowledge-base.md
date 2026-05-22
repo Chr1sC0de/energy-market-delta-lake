@@ -33,6 +33,14 @@ The knowledge-base Subproject tracks or reserves text artifacts under
 - `generated/silver/chunks`: Docling Hybrid chunks prepared for retrieval.
 - `generated/gold`: cited, agent-authored **Market context** pages.
 
+Generated silver document Markdown may exceed the generic 500 KB large-file
+hook limit because each file can contain full Docling Markdown extraction
+output for one source document. The Gas market knowledge base **Commit check**
+therefore exempts only `generated/silver/documents/**/*.md` from
+`check-added-large-files`; raw PDFs, binary artifacts, generated chunks,
+generated gold pages, and unrelated large files remain blocked by the raw-PDF
+repository ignore rules or the generic large-file limit.
+
 Docling is the accepted PDF-to-Markdown extraction tool. Docling Hybrid chunks
 are the accepted silver retrieval unit. Gold **Market context** pages are
 authored from retrieved and inspected source text, with citations back to the
@@ -91,6 +99,8 @@ its own ADR.
   - `docs/agents/domain.md`
   - `docs/repository/architecture.md`
   - `docs/repository/workflow.md`
+  - `tools/gas-market-knowledge-base/.pre-commit-config.yaml`
+  - `tools/gas-market-knowledge-base/README.md`
   - `docs/repository/documentation-sync.md`
   - `backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/aemo_gas_documents.py`

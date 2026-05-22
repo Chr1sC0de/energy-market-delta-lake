@@ -154,7 +154,13 @@ Corpus text artifacts belong under these generated roots:
 
 Generated Markdown, JSON, JSONL, YAML, and text files under those roots may be
 tracked intentionally when future issues create reviewable corpus artifacts.
-Raw PDFs are not tracked. Source PDF bytes stay in S3-compatible archive
+Generated silver document Markdown under `generated/silver/documents/**/*.md`
+may exceed the generic 500 KB large-file hook limit because it preserves full
+Docling Markdown extraction output for source document review. The Subproject
+**Commit check** exempts only those generated silver document Markdown files
+from `check-added-large-files`; generated chunks, generated gold pages, raw
+PDFs, binary artifacts, and unrelated large files remain subject to the generic
+limit. Raw PDFs are not tracked. Source PDF bytes stay in S3-compatible archive
 storage or in the ignored local `.cache/pdfs/` cache, and repository ignore
 rules keep `*.pdf` files out of this Subproject.
 
@@ -210,6 +216,7 @@ artifact output rather than maintained router documentation.
   - `tools/gas-market-knowledge-base/tests/unit/test_cli.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_gold_context.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_pdf_cache.py`
+  - `tools/gas-market-knowledge-base/tests/unit/test_precommit_policy.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_silver_chunks.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_silver_documents.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_source_manifest.py`
