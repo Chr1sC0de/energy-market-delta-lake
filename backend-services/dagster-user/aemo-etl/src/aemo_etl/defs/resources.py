@@ -1,5 +1,6 @@
 """Shared Dagster resources and IO managers for aemo-etl."""
 
+from time import sleep
 from typing import Final, override
 
 from dagster import (
@@ -13,7 +14,8 @@ from dagster import (
 )
 from dagster._core.definitions.metadata import RawMetadataValue
 from dagster_aws.s3 import S3Resource, s3_pickle_io_manager
-from polars import LazyFrame, scan_delta, scan_parquet
+from polars import LazyFrame, len as pl_len, scan_delta, scan_parquet
+from polars.exceptions import ComputeError
 
 from aemo_etl.configs import DAGSTER_URI, IO_MANAGER_BUCKET
 from aemo_etl.utils import get_lazyframe_num_rows, get_metadata_schema, table_exists
@@ -21,6 +23,8 @@ from aemo_etl.utils import get_lazyframe_num_rows, get_metadata_schema, table_ex
 SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY: Final = (
     "aemo_deltalake_source_table_bronze_read_io_manager"
 )
+PARQUET_SINK_RETRY_ATTEMPTS: Final = 3
+PARQUET_SINK_RETRY_DELAY_SECONDS: Final = 5
 
 
 class PolarsDataFrameSinkDeltaIoManager(ConfigurableIOManager):
@@ -148,6 +152,35 @@ def _parquet_dataset_glob(uri: str) -> str:
     return f"{uri.rstrip('/')}/*.parquet"
 
 
+def _parquet_part_uri(uri: str) -> str:
+    return f"{uri.rstrip('/')}/part-00000.parquet"
+
+
+def _parquet_output_row_count(uri: str) -> int:
+    return int(scan_parquet(_parquet_part_uri(uri)).select(pl_len()).collect().item())
+
+
+def _is_retryable_parquet_sink_error(exception: BaseException) -> bool:
+    return isinstance(exception, ComputeError) and (
+        "parquet: File out of specification" in str(exception)
+    )
+
+
+def _sink_parquet_part(obj: LazyFrame, uri: str) -> None:
+    part_uri = _parquet_part_uri(uri)
+    for attempt in range(1, PARQUET_SINK_RETRY_ATTEMPTS + 1):
+        try:
+            obj.sink_parquet(part_uri, mkdir=True)
+            return
+        except ComputeError as exception:
+            if (
+                attempt == PARQUET_SINK_RETRY_ATTEMPTS
+                or not _is_retryable_parquet_sink_error(exception)
+            ):
+                raise
+            sleep(PARQUET_SINK_RETRY_DELAY_SECONDS)
+
+
 class PolarsDataFrameSinkParquetIoManager(ConfigurableIOManager):
     """IO manager that writes Polars lazy frames as parquet datasets."""
 
@@ -174,13 +207,13 @@ class PolarsDataFrameSinkParquetIoManager(ConfigurableIOManager):
 
             output_metadata["dagster/column_schema"] = updated_column_schema
 
+        _sink_parquet_part(obj, target_uri)
+
         output_metadata.update(
             {
-                "dagster/row_count": get_lazyframe_num_rows(obj),
+                "dagster/row_count": _parquet_output_row_count(target_uri),
             }
         )
-
-        obj.sink_parquet(f"{target_uri.rstrip('/')}/part-00000.parquet", mkdir=True)
 
         context.add_output_metadata(output_metadata)
 

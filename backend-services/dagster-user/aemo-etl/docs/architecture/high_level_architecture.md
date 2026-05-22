@@ -308,9 +308,10 @@ Example defaults:
 - `aemo_deltalake_source_table_bronze_read_io_manager`
   - read-only Delta loading for source-table bronze assets after their explicit ingestion logic has written current-state rows
 - `aemo_parquet_overwrite_io_manager`
-  - overwrites a Parquet dataset directory with the current snapshot
+  - overwrites a Parquet dataset directory with the current snapshot, then
+    counts rows from the written Parquet part
 
-The write-oriented Delta managers persist `polars.LazyFrame` outputs to Delta tables in the AEMO bucket using the `dagster/uri` asset metadata. Source-table bronze assets write through `factories/df_from_s3_keys/current_state.py`; that helper rejects conflicting latest-source rows and verifies the final Delta write source is unique by `surrogate_key`. Their read-only IO manager only scans the existing Delta table for downstream consumers and checks. The Parquet manager overwrites a Parquet dataset directory at the same metadata URI contract. Write managers publish row count and schema metadata back into Dagster.
+The write-oriented Delta managers persist `polars.LazyFrame` outputs to Delta tables in the AEMO bucket using the `dagster/uri` asset metadata. Source-table bronze assets write through `factories/df_from_s3_keys/current_state.py`; that helper rejects conflicting latest-source rows and verifies the final Delta write source is unique by `surrogate_key`. Their read-only IO manager only scans the existing Delta table for downstream consumers and checks. The Parquet manager overwrites a Parquet dataset directory at the same metadata URI contract, narrowly retries transient Polars parquet file-spec read errors during the sink, and publishes row count from the written Parquet part so large lazy inputs are not scanned once for metadata and again for the write. Write managers publish row count and schema metadata back into Dagster.
 
 ## Module map
 
