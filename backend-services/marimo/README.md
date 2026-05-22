@@ -1415,13 +1415,54 @@ uv run --with playwright python scripts/review_promoted_dashboards.py \
   --base-url http://127.0.0.1:8000
 ```
 
-The default promoted-dashboard route set is:
+The default promoted-dashboard route set keeps the issue #248 batch and adds
+the issue #256, issue #258, and `c47c461` post-**Promotion** batches.
+
+Issue #248 routes:
 
 - `/marimo/data_readiness_overview/`
 - `/marimo/glossary_explorer/`
 - `/marimo/system_notices/`
 - `/marimo/gas_market_prices/`
 - `/marimo/gas_bid_offer_stack/`
+
+Issue #256 routes:
+
+- `/marimo/s3_bucket_health/`
+- `/marimo/dagster_asset_catalogue_status/`
+- `/marimo/source_coverage_matrix/`
+- `/marimo/aws_bounded_read_diagnostics/`
+- `/marimo/table_explorer/`
+- `/marimo/concept_to_asset_explorer/`
+- `/marimo/gas_day_explainer/`
+- `/marimo/facility_explainer/`
+- `/marimo/hub_zone_explainer/`
+- `/marimo/participant_explainer/`
+
+Issue #258 routes:
+
+- `/marimo/materialization_freshness/`
+- `/marimo/source_table_lineage_explorer/`
+- `/marimo/citation_chain_explorer/`
+- `/marimo/connection_point_explainer/`
+- `/marimo/schema_data_dictionary_explorer/`
+- `/marimo/flow_operations/`
+- `/marimo/facility_flow_storage/`
+- `/marimo/nomination_demand_forecast/`
+- `/marimo/linepack_adequacy/`
+- `/marimo/capacity_outlook/`
+
+Promotion commit `c47c461fb6e5c592399a6ae22683f9fae05e3bd1` routes:
+
+- `/marimo/forecast_vs_actual/`
+- `/marimo/pipeline_connection_operations/`
+- `/marimo/heating_value_pressure/`
+- `/marimo/operational_meter_flow/`
+- `/marimo/capacity_auction/`
+- `/marimo/gas_scheduled_quantities/`
+- `/marimo/gas_sttm_contingency_gas/`
+- `/marimo/gas_sttm_market_settlement/`
+- `/marimo/gas_sttm_capacity_settlement/`
 
 Screenshots are off by default. When durable local review artifacts are useful,
 write them outside the repository:

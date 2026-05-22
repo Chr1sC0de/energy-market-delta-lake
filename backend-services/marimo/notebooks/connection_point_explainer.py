@@ -51,12 +51,7 @@ def _():
 
 
 @app.cell
-def _(
-    CONNECTION_POINT_CONTEXT_ID,
-    mo,
-    render_connection_point_context_links,
-    render_dashboard_context_panel,
-):
+def _(mo):
     mo.vstack(
         [
             mo.md("""
@@ -78,8 +73,6 @@ def _(
             the shared gas model loader; unavailable or empty data renders as
             designed empty states instead of notebook tracebacks.
             """),
-            mo.Html(render_dashboard_context_panel(CONNECTION_POINT_CONTEXT_ID)),
-            mo.Html(render_connection_point_context_links()),
         ]
     )
     return
@@ -223,6 +216,22 @@ def _(config, connection_point_coverage, connection_point_specs, mo, pl):
                 {"Coverage inputs": mo.ui.table(config_frame, selection=None)},
                 multiple=False,
             ),
+        ]
+    )
+    return
+
+
+@app.cell
+def _(
+    CONNECTION_POINT_CONTEXT_ID,
+    mo,
+    render_connection_point_context_links,
+    render_dashboard_context_panel,
+):
+    mo.vstack(
+        [
+            mo.Html(render_dashboard_context_panel(CONNECTION_POINT_CONTEXT_ID)),
+            mo.Html(render_connection_point_context_links()),
         ]
     )
     return

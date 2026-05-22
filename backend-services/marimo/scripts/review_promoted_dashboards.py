@@ -13,12 +13,57 @@ from types import TracebackType
 from typing import Protocol, cast
 from urllib.parse import urljoin
 
-PROMOTED_DASHBOARD_ROUTES: tuple[str, ...] = (
+PROMOTED_DASHBOARD_ROUTES_248: tuple[str, ...] = (
     "/marimo/data_readiness_overview/",
     "/marimo/glossary_explorer/",
     "/marimo/system_notices/",
     "/marimo/gas_market_prices/",
     "/marimo/gas_bid_offer_stack/",
+)
+
+PROMOTED_DASHBOARD_ROUTES_256: tuple[str, ...] = (
+    "/marimo/s3_bucket_health/",
+    "/marimo/dagster_asset_catalogue_status/",
+    "/marimo/source_coverage_matrix/",
+    "/marimo/aws_bounded_read_diagnostics/",
+    "/marimo/table_explorer/",
+    "/marimo/concept_to_asset_explorer/",
+    "/marimo/gas_day_explainer/",
+    "/marimo/facility_explainer/",
+    "/marimo/hub_zone_explainer/",
+    "/marimo/participant_explainer/",
+)
+
+PROMOTED_DASHBOARD_ROUTES_258: tuple[str, ...] = (
+    "/marimo/materialization_freshness/",
+    "/marimo/source_table_lineage_explorer/",
+    "/marimo/citation_chain_explorer/",
+    "/marimo/connection_point_explainer/",
+    "/marimo/schema_data_dictionary_explorer/",
+    "/marimo/flow_operations/",
+    "/marimo/facility_flow_storage/",
+    "/marimo/nomination_demand_forecast/",
+    "/marimo/linepack_adequacy/",
+    "/marimo/capacity_outlook/",
+)
+
+PROMOTED_DASHBOARD_ROUTES_C47C461: tuple[str, ...] = (
+    "/marimo/forecast_vs_actual/",
+    "/marimo/pipeline_connection_operations/",
+    "/marimo/heating_value_pressure/",
+    "/marimo/operational_meter_flow/",
+    "/marimo/capacity_auction/",
+    "/marimo/gas_scheduled_quantities/",
+    "/marimo/gas_sttm_contingency_gas/",
+    "/marimo/gas_sttm_market_settlement/",
+    "/marimo/gas_sttm_capacity_settlement/",
+)
+
+PROMOTED_DASHBOARD_ROUTES: tuple[str, ...] = (
+    *PROMOTED_DASHBOARD_ROUTES_248,
+    *PROMOTED_DASHBOARD_ROUTES_256,
+    *PROMOTED_DASHBOARD_ROUTES_258,
+    *PROMOTED_DASHBOARD_ROUTES_C47C461,
 )
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
@@ -312,6 +357,658 @@ REVIEW_SPECS: tuple[DashboardReviewSpec, ...] = (
                 description="source-system dropdown",
                 text="All source systems",
             ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/s3_bucket_health/",
+        required_texts=(
+            "S3 Bucket Health",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Storage Configuration",
+            "Bucket Health",
+            "Table Prefix Controls",
+        ),
+        control_probes=(
+            ControlProbe(
+                description="refresh storage health run button",
+                text="Refresh storage health",
+            ),
+            ControlProbe(description="bucket filter", text="Bucket"),
+            ControlProbe(description="table-format filter", text="Table format"),
+            ControlProbe(description="prefix-search filter", text="Prefix search"),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/dagster_asset_catalogue_status/",
+        required_texts=(
+            "Dagster Asset Catalogue Status",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Runtime Configuration",
+            "Catalogue Controls",
+            "Table Asset Catalogue",
+        ),
+        control_probes=(
+            ControlProbe(
+                description="refresh catalogue status run button",
+                text="Refresh catalogue status",
+            ),
+            ControlProbe(description="asset-group filter", text="Asset group"),
+            ControlProbe(
+                description="catalogue-status filter",
+                text="Catalogue status",
+            ),
+            ControlProbe(description="asset-search filter", text="Asset search"),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/source_coverage_matrix/",
+        required_texts=(
+            "Source Coverage Matrix",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Source coverage read diagnostics",
+            "Coverage Inputs",
+            "Coverage Health",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+            ControlProbe(
+                description="source-system filter",
+                text="Source system",
+                optional=True,
+            ),
+            ControlProbe(
+                description="coverage-state filter",
+                text="Coverage state",
+                optional=True,
+            ),
+            ControlProbe(
+                description="coverage-search filter",
+                text="Coverage search",
+                optional=True,
+            ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/aws_bounded_read_diagnostics/",
+        required_texts=(
+            "AWS Bounded Read Diagnostics",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Runtime Policy",
+            "Bounded Read States",
+            "Per-Dashboard Read Behavior",
+            "Participant Context",
+            "Connection Point Context",
+            "Hub / Zone Context",
+        ),
+        control_probes=(),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/table_explorer/",
+        required_texts=(
+            "Table Explorer",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Configuration",
+            "Bucket Health",
+            "Table Catalogue",
+        ),
+        control_probes=(
+            ControlProbe(
+                description="asset-group filter",
+                text="Asset group",
+                optional=True,
+            ),
+            ControlProbe(
+                description="layer-domain filter",
+                text="Layer/domain",
+                optional=True,
+            ),
+            ControlProbe(
+                description="live-status filter",
+                text="Live status",
+                optional=True,
+            ),
+            ControlProbe(
+                description="asset-search filter",
+                text="Asset search",
+                optional=True,
+            ),
+            ControlProbe(
+                description="table dropdown",
+                text="Table",
+                optional=True,
+            ),
+            ControlProbe(
+                description="refresh table scan run button",
+                text="Refresh table scan",
+                optional=True,
+            ),
+            ControlProbe(
+                description="row-limit input",
+                text="Row limit",
+                optional=True,
+            ),
+            ControlProbe(
+                description="columns filter",
+                text="Columns",
+                optional=True,
+            ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/concept_to_asset_explorer/",
+        required_texts=(
+            "Concept-to-Asset Explorer",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Source",
+            "Mapped assets",
+            "Coverage gaps",
+        ),
+        control_probes=(),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/gas_day_explainer/",
+        required_texts=(
+            "Gas Day Explainer",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Gas Day Coverage Health",
+            "Date And Gas-Date Fields",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+            ControlProbe(
+                description="field-role filter",
+                text="Field role",
+                optional=True,
+            ),
+            ControlProbe(
+                description="field-search filter",
+                text="Field search",
+                optional=True,
+            ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/facility_explainer/",
+        required_texts=(
+            "Facility Explainer",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Facility Coverage Health",
+            "Facility Relationships",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/hub_zone_explainer/",
+        required_texts=(
+            "Hub / Zone",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Hub / Zone Coverage Health",
+            "Source System Coverage",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/participant_explainer/",
+        required_texts=(
+            "Participant Explainer",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Participant Coverage Health",
+            "Participant Market Membership",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/materialization_freshness/",
+        required_texts=(
+            "Materialization Freshness",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Dagster GraphQL",
+            "Storage overlay",
+            "Runtime Configuration",
+            "Freshness Controls",
+            "Asset Freshness Detail",
+        ),
+        control_probes=(
+            ControlProbe(
+                description="refresh freshness run button",
+                text="Refresh freshness",
+            ),
+            ControlProbe(description="asset-group filter", text="Asset group"),
+            ControlProbe(description="layer/domain filter", text="Layer or domain"),
+            ControlProbe(description="freshness-state filter", text="Freshness state"),
+            ControlProbe(
+                description="minimum-gap-hours slider",
+                text="Minimum freshness gap hours",
+            ),
+            ControlProbe(description="asset-search filter", text="Asset search"),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/source_table_lineage_explorer/",
+        required_texts=(
+            "Source Table Lineage Explorer",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Source lineage read diagnostics",
+            "Lineage Inputs",
+            "Lineage Health",
+            "Source Table Lineage",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+            ControlProbe(
+                description="curated-asset filter",
+                text="Curated asset",
+                optional=True,
+            ),
+            ControlProbe(
+                description="source-system filter",
+                text="Source system",
+                optional=True,
+            ),
+            ControlProbe(
+                description="lineage-state filter",
+                text="Lineage state",
+                optional=True,
+            ),
+            ControlProbe(
+                description="lineage-search filter",
+                text="Lineage search",
+                optional=True,
+            ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/citation_chain_explorer/",
+        required_texts=(
+            "Citation-Chain Explorer",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Marimo dashboard registry",
+            "Coverage gaps",
+            "Source chunks",
+            "Source hashes",
+        ),
+        control_probes=(),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/connection_point_explainer/",
+        required_texts=(
+            "Connection Point Explainer",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Connection Point read diagnostics",
+            "Connection Point Coverage Health",
+            "Connection Point Relationships",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/schema_data_dictionary_explorer/",
+        required_texts=(
+            "Schema Data Dictionary Explorer",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Schema coverage",
+            "Fields",
+            "Runtime Configuration",
+            "Dictionary Controls",
+            "Column Metadata",
+        ),
+        control_probes=(
+            ControlProbe(
+                description="refresh data dictionary run button",
+                text="Refresh data dictionary",
+            ),
+            ControlProbe(description="concept-group filter", text="Concept group"),
+            ControlProbe(description="gas-model-mart filter", text="Gas-model mart"),
+            ControlProbe(description="schema-state filter", text="Schema state"),
+            ControlProbe(
+                description="dictionary-search filter", text="Dictionary search"
+            ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/flow_operations/",
+        required_texts=(
+            "Flow Operations",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Flow read diagnostics",
+            "Flow read configuration",
+            "Source System Coverage",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/facility_flow_storage/",
+        required_texts=(
+            "Facility Flow And Storage",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Facility flow/storage read diagnostics",
+            "Filters",
+            "Facility Flow And Storage Health",
+            "Source Coverage",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+            ControlProbe(description="gas-day dropdown", text="All gas dates"),
+            ControlProbe(description="source-facility dropdown", text="All facilities"),
+            ControlProbe(
+                description="source-system dropdown", text="All source systems"
+            ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/nomination_demand_forecast/",
+        required_texts=(
+            "Nomination And Demand Forecast",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Nomination forecast read diagnostics",
+            "Filters",
+            "Forecast Health",
+            "Source Coverage",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+            ControlProbe(description="gas-day dropdown", text="All gas dates"),
+            ControlProbe(
+                description="source-system dropdown", text="All source systems"
+            ),
+            ControlProbe(description="source-facility dropdown", text="All facilities"),
+            ControlProbe(description="source-location dropdown", text="All locations"),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/linepack_adequacy/",
+        required_texts=(
+            "Linepack Adequacy",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Linepack read diagnostics",
+            "Filters",
+            "Linepack Adequacy Health",
+            "Source Coverage",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+            ControlProbe(description="gas-day dropdown", text="All gas dates"),
+            ControlProbe(description="source-facility dropdown", text="All facilities"),
+            ControlProbe(description="zone dropdown", text="All zones"),
+            ControlProbe(
+                description="adequacy-flag dropdown", text="All adequacy flags"
+            ),
+            ControlProbe(
+                description="source-system dropdown", text="All source systems"
+            ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/capacity_outlook/",
+        required_texts=(
+            "Capacity Outlook",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Capacity outlook read diagnostics",
+            "Filters",
+            "Capacity Outlook Health",
+            "Source Coverage",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+            ControlProbe(
+                description="capacity-source-coverage dropdown",
+                text="All capacity source coverage",
+            ),
+            ControlProbe(description="date-range dropdown", text="All date ranges"),
+            ControlProbe(
+                description="capacity-type dropdown",
+                text="All capacity types",
+            ),
+            ControlProbe(description="direction dropdown", text="All directions"),
+            ControlProbe(description="source-facility dropdown", text="All facilities"),
+            ControlProbe(
+                description="source-system dropdown", text="All source systems"
+            ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/forecast_vs_actual/",
+        required_texts=(
+            "Forecast Vs Actual Flow And Storage",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Forecast-vs-actual read diagnostics",
+            "Filters",
+            "Forecast-Vs-Actual Health",
+            "Flow Forecast And Actual Comparison",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+            ControlProbe(description="gas-day dropdown", text="All gas dates"),
+            ControlProbe(description="source-facility dropdown", text="All facilities"),
+            ControlProbe(
+                description="source-system dropdown", text="All source systems"
+            ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/pipeline_connection_operations/",
+        required_texts=(
+            "Pipeline and Connection Operations",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Pipeline and Connection read diagnostics",
+            "Connection Point Flow Summary",
+            "Relationship Gaps",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/heating_value_pressure/",
+        required_texts=(
+            "Heating Value And SCADA Pressure",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Heating value and pressure read diagnostics",
+            "Filters",
+            "Observation Summary",
+            "Field Coverage",
+            "Source Coverage",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+            ControlProbe(
+                description="source-system dropdown", text="All source systems"
+            ),
+            ControlProbe(description="source-table dropdown", text="All source tables"),
+            ControlProbe(
+                description="source-qualified-identifier dropdown",
+                text="All source-qualified identifiers",
+            ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/operational_meter_flow/",
+        required_texts=(
+            "Operational Meter Flow",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Operational Meter Flow read diagnostics",
+            "Meter Flow Summary",
+            "Relationship Coverage Gaps",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/capacity_auction/",
+        required_texts=(
+            "Capacity Auctions",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Capacity auction read diagnostics",
+            "Filters",
+            "Capacity Auction Summary",
+            "Metric And Source Coverage",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+            ControlProbe(description="auction-date dropdown", text="All auction dates"),
+            ControlProbe(description="zone dropdown", text="All zones"),
+            ControlProbe(
+                description="capacity-period dropdown", text="All capacity periods"
+            ),
+            ControlProbe(
+                description="auction-metric dropdown", text="All auction metrics"
+            ),
+            ControlProbe(
+                description="source-system dropdown", text="All source systems"
+            ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/gas_scheduled_quantities/",
+        required_texts=(
+            "Gas Scheduled Quantities",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Scheduled quantity read diagnostics",
+            "Filters",
+            "Scheduled Quantity Health",
+            "Source Coverage",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+            ControlProbe(description="gas-day dropdown", text="All gas dates"),
+            ControlProbe(
+                description="source-system dropdown", text="All source systems"
+            ),
+            ControlProbe(
+                description="schedule-type dropdown", text="All schedule types"
+            ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/gas_sttm_contingency_gas/",
+        required_texts=(
+            "STTM Contingency Gas",
+            "Dashboard brief",
+            "Dashboard intent",
+            "STTM contingency gas read diagnostics",
+            "Filters",
+            "STTM Contingency Gas Summary",
+            "Source Identifier Coverage",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+            ControlProbe(
+                description="contingency-grain dropdown",
+                text="All contingency grains",
+            ),
+            ControlProbe(
+                description="quantity-type dropdown", text="All quantity types"
+            ),
+            ControlProbe(description="hub dropdown", text="All hubs"),
+            ControlProbe(
+                description="source-system dropdown", text="All source systems"
+            ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/gas_sttm_market_settlement/",
+        required_texts=(
+            "STTM Market Settlement",
+            "Dashboard brief",
+            "Dashboard intent",
+            "STTM market settlement read diagnostics",
+            "Filters",
+            "STTM Market Settlement Summary",
+            "Source Coverage",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+            ControlProbe(description="gas-day dropdown", text="All gas dates"),
+            ControlProbe(
+                description="settlement-period dropdown",
+                text="All settlement periods",
+            ),
+            ControlProbe(
+                description="settlement-stage dropdown",
+                text="All settlement stages",
+            ),
+            ControlProbe(
+                description="settlement-component dropdown",
+                text="All settlement components",
+            ),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/gas_sttm_capacity_settlement/",
+        required_texts=(
+            "STTM Capacity Settlement",
+            "Dashboard brief",
+            "Dashboard intent",
+            "STTM capacity settlement read diagnostics",
+            "Filters",
+            "STTM Capacity Settlement Summary",
+            "Source Coverage",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+            ControlProbe(description="gas-day dropdown", text="All gas dates"),
+            ControlProbe(
+                description="settlement-stage dropdown",
+                text="All settlement stages",
+            ),
+            ControlProbe(
+                description="capacity-settlement-component dropdown",
+                text="All capacity settlement components",
+            ),
+            ControlProbe(description="hub dropdown", text="All hubs"),
+            ControlProbe(description="facility dropdown", text="All facilities"),
         ),
     ),
 )

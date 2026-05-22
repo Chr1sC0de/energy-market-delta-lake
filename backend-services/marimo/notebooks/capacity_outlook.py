@@ -71,12 +71,7 @@ def _():
 
 
 @app.cell
-def _(
-    CAPACITY_CONTEXT_ID,
-    mo,
-    render_capacity_outlook_context_links,
-    render_dashboard_context_panel,
-):
+def _(mo):
     mo.vstack(
         [
             mo.md("""
@@ -97,8 +92,6 @@ def _(
             misses, and missing columns render as designed empty states instead
             of notebook tracebacks.
             """),
-            mo.Html(render_dashboard_context_panel(CAPACITY_CONTEXT_ID)),
-            mo.Html(render_capacity_outlook_context_links()),
         ]
     )
     return
@@ -275,6 +268,22 @@ def _(
         [
             mo.md("## Capacity Outlook Health"),
             kpi_view,
+        ]
+    )
+    return
+
+
+@app.cell
+def _(
+    CAPACITY_CONTEXT_ID,
+    mo,
+    render_capacity_outlook_context_links,
+    render_dashboard_context_panel,
+):
+    mo.vstack(
+        [
+            mo.Html(render_dashboard_context_panel(CAPACITY_CONTEXT_ID)),
+            mo.Html(render_capacity_outlook_context_links()),
         ]
     )
     return

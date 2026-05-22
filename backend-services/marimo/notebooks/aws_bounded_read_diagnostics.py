@@ -104,7 +104,7 @@ def _(dashboard_read_behavior_frame, gas_config, mo, table_config):
             mo.ui.table(
                 dashboard_read_behavior_frame(gas_config, table_config),
                 selection=None,
-                page_size=15,
+                page_size=50,
             ),
         ]
     )
