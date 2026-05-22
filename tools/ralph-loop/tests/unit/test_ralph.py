@@ -2207,6 +2207,36 @@ class SelfUpdateGuardOperatorRun(ScriptedOperatorRun):
         ralph.RalphOperatorRun._run_drain_scheduler_checkpoint(self)
 
 
+class BaselineGuardLoop(ralph.RalphLoop):
+    def __init__(
+        self,
+        config: ralph.LoopConfig,
+        runner: FakeRunner,
+        *,
+        issues: list[ralph.Issue],
+    ) -> None:
+        super().__init__(config, runner)
+        self.issues = issues
+        self.handled_issue_numbers: list[int] = []
+        self._operator_integration_target_baseline_guard_enabled = True
+
+    def _issue_pool(self) -> list[ralph.Issue]:
+        return list(self.issues)
+
+    def _has_open_blockers(self, issue: ralph.Issue) -> bool:
+        return False
+
+    def _next_triage_issue(self) -> ralph.Issue | None:
+        return None
+
+    def _handle_implementation(self, issue: ralph.Issue) -> ralph.RunManifest | None:
+        self.handled_issue_numbers.append(issue.number)
+        self.issues = [
+            existing for existing in self.issues if existing.number != issue.number
+        ]
+        return None
+
+
 class PromotionClassificationGit:
     def __init__(self, changed_files: list[str]) -> None:
         self.changed_files = changed_files
@@ -7564,6 +7594,180 @@ class RalphOperatorRunTests(unittest.TestCase):
         )
         self.assertNotIn("before_promotion", checkpoints)
         self.assertEqual(succeeded_issues, [42, 99])
+
+    def test_operator_baseline_guard_skips_low_risk_ready_queue(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE
+            )
+            ready_issue = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=42,
+            )
+            guard_loop = BaselineGuardLoop(
+                loop.config,
+                runner,
+                issues=[ready_issue],
+            )
+
+            with redirect_stdout(io.StringIO()):
+                guard_loop._run_drain_scheduler()
+
+        self.assertEqual(guard_loop.handled_issue_numbers, [42])
+        self.assertFalse(
+            any(call.args == ("make", "run-prek") for call in runner.calls)
+        )
+
+    def test_operator_baseline_guard_runs_for_integrated_backlog_queue(
+        self,
+    ) -> None:
+        runner = FakeRunner(rev_parse_outputs=["target-sha\n"])
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE
+            )
+            integrated_issue = make_issue(
+                {ralph.AGENT_INTEGRATED_LABEL},
+                IMPLEMENTATION_BODY,
+                number=41,
+            )
+            ready_issue = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=42,
+            )
+            guard_loop = BaselineGuardLoop(
+                loop.config,
+                runner,
+                issues=[integrated_issue, ready_issue],
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                guard_loop._run_drain_scheduler()
+
+        baseline_calls = [
+            call for call in runner.calls if call.args == ("make", "run-prek")
+        ]
+        self.assertEqual(guard_loop.handled_issue_numbers, [42])
+        self.assertEqual(len(baseline_calls), 1)
+        self.assertTrue(str(baseline_calls[0].cwd).endswith("/tools/ralph-loop"))
+        self.assertIn("agent-integrated backlog exists", output.getvalue())
+
+    def test_operator_baseline_guard_healthy_result_is_cached_by_target_sha(
+        self,
+    ) -> None:
+        runner = FakeRunner(rev_parse_outputs=["target-sha\n", "target-sha\n"])
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE
+            )
+            integrated_issue = make_issue(
+                {ralph.AGENT_INTEGRATED_LABEL},
+                IMPLEMENTATION_BODY,
+                number=41,
+            )
+            first_ready = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=42,
+            )
+            second_ready = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=43,
+            )
+            guard_loop = BaselineGuardLoop(
+                loop.config,
+                runner,
+                issues=[integrated_issue, first_ready, second_ready],
+            )
+
+            with redirect_stdout(io.StringIO()):
+                guard_loop._run_drain_scheduler()
+
+        baseline_calls = [
+            call for call in runner.calls if call.args == ("make", "run-prek")
+        ]
+        self.assertEqual(guard_loop.handled_issue_numbers, [42, 43])
+        self.assertEqual(len(baseline_calls), 1)
+
+    def test_operator_baseline_guard_failing_baseline_stops_before_claim(
+        self,
+    ) -> None:
+        runner = FakeRunner(
+            rev_parse_outputs=["target-sha\n"],
+            fail_commands={("make", "run-prek")},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE
+            )
+            integrated_issue = make_issue(
+                {ralph.AGENT_INTEGRATED_LABEL},
+                IMPLEMENTATION_BODY,
+                number=41,
+            )
+            ready_issue = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=42,
+            )
+            guard_loop = BaselineGuardLoop(
+                loop.config,
+                runner,
+                issues=[integrated_issue, ready_issue],
+            )
+
+            with self.assertRaises(ralph.IntegrationTargetBaselineFailure) as caught:
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    guard_loop._run_drain_scheduler()
+
+        text = str(caught.exception)
+        self.assertEqual(guard_loop.handled_issue_numbers, [])
+        self.assertIn("Failing command: `make run-prek`", text)
+        self.assertIn("Test lane: `Ralph loop Commit check`", text)
+        self.assertIn("Recovery guidance:", text)
+        self.assertFalse(
+            any(call.args[:3] == ("git", "worktree", "remove") for call in runner.calls)
+        )
+
+    def test_operator_baseline_guard_runs_for_agent_workflow_change_queue(
+        self,
+    ) -> None:
+        runner = FakeRunner(rev_parse_outputs=["target-sha\n"])
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path, runner, drain=True, delivery_mode=ralph.GITFLOW_MODE
+            )
+            ready_issue = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                AGENTS_IMPLEMENTATION_BODY,
+                number=42,
+            )
+            guard_loop = BaselineGuardLoop(
+                loop.config,
+                runner,
+                issues=[ready_issue],
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                guard_loop._run_drain_scheduler()
+
+        baseline_calls = [
+            call for call in runner.calls if call.args == ("make", "run-prek")
+        ]
+        self.assertEqual(guard_loop.handled_issue_numbers, [42])
+        self.assertEqual(len(baseline_calls), 1)
+        self.assertIn("declares Agent workflow context anchors", output.getvalue())
 
     def test_operator_recovery_guidance_names_integrated_backlog_when_blocked(
         self,

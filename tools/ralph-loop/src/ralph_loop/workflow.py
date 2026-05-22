@@ -210,6 +210,9 @@ DEPLOY_REPAIR_REQUIRED_ISSUE_SECTIONS = (
 AEMO_ETL_PREFIX = "backend-services/dagster-user/aemo-etl/"
 MARIMO_PREFIX = "backend-services/marimo/"
 RALPH_LOOP_PREFIX = "tools/ralph-loop/"
+INTEGRATION_TARGET_BASELINE_GUARD_CHANGED_FILES = (
+    f"{RALPH_LOOP_PREFIX}src/ralph_loop/cli.py",
+)
 GAS_MARKET_KNOWLEDGE_BASE_PREFIX = "tools/gas-market-knowledge-base/"
 GAS_MARKET_KNOWLEDGE_BASE_README_PATH = f"{GAS_MARKET_KNOWLEDGE_BASE_PREFIX}README.md"
 RALPH_SCRIPT_PATH = "scripts/ralph.py"
@@ -558,6 +561,45 @@ class QARuntimeCleanupRefusal(RalphError):
 
 class BranchSyncFailure(EnvironmentFailure):
     """A source-to-target branch sync failure that should stop the drain."""
+
+
+class IntegrationTargetBaselineFailure(EnvironmentFailure):
+    """An Integration target baseline Commit check failed before issue claim."""
+
+    def __init__(
+        self,
+        *,
+        target_branch: str,
+        command: QACommand,
+        log_path: Path | None,
+        reasons: tuple[str, ...],
+        error: CommandFailure,
+    ) -> None:
+        self.target_branch = target_branch
+        self.command = command
+        self.reasons = reasons
+        reason_text = "; ".join(reasons) if reasons else "high-risk queue state"
+        guidance = integration_target_baseline_recovery_guidance(
+            target_branch=target_branch,
+            command=command,
+            log_path=log_path,
+        )
+        log_line = f"\nLog: `{log_path}`" if log_path is not None else ""
+        super().__init__(
+            (
+                "Integration target baseline health failed before claiming new "
+                f"ready issue work for `origin/{target_branch}`.\n"
+                f"Reason: {reason_text}\n"
+                f"Failing command: `{format_command(command.args)}`\n"
+                f"Test lane: `{command.name}`"
+                f"{log_line}\n"
+                f"Recovery guidance: {guidance}"
+            ),
+            log_path=log_path,
+            failure_type="integration_target_baseline_failure",
+            recovery_guidance=guidance,
+        )
+        self.command_failure = error
 
 
 class PostPushFailure(RalphError):
@@ -1935,6 +1977,16 @@ def context_anchor_targets_ralph_loop_self_update(
 def issue_declares_ralph_loop_self_update(issue: Issue) -> bool:
     return any(
         context_anchor_targets_ralph_loop_self_update(anchor)
+        for anchor in context_anchor_paths(issue.body)
+    )
+
+
+def issue_declares_agent_workflow_change(issue: Issue) -> bool:
+    return any(
+        context_anchor_targets_agent_workflow(anchor)
+        or context_anchor_targets_ralph_loop_self_update(anchor)
+        or is_agent_workflow_path(anchor.path)
+        or anchor.path in {".shape-issues", "docs/agents"}
         for anchor in context_anchor_paths(issue.body)
     )
 
@@ -3576,6 +3628,34 @@ def commit_check_commands_from_results(qa_results: list[QAResult]) -> list[QACom
         commands.append(command)
         seen.add(key)
     return commands
+
+
+def integration_target_baseline_health_commands(repo_root: Path) -> list[QACommand]:
+    return [
+        command
+        for command in select_qa_commands(
+            list(INTEGRATION_TARGET_BASELINE_GUARD_CHANGED_FILES),
+            repo_root,
+        )
+        if is_commit_check_command(command)
+    ]
+
+
+def integration_target_baseline_recovery_guidance(
+    *,
+    target_branch: str,
+    command: QACommand,
+    log_path: Path | None,
+) -> str:
+    log_text = f" Inspect `{log_path}`." if log_path is not None else ""
+    return (
+        f"Repair the baseline on the `{target_branch}` Integration target, then "
+        f"rerun `{format_command(command.args)}` from `{command.cwd}` before "
+        "restarting the Operator. This guard checks target health before new "
+        "claims; it does not replace issue-specific QA, Local integration, or "
+        "Promotion Push check validation."
+        f"{log_text}"
+    )
 
 
 def select_promotion_gate_commands(

@@ -586,6 +586,20 @@ When the drain scheduler selects a Gitflow or Trunk ready issue whose
 that candidate as an isolated Ralph loop self-update pass. It waits for already
 active Exploratory workers before claiming the self-update issue and does not
 start unrelated Exploratory claims in the same scheduler pass.
+Before the Operator scheduler claims ready work in high-risk states, it also
+validates **Integration target** baseline health with the narrow Ralph loop
+**Commit check**. The guard runs from a detached `origin/<target>` worktree and
+uses `make run-prek` in `tools/ralph-loop`. It currently triggers when
+`agent-integrated` backlog exists before another claim, or when the candidate
+issue's `## Context anchors` name Agent workflow paths such as `.agents/`,
+`docs/agents/`, `scripts/ralph.py`, or `tools/ralph-loop/**`. A healthy result
+is cached by target commit so Ralph does not rerun the command for every normal
+low-risk claim. A failure stops the Operator before claiming the next issue and
+reports the failing command, **Test lane**, log, and recovery guidance.
+This is target-baseline validation only: issue-specific QA still runs inside the
+claimed issue worktree, **Local integration** still performs the squash merge
+and commit on the **Integration target**, and **Promotion** still owns aggregate
+**Push check** validation before `main` is updated.
 Deployment checkpoints are written only after successful Promotion metadata
 updates, **Post-promotion review**, follow-up creation, and post-Promotion
 **Ready issue refresh** have completed in the Promotion child run.
@@ -1639,6 +1653,12 @@ the Ralph loop **Commit check** from `tools/ralph-loop`:
 ```bash
 make run-prek
 ```
+
+The Operator may also run that same Ralph loop **Commit check** as a preclaim
+**Integration target** baseline guard in high-risk queue states. That guard
+checks the target branch before a claim and records only target-health evidence;
+it is not issue QA and does not replace the later **Local integration** or
+Promotion **Push check** surfaces.
 
 If the implementation base changes after the implementation worktree was
 created, Ralph rebases the issue branch and reruns the selected QA commands
