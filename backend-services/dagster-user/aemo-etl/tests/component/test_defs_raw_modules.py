@@ -8,7 +8,9 @@ Importing the module executes that statement and covers all lines in the file.
 
 import importlib
 import importlib.util
+import io
 import pkgutil
+from datetime import datetime, timezone
 from typing import cast
 
 import bs4
@@ -16,6 +18,7 @@ from dagster import AssetKey, AssetsDefinition, Definitions
 from dagster._core.definitions.unresolved_asset_job_definition import (
     UnresolvedAssetJobDefinition,
 )
+import polars as pl
 from polars import String
 
 from aemo_etl.defs.raw.gbb._ecs import (
@@ -361,6 +364,82 @@ def test_gbb_gsh_gas_trades_key_distinguishes_trade_price_and_quantity() -> None
         "END_DATE",
         "MANUAL_TRADE",
     ]
+
+
+def test_gbb_field_interest_v2_key_distinguishes_group_members() -> None:
+    from aemo_etl.defs.raw.gbb.gasbb_field_interest_v2 import defs
+    from aemo_etl.factories.df_from_s3_keys.source_tables import (
+        load_source_table_specs,
+        select_source_table_specs,
+    )
+
+    expected_key_sources = [
+        "FieldInterestId",
+        "CompanyId",
+        "EffectiveDate",
+        "GroupMembers",
+    ]
+    asset = next(
+        asset for asset in defs.assets or () if isinstance(asset, AssetsDefinition)
+    )
+    assert isinstance(asset, AssetsDefinition)
+    (asset_key,) = asset.keys
+
+    assert asset.metadata_by_key[asset_key]["surrogate_key_sources"] == (
+        expected_key_sources
+    )
+
+    (spec,) = select_source_table_specs(
+        load_source_table_specs(),
+        table="gbb.bronze_gasbb_field_interest_v2",
+    )
+    assert spec.surrogate_key_sources == tuple(expected_key_sources)
+
+
+def test_gbb_field_interest_v2_group_member_rows_have_distinct_keys() -> None:
+    from aemo_etl.factories.df_from_s3_keys.assets import (
+        source_table_bronze_frame_from_bytes,
+    )
+    from aemo_etl.factories.df_from_s3_keys.current_state import (
+        collapse_current_state_batch,
+    )
+    from aemo_etl.factories.df_from_s3_keys.source_tables import (
+        load_source_table_specs,
+        select_source_table_specs,
+    )
+
+    (spec,) = select_source_table_specs(
+        load_source_table_specs(),
+        table="gbb.bronze_gasbb_field_interest_v2",
+    )
+    source = pl.DataFrame(
+        {
+            "FieldName": ["PL 275", "PL 275"],
+            "FieldInterestId": [840099, 840099],
+            "CompanyId": [106, 106],
+            "CompanyName": ["QGC Pty Limited", "QGC Pty Limited"],
+            "GroupMembers": ["BG International Ltd", "QGC Upstream Holdings Pty Ltd"],
+            "PercentageShare": ["20.625", "20.0"],
+            "EffectiveDate": ["2023/03/15", "2023/03/15"],
+        }
+    )
+    buffer = io.BytesIO()
+    source.write_parquet(buffer)
+
+    batch = source_table_bronze_frame_from_bytes(
+        s3_bucket="landing",
+        s3_key="bronze/gbb/gasbbgasfieldinterest~260522133726.parquet",
+        object_bytes=buffer.getvalue(),
+        schema=spec.schema,
+        surrogate_key_sources=spec.surrogate_key_sources,
+        current_time=datetime(2026, 5, 22, tzinfo=timezone.utc),
+        source_file_bucket="archive",
+    )
+
+    collapsed = collapse_current_state_batch(batch).collect()
+
+    assert collapsed.height == 2
+    assert collapsed["surrogate_key"].n_unique() == 2
 
 
 def test_gbb_short_term_capacity_outlook_job_uses_rebuild_sized_ecs_task() -> None:

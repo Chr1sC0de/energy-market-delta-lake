@@ -1,7 +1,10 @@
+import io
 from importlib import import_module
+from datetime import datetime, timezone
 
 import pytest
 from dagster import AssetsDefinition
+import polars as pl
 
 
 @pytest.mark.parametrize(
@@ -72,6 +75,10 @@ from dagster import AssetsDefinition
             ["network_id", "gas_date", "gas_date_historical"],
         ),
         ("int891_v1_eddact_1", ["edd_update", "edd_date", "edd_type"]),
+        (
+            "int934_v4_ecgs_contacts_1",
+            ["company_id", "first_name", "last_name", "contact_email"],
+        ),
     ],
 )
 def test_vicgas_mibb_surrogate_key_sources(
@@ -87,3 +94,49 @@ def test_vicgas_mibb_surrogate_key_sources(
                 asset.metadata_by_key[asset_key]["surrogate_key_sources"]
                 == surrogate_key_sources
             )
+
+
+def test_vicgas_int934_contact_email_distinguishes_contacts() -> None:
+    from aemo_etl.factories.df_from_s3_keys.assets import (
+        source_table_bronze_frame_from_bytes,
+    )
+    from aemo_etl.factories.df_from_s3_keys.current_state import (
+        collapse_current_state_batch,
+    )
+    from aemo_etl.factories.df_from_s3_keys.source_tables import (
+        load_source_table_specs,
+        select_source_table_specs,
+    )
+
+    (spec,) = select_source_table_specs(
+        load_source_table_specs(),
+        table="vicgas.bronze_int934_v4_ecgs_contacts_1",
+    )
+    source = pl.DataFrame(
+        {
+            "company_name": ["AETV Power", "AETV Power"],
+            "abn": ["00000000000", "00000000000"],
+            "company_id": [136, 136],
+            "first_name": ["Gas", "Gas"],
+            "last_name": ["Trader", "Trader"],
+            "contact_email": ["gastrader@hydro.com.au", "GasDesk@hydro.com.au"],
+            "current_date": ["25 Apr 2026 18:00:03", "25 Apr 2026 18:00:03"],
+        }
+    )
+    buffer = io.BytesIO()
+    source.write_parquet(buffer)
+
+    batch = source_table_bronze_frame_from_bytes(
+        s3_bucket="landing",
+        s3_key="bronze/vicgas/int934_v4_ecgs_contacts_1~260425180602.parquet",
+        object_bytes=buffer.getvalue(),
+        schema=spec.schema,
+        surrogate_key_sources=spec.surrogate_key_sources,
+        current_time=datetime(2026, 5, 23, tzinfo=timezone.utc),
+        source_file_bucket="archive",
+    )
+
+    collapsed = collapse_current_state_batch(batch).collect()
+
+    assert collapsed.height == 2
+    assert collapsed["surrogate_key"].n_unique() == 2
