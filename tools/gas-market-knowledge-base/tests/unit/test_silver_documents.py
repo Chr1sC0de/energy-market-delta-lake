@@ -190,6 +190,38 @@ def test_extract_silver_skips_current_output_without_cached_pdf(
     assert second_extractor.requests == []
 
 
+def test_extract_silver_coalesces_duplicate_document_identity_rows(
+    tmp_path: Path,
+) -> None:
+    pdf_content = b"%PDF-1.7\nfixture pdf bytes\n"
+    manifest_path = tmp_path / "source_manifest.jsonl"
+    cache_dir = tmp_path / ".cache" / "pdfs"
+    output_dir = tmp_path / "generated" / "silver" / "documents"
+    pdf_path = _write_cached_pdf(cache_dir, pdf_content)
+    _write_manifest(
+        manifest_path,
+        [
+            _manifest_row(pdf_content),
+            _manifest_row(pdf_content),
+        ],
+    )
+    extractor = FakeMarkdownExtractor()
+
+    result = extract_silver_documents(
+        extractor=extractor,
+        manifest_path=manifest_path,
+        cache_dir=cache_dir,
+        output_dir=output_dir,
+        min_text_chars=20,
+    )
+
+    assert result.manifest_row_count == 2
+    assert result.extractable_row_count == 1
+    assert result.extracted_count == 1
+    assert result.error_count == 0
+    assert extractor.requests == [pdf_path]
+
+
 def test_extract_silver_reports_low_text_without_writing_empty_page(
     tmp_path: Path,
 ) -> None:

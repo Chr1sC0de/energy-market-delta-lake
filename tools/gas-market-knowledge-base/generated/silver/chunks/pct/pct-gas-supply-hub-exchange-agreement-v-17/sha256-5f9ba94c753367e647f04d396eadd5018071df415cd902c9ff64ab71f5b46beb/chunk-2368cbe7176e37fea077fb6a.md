@@ -1,0 +1,301 @@
+---
+{
+  "chunk_id": "chunk-2368cbe7176e37fea077fb6a",
+  "chunk_ordinal": 27,
+  "chunk_text_sha256": "f53f5430dff339dd73e5d942cd3e5a039f43f76222697a820dd4fcfcfd86e337",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 118.24878291015625,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 511.4786000000006,
+              "t": 140.23086291015625
+            },
+            "charspan": [
+              0,
+              144
+            ],
+            "page_no": 8
+          }
+        ],
+        "self_ref": "#/texts/56"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 85.61278291015628,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 525.7060400000007,
+              "t": 107.59086291015626
+            },
+            "charspan": [
+              0,
+              185
+            ],
+            "page_no": 8
+          }
+        ],
+        "self_ref": "#/texts/57"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 66.29278291015635,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 534.5490400000001,
+              "t": 74.9548629101563
+            },
+            "charspan": [
+              0,
+              99
+            ],
+            "page_no": 8
+          }
+        ],
+        "self_ref": "#/texts/58"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 744.6087829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 471.19899999999996,
+              "t": 753.2708629101563
+            },
+            "charspan": [
+              0,
+              82
+            ],
+            "page_no": 9
+          }
+        ],
+        "self_ref": "#/texts/62"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 725.2887829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 382.35904,
+              "t": 733.9508629101564
+            },
+            "charspan": [
+              0,
+              61
+            ],
+            "page_no": 9
+          }
+        ],
+        "self_ref": "#/texts/63"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 666.1287829101562,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 526.9406400000004,
+              "t": 714.7508629101563
+            },
+            "charspan": [
+              0,
+              312
+            ],
+            "page_no": 9
+          }
+        ],
+        "self_ref": "#/texts/64"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 633.4887829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 514.4127200000007,
+              "t": 655.4708629101564
+            },
+            "charspan": [
+              0,
+              178
+            ],
+            "page_no": 9
+          }
+        ],
+        "self_ref": "#/texts/65"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 614.2887829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 287.89904,
+              "t": 622.9508629101564
+            },
+            "charspan": [
+              0,
+              40
+            ],
+            "page_no": 9
+          }
+        ],
+        "self_ref": "#/texts/66"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/0"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 594.8965078056787,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 111.98,
+              "r": 246.01904,
+              "t": 603.6308629101563
+            },
+            "charspan": [
+              0,
+              28
+            ],
+            "page_no": 9
+          }
+        ],
+        "self_ref": "#/texts/67"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/0"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 565.3287829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 111.98,
+              "r": 522.8373200000007,
+              "t": 587.3108629101563
+            },
+            "charspan": [
+              0,
+              112
+            ],
+            "page_no": 9
+          }
+        ],
+        "self_ref": "#/texts/68"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md",
+    "source_manifest_line_number": 20,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/pipeline-capacity-trading-pct/procedures-policies-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/gas_supply_hubs/market_operations/gsh-exchange-agreement.pdf?rev=94860e2e688b4adcbb0b9d3593846af6&sc_lang=en"
+  },
+  "content_sha256": "5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "corpus": "pct",
+  "document_family": "pct__gas-supply-hub-exchange-agreement-v-17",
+  "document_family_id": "pct__gas-supply-hub-exchange-agreement-v-17",
+  "document_identity": "pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "document_title": "##### Gas Supply Hub exchange agreement v.17",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-2368cbe7176e37fea077fb6a.md",
+  "heading_path": [
+    "2.1. Definitions"
+  ],
+  "path": "generated/silver/chunks/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-2368cbe7176e37fea077fb6a.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md"
+}
+---
+
+Bid means an offer to enter into a Transaction as a Buyer except in relation to a Spread Product, where it has the meaning given in clause 12.1.
+Billing Period means the period commencing at the start of the Gas Day starting on the first day of the month and ending at the end of the Gas Day starting on the last day of the month.
+Broker Participant means a Member registered as a Broker Participant in accordance with clause 6.5.
+Broker Pre-matched Trade means Transaction formed in accordance with clause 13.3 .
+Business Day has the same meaning as in the National Gas Law.
+Buyer , in relation to a Transaction, means (where the Commodity is a good) the person with an obligation to accept a quantity of Commodity made available for delivery or (where the Commodity is a service, including capacity), the person with an obligation to accept the transfer of the right to use the service.
+Capacity means a right to use a quantity of a Forward Haul Service, Compression Service or Park Service, as applicable to the Product and identified in the Product Specification.
+Capacity Type means each combination of:
+- -Transportation Service; and
+- -Zones (for Forward Haul Service or Compression Service) or Pipeline and Park Service Points (for Park Service),

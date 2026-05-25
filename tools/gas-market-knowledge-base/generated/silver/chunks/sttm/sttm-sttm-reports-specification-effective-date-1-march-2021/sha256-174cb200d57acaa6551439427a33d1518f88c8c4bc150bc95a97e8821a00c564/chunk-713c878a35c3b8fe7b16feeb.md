@@ -1,0 +1,67 @@
+---
+{
+  "chunk_id": "chunk-713c878a35c3b8fe7b16feeb",
+  "chunk_ordinal": 440,
+  "chunk_text_sha256": "ad1daa4f2326d024d9697c8ef5522bf578fbd6ff83966b623ad7689a35a1004c",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "table",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 93.09222412109375,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 67.43631744384766,
+              "r": 527.276123046875,
+              "t": 600.4814605712891
+            },
+            "charspan": [
+              0,
+              0
+            ],
+            "page_no": 143
+          }
+        ],
+        "self_ref": "#/tables/143"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/sttm/sttm-sttm-reports-specification-effective-date-1-march-2021/sha256-174cb200d57acaa6551439427a33d1518f88c8c4bc150bc95a97e8821a00c564.md",
+    "source_manifest_line_number": 46,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/short-term-trading-market-sttm/procedures-policies-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/sttm/policies/sttm-reports-specifications-v190.pdf?rev=ee0167ede9c94105b170ff3edcc2fc99&sc_lang=en"
+  },
+  "content_sha256": "174cb200d57acaa6551439427a33d1518f88c8c4bc150bc95a97e8821a00c564",
+  "corpus": "sttm",
+  "document_family": "sttm__sttm-reports-specification-effective-date-1-march-2021",
+  "document_family_id": "sttm__sttm-reports-specification-effective-date-1-march-2021",
+  "document_identity": "sttm/sttm-sttm-reports-specification-effective-date-1-march-2021/sha256-174cb200d57acaa6551439427a33d1518f88c8c4bc150bc95a97e8821a00c564",
+  "document_title": "##### STTM Reports Specification Effective date 1 March 2021",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/sttm/sttm-sttm-reports-specification-effective-date-1-march-2021/sha256-174cb200d57acaa6551439427a33d1518f88c8c4bc150bc95a97e8821a00c564/chunk-713c878a35c3b8fe7b16feeb.md",
+  "heading_path": [
+    "5.5.21. INT715B - Trading Participant Contingency Gas Quantity Confirmation"
+  ],
+  "path": "generated/silver/chunks/sttm/sttm-sttm-reports-specification-effective-date-1-march-2021/sha256-174cb200d57acaa6551439427a33d1518f88c8c4bc150bc95a97e8821a00c564/chunk-713c878a35c3b8fe7b16feeb.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/sttm/sttm-sttm-reports-specification-effective-date-1-march-2021/sha256-174cb200d57acaa6551439427a33d1518f88c8c4bc150bc95a97e8821a00c564.md"
+}
+---
+
+contingency_gas_bid_offer_ty pe, Not Null = True. contingency_gas_bid_offer_ty pe, Primary Key = False. contingency_gas_bid_offer_ty pe, Comment = This field is a flag to indicate whether this is an offer to increase gas at the hub or a bid to decrease gas at the hub. Valid values are: • B (bid to decrease gas at the hub) • O (offer to increase gas at the hub). contingency_gas_bid_offer_st ep_price, Not Null = True. contingency_gas_bid_offer_st ep_price, Primary Key = False. contingency_gas_bid_offer_st ep_price, Comment = The price at which the contingency bid or offer is made.. contingency_gas_bid_offer_st ep_quantity, Not Null = True. contingency_gas_bid_offer_st ep_quantity, Primary Key = False. contingency_gas_bid_offer_st ep_quantity, Comment = Cumulative quantity of contingency gas offer or bid on a contingency gas bid/offer

@@ -3,19 +3,18 @@
   "context_type": "glossary-page",
   "generated_path": "generated/gold/glossary/linepack.md",
   "related_concepts": [
-    "flow",
     "capacity",
-    "mos"
+    "flow",
+    "hub-zone"
   ],
   "schema_version": 1,
   "slug": "linepack",
   "source_chunk_ids": [
-    "chunk-sttm-procedures-definitions",
-    "chunk-gbb-procedures-linepack-capacity-adequacy"
+    "chunk-5228a2a575fd20a9cf1bbe30",
+    "chunk-54b09402691c597d39dde0c7"
   ],
   "source_hashes": [
-    "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93",
-    "f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35"
+    "279def1d24c872244f3aec13da9727f3313684b05fa7a055f3fec736ffb0b999"
   ],
   "title": "Linepack"
 }
@@ -23,17 +22,17 @@
 
 # Linepack
 
-## Definition
+    ## Definition
 
-Linepack is the total quantity of gas in an STTM pipeline at a time, and BB linepack/capacity adequacy flags include red conditions when linepack has dropped or is forecast to drop below minimum operating levels. [[chunk:chunk-sttm-procedures-definitions]] [[chunk:chunk-gbb-procedures-linepack-capacity-adequacy]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]] [[source:sha256:f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35]]
+    Linepack is reported in the GBB corpus through linepack forecasts, where facilities submit expected linepack by linepack zone for upcoming gas days. [[chunk:chunk-5228a2a575fd20a9cf1bbe30]] [[chunk:chunk-54b09402691c597d39dde0c7]] [[source:sha256:279def1d24c872244f3aec13da9727f3313684b05fa7a055f3fec736ffb0b999]]
 
-## Source Citations
+    ## Source Citations
 
-- `chunk-sttm-procedures-definitions`: [silver chunk](../../silver/chunks/sttm/sttm-procedures-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93/chunk-sttm-procedures-definitions.md) from [source document](../../silver/documents/sttm/sttm-procedures-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93.md); source hash `sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93`. [[chunk:chunk-sttm-procedures-definitions]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
-- `chunk-gbb-procedures-linepack-capacity-adequacy`: [silver chunk](../../silver/chunks/gbb/bb-procedures/sha256-f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35/chunk-gbb-procedures-linepack-capacity-adequacy.md) from [source document](../../silver/documents/gbb/bb-procedures/sha256-f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35.md); source hash `sha256:f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35`. [[chunk:chunk-gbb-procedures-linepack-capacity-adequacy]] [[source:sha256:f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35]]
+    - `chunk-5228a2a575fd20a9cf1bbe30`: [silver chunk](../../silver/chunks/gbb/gbb-bb-data-submission-guide/sha256-279def1d24c872244f3aec13da9727f3313684b05fa7a055f3fec736ffb0b999/chunk-5228a2a575fd20a9cf1bbe30.md) from [source document](../../silver/documents/gbb/gbb-bb-data-submission-guide/sha256-279def1d24c872244f3aec13da9727f3313684b05fa7a055f3fec736ffb0b999.md); source hash `sha256:279def1d24c872244f3aec13da9727f3313684b05fa7a055f3fec736ffb0b999`. [[chunk:chunk-5228a2a575fd20a9cf1bbe30]] [[source:sha256:279def1d24c872244f3aec13da9727f3313684b05fa7a055f3fec736ffb0b999]]
+- `chunk-54b09402691c597d39dde0c7`: [silver chunk](../../silver/chunks/gbb/gbb-bb-data-submission-guide/sha256-279def1d24c872244f3aec13da9727f3313684b05fa7a055f3fec736ffb0b999/chunk-54b09402691c597d39dde0c7.md) from [source document](../../silver/documents/gbb/gbb-bb-data-submission-guide/sha256-279def1d24c872244f3aec13da9727f3313684b05fa7a055f3fec736ffb0b999.md); source hash `sha256:279def1d24c872244f3aec13da9727f3313684b05fa7a055f3fec736ffb0b999`. [[chunk:chunk-54b09402691c597d39dde0c7]] [[source:sha256:279def1d24c872244f3aec13da9727f3313684b05fa7a055f3fec736ffb0b999]]
 
 ## Related Concepts
 
-- [Flow](flow.md)
 - [Capacity](capacity.md)
-- [MOS](mos.md)
+- [Flow](flow.md)
+- [Hub / Zone](hub-zone.md)

@@ -10,13 +10,12 @@
   "schema_version": 1,
   "slug": "allocation",
   "source_chunk_ids": [
-    "chunk-dwgm-settlement-pricing-schedule-allocation",
-    "chunk-dwgm-settlement-withdrawal-allocation",
-    "chunk-sttm-procedures-capacity-settlement"
+    "chunk-ca5dda8bb7aee3ee75745a9a",
+    "chunk-ef2421c5ca1591fd7cf662be"
   ],
   "source_hashes": [
-    "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93",
-    "7318c369099f952b1b8264e72e71908d741d07d917f303d135e7b507ea5f2eb8"
+    "174cb200d57acaa6551439427a33d1518f88c8c4bc150bc95a97e8821a00c564",
+    "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93"
   ],
   "title": "Allocation"
 }
@@ -24,15 +23,14 @@
 
 # Allocation
 
-## Definition
+    ## Definition
 
-Allocation assigns quantities to settlement constructs; DWGM settlement allocates pricing and operating schedule controllable quantities to adjusted bid steps, and STTM capacity settlement uses STTM facility allocations net of MOS allocations. [[chunk:chunk-dwgm-settlement-pricing-schedule-allocation]] [[chunk:chunk-dwgm-settlement-withdrawal-allocation]] [[chunk:chunk-sttm-procedures-capacity-settlement]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]] [[source:sha256:7318c369099f952b1b8264e72e71908d741d07d917f303d135e7b507ea5f2eb8]]
+    Allocation assigns gas quantities to STTM settlement constructs: capacity charges and payments use effective allocated quantity based on STTM facility allocations, and STTM reports carry allocated facility quantities inclusive of MOS gas. [[chunk:chunk-ca5dda8bb7aee3ee75745a9a]] [[chunk:chunk-ef2421c5ca1591fd7cf662be]] [[source:sha256:174cb200d57acaa6551439427a33d1518f88c8c4bc150bc95a97e8821a00c564]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
 
-## Source Citations
+    ## Source Citations
 
-- `chunk-dwgm-settlement-pricing-schedule-allocation`: [silver chunk](../../silver/chunks/dwgm/settlement-procedures-2024/sha256-7318c369099f952b1b8264e72e71908d741d07d917f303d135e7b507ea5f2eb8/chunk-dwgm-settlement-pricing-schedule-allocation.md) from [source document](../../silver/documents/dwgm/settlement-procedures-2024/sha256-7318c369099f952b1b8264e72e71908d741d07d917f303d135e7b507ea5f2eb8.md); source hash `sha256:7318c369099f952b1b8264e72e71908d741d07d917f303d135e7b507ea5f2eb8`. [[chunk:chunk-dwgm-settlement-pricing-schedule-allocation]] [[source:sha256:7318c369099f952b1b8264e72e71908d741d07d917f303d135e7b507ea5f2eb8]]
-- `chunk-dwgm-settlement-withdrawal-allocation`: [silver chunk](../../silver/chunks/dwgm/settlement-procedures-2024/sha256-7318c369099f952b1b8264e72e71908d741d07d917f303d135e7b507ea5f2eb8/chunk-dwgm-settlement-withdrawal-allocation.md) from [source document](../../silver/documents/dwgm/settlement-procedures-2024/sha256-7318c369099f952b1b8264e72e71908d741d07d917f303d135e7b507ea5f2eb8.md); source hash `sha256:7318c369099f952b1b8264e72e71908d741d07d917f303d135e7b507ea5f2eb8`. [[chunk:chunk-dwgm-settlement-withdrawal-allocation]] [[source:sha256:7318c369099f952b1b8264e72e71908d741d07d917f303d135e7b507ea5f2eb8]]
-- `chunk-sttm-procedures-capacity-settlement`: [silver chunk](../../silver/chunks/sttm/sttm-procedures-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93/chunk-sttm-procedures-capacity-settlement.md) from [source document](../../silver/documents/sttm/sttm-procedures-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93.md); source hash `sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93`. [[chunk:chunk-sttm-procedures-capacity-settlement]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
+    - `chunk-ca5dda8bb7aee3ee75745a9a`: [silver chunk](../../silver/chunks/sttm/sttm-sttm-procedures-effective-date-3-march-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93/chunk-ca5dda8bb7aee3ee75745a9a.md) from [source document](../../silver/documents/sttm/sttm-sttm-procedures-effective-date-3-march-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93.md); source hash `sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93`. [[chunk:chunk-ca5dda8bb7aee3ee75745a9a]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
+- `chunk-ef2421c5ca1591fd7cf662be`: [silver chunk](../../silver/chunks/sttm/sttm-sttm-reports-specification-effective-date-1-march-2021/sha256-174cb200d57acaa6551439427a33d1518f88c8c4bc150bc95a97e8821a00c564/chunk-ef2421c5ca1591fd7cf662be.md) from [source document](../../silver/documents/sttm/sttm-sttm-reports-specification-effective-date-1-march-2021/sha256-174cb200d57acaa6551439427a33d1518f88c8c4bc150bc95a97e8821a00c564.md); source hash `sha256:174cb200d57acaa6551439427a33d1518f88c8c4bc150bc95a97e8821a00c564`. [[chunk:chunk-ef2421c5ca1591fd7cf662be]] [[source:sha256:174cb200d57acaa6551439427a33d1518f88c8c4bc150bc95a97e8821a00c564]]
 
 ## Related Concepts
 

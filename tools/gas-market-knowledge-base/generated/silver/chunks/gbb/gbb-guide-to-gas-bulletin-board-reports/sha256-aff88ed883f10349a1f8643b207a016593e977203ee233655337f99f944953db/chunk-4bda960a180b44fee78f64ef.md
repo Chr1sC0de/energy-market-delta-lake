@@ -1,0 +1,93 @@
+---
+{
+  "chunk_id": "chunk-4bda960a180b44fee78f64ef",
+  "chunk_ordinal": 155,
+  "chunk_text_sha256": "45db9a4dc662709ab35e6f4cbedc688cec3f1a3381b48dd673612d5f8495e63f",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "code",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 89.49884477404248,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 59.52,
+              "r": 378.19,
+              "t": 744.0969780273439
+            },
+            "charspan": [
+              0,
+              771
+            ],
+            "page_no": 30
+          }
+        ],
+        "self_ref": "#/texts/328"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "code",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 89.49884477404248,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 59.52,
+              "r": 378.19,
+              "t": 744.0969780273439
+            },
+            "charspan": [
+              0,
+              771
+            ],
+            "page_no": 30
+          }
+        ],
+        "self_ref": "#/texts/328"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/gbb/gbb-guide-to-gas-bulletin-board-reports/sha256-aff88ed883f10349a1f8643b207a016593e977203ee233655337f99f944953db.md",
+    "source_manifest_line_number": 14,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-bulletin-board-gbb/procedures-policies-and-guides/procedures-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/natural_gas_services_bulletin_board/site-content/gbb-documents/guides-and-procedures/guide-to-gas-bulletin-board-reports.pdf?rev=8d79cc57e0fd4faf9f5c92e94b42f86b&sc_lang=en"
+  },
+  "content_sha256": "aff88ed883f10349a1f8643b207a016593e977203ee233655337f99f944953db",
+  "corpus": "gbb",
+  "document_family": "gbb__guide-to-gas-bulletin-board-reports",
+  "document_family_id": "gbb__guide-to-gas-bulletin-board-reports",
+  "document_identity": "gbb/gbb-guide-to-gas-bulletin-board-reports/sha256-aff88ed883f10349a1f8643b207a016593e977203ee233655337f99f944953db",
+  "document_title": "##### Guide to Gas Bulletin Board Reports",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/gbb/gbb-guide-to-gas-bulletin-board-reports/sha256-aff88ed883f10349a1f8643b207a016593e977203ee233655337f99f944953db/chunk-4bda960a180b44fee78f64ef.md",
+  "heading_path": [
+    "4.7.4 Example report"
+  ],
+  "path": "generated/silver/chunks/gbb/gbb-guide-to-gas-bulletin-board-reports/sha256-aff88ed883f10349a1f8643b207a016593e977203ee233655337f99f944953db/chunk-4bda960a180b44fee78f64ef.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/gbb/gbb-guide-to-gas-bulletin-board-reports/sha256-aff88ed883f10349a1f8643b207a016593e977203ee233655337f99f944953db.md"
+}
+---
+
+'FacilityType': 'PIPE', "LocationId": 590009, "LocationName": "Gippsland", 'State': 'VIC', "Demand": 0, "Supply": 0, "TransferIn": 3, "TransferOut": 5, "LastUpdated": "2018-05-27T14:36:51+10:00" } ] }, "errors": [] }
+```

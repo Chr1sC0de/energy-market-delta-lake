@@ -14,6 +14,7 @@ from marimoserver.bounded_read_diagnostics import (
     endpoint_mode_label,
     render_bounded_read_summary_cards,
 )
+from marimoserver.dashboard_registry import registry_entry_by_concept_id
 from marimoserver.gas_dashboard import discover_dashboard_config
 from marimoserver.table_explorer import (
     AWS_BOUNDED_READ_DIAGNOSTICS_ROUTE,
@@ -1199,8 +1200,10 @@ def test_concept_gallery_metadata_maps_participant_membership_dashboard() -> Non
         metadata_rows["participant-context"]["notebook route"]
         == "/marimo/participant_explainer/"
     )
+    participant = registry_entry_by_concept_id("participant-context")
+    assert participant is not None
     assert (
-        "chunk-gbb-guide-participants-report"
+        participant.source_chunk_ids[0]
         in metadata_rows["participant-context"]["source chunk ids"]
     )
 
@@ -1239,8 +1242,10 @@ def test_concept_gallery_metadata_maps_nomination_forecast_dashboard() -> None:
         metadata_rows["nomination-demand-forecast"]["notebook route"]
         == "/marimo/nomination_demand_forecast/"
     )
+    nomination = registry_entry_by_concept_id("nomination-demand-forecast")
+    assert nomination is not None
     assert (
-        "chunk-gbb-guide-flow-report"
+        nomination.source_chunk_ids[0]
         in metadata_rows["nomination-demand-forecast"]["source chunk ids"]
     )
 

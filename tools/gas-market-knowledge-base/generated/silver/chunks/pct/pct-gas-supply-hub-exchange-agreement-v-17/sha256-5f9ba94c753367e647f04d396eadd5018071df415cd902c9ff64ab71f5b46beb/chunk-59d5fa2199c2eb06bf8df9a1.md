@@ -1,0 +1,249 @@
+---
+{
+  "chunk_id": "chunk-59d5fa2199c2eb06bf8df9a1",
+  "chunk_ordinal": 404,
+  "chunk_text_sha256": "1bfa20aaffa7e4dc115a93793ba2a3a86c34076261dc520ab4b992c243c30a47",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/266"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 642.3687829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 486.30904,
+              "t": 651.0308629101563
+            },
+            "charspan": [
+              0,
+              96
+            ],
+            "page_no": 106
+          }
+        ],
+        "self_ref": "#/texts/2182"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/266"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 623.1687829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 530.3490400000001,
+              "t": 631.8308629101564
+            },
+            "charspan": [
+              0,
+              97
+            ],
+            "page_no": 106
+          }
+        ],
+        "self_ref": "#/texts/2183"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/266"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 590.5287829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 522.1286000000005,
+              "t": 612.5108629101563
+            },
+            "charspan": [
+              0,
+              106
+            ],
+            "page_no": 106
+          }
+        ],
+        "self_ref": "#/texts/2184"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/266"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 557.8887829101562,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 517.9307600000002,
+              "t": 579.8708629101563
+            },
+            "charspan": [
+              0,
+              95
+            ],
+            "page_no": 106
+          }
+        ],
+        "self_ref": "#/texts/2185"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/266"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 525.3387829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 533.3986400000003,
+              "t": 547.3208629101564
+            },
+            "charspan": [
+              0,
+              106
+            ],
+            "page_no": 106
+          }
+        ],
+        "self_ref": "#/texts/2186"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 506.0187829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 483.90904,
+              "t": 514.6808629101563
+            },
+            "charspan": [
+              0,
+              88
+            ],
+            "page_no": 106
+          }
+        ],
+        "self_ref": "#/texts/2187"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/267"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 486.6987829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 403.59904,
+              "t": 495.3608629101563
+            },
+            "charspan": [
+              0,
+              76
+            ],
+            "page_no": 106
+          }
+        ],
+        "self_ref": "#/texts/2188"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "table",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 397.1287841796875,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 96.46965789794922,
+              "r": 523.4425048828125,
+              "t": 480.007568359375
+            },
+            "charspan": [
+              0,
+              0
+            ],
+            "page_no": 106
+          }
+        ],
+        "self_ref": "#/tables/20"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md",
+    "source_manifest_line_number": 20,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/pipeline-capacity-trading-pct/procedures-policies-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/gas_supply_hubs/market_operations/gsh-exchange-agreement.pdf?rev=94860e2e688b4adcbb0b9d3593846af6&sc_lang=en"
+  },
+  "content_sha256": "5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "corpus": "pct",
+  "document_family": "pct__gas-supply-hub-exchange-agreement-v-17",
+  "document_family_id": "pct__gas-supply-hub-exchange-agreement-v-17",
+  "document_identity": "pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "document_title": "##### Gas Supply Hub exchange agreement v.17",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-59d5fa2199c2eb06bf8df9a1.md",
+  "heading_path": [
+    "5. Delivery Matching at the Wallumbilla Trading Location"
+  ],
+  "path": "generated/silver/chunks/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-59d5fa2199c2eb06bf8df9a1.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md"
+}
+---
+
+- 5.3 For the purposes of clause 14.7.4, the Operator will match positions in the following order:
+- Step 1: Where and to the extent that the Buyer and Seller have nominated the same Delivery Point.
+- Step 2:  Where and to the extent that the Buyer and Seller have elected to be matched in a Priority Group:
+- (i) first, where the Delivery Point nominated by the Buyer and Seller belongs to the RBP Group;
+- (ii) second, where the Delivery Point nominated by the Buyer and Seller belongs to the Low Pressure Group.
+Step 3:  Where and to the extent that the positions cannot be matched under step 1 or 2.
+- 5.4 The Delivery Point for each delivery pair will be determined as follows.
+1, Delivery Point = The Delivery Point nominated by the Buyer and Seller.. 2(i), Delivery Point = The Delivery Point nominated by the Seller.. 2(ii), Delivery Point = Wallumbilla Low Pressure Trade Point.. 3, Delivery Point = Wallumbilla High Pressure Trade Point.

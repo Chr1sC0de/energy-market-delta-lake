@@ -486,7 +486,7 @@ def _render_chunks(
     rendered_chunks: list[_RenderedChunk] = []
     chunk_id_counts: dict[str, int] = {}
     for chunk_ordinal, chunk in enumerate(chunks):
-        text = chunk.text.strip()
+        text = _normalize_chunk_text(chunk.text)
         if not text:
             continue
         chunk_id_base = _chunk_id_base(
@@ -847,6 +847,13 @@ def _file_sha256(path: Path) -> str:
 
 def _text_sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _normalize_chunk_text(text: str) -> str:
+    stripped = text.strip()
+    if not stripped:
+        return ""
+    return "\n".join(line.rstrip() for line in stripped.splitlines())
 
 
 def _render_markdown(frontmatter: Mapping[str, object], body: str) -> str:

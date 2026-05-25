@@ -27,8 +27,10 @@ runtime sets `DEVELOPMENT_LOCATION=aws`,
 The dashboard service also exposes `/marimo/dashboard-registry.json` from
 Marimo-local code constants. The registry carries planned and available
 dashboard metadata, including generated-gold paths, source chunk IDs, silver
-chunk paths, and source hashes, but the deployed service does not read Gas
-market knowledge base generated files at runtime.
+chunk paths, and source hashes. When packaged generated corpus files are
+present, the registry resolves current source chunk metadata from generated
+gold frontmatter and the silver chunk index; dashboards consume the parsed
+registry rather than opening generated Markdown directly.
 
 The curated image includes an S3 Bucket Health dashboard for configured
 S3-compatible bucket reachability, object scans, truncation, bucket errors, and
@@ -89,12 +91,11 @@ The dashboard registry and concept gallery are part of the existing Marimo
 image contents. Adding or updating registry metadata does not require a
 separate Docker build context and does not add AWS write paths.
 The glossary explorer stays inside the same boundary: it reads the packaged
-registry constants, not generated gold Markdown or live S3 tables.
+parsed registry, not live S3 tables.
 The concept-to-asset explorer stays inside that registry-only boundary. It maps
 Market context glossary concepts to registry backing assets, available
 dashboard routes, planned concept-gallery cards, and table explorer deep links
-without reading table rows, opening generated gold Markdown, or changing S3,
-Dagster, ETL, or AWS permissions.
+without reading table rows or changing S3, Dagster, ETL, or AWS permissions.
 
 The schema data dictionary explorer stays inside the same read-only boundary.
 It combines Dagster GraphQL table schema metadata with the concept-to-asset

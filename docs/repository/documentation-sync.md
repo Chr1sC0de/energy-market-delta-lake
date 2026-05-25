@@ -139,7 +139,9 @@ the same `prek` command surfaces as code QA:
   without containers, live network, or deployed cloud resources.
 - The root **Commit check** includes the official Gitleaks `gitleaks` hook. It
   runs in staged pre-commit mode so newly staged secrets are blocked without
-  requiring Docker or a preinstalled `gitleaks` binary.
+  requiring Docker or a preinstalled `gitleaks` binary. Public corpus false
+  positives must use exact-fingerprint entries in `.gitleaksignore`; do not
+  broadly exclude generated corpus directories from secret scanning.
 - Ruff owns Python linting and formatting. A Python **Subproject** is under the
   Google-style docstring ratchet only when its `pyproject.toml` selects Ruff `D`
   rules and its hook config runs `ruff check`. The current ratchet covers
@@ -355,6 +357,7 @@ These commands support the intended flow:
   - `docs/adr/0010-gas-market-knowledge-base.md`
   - `tests/test_documentation_qa_ratchet.py`
   - `.pre-commit-config.yaml`
+  - `.gitleaksignore`
   - `.gitignore`
   - `backend-services/.pre-commit-config.yaml`
   - `backend-services/authentication/.pre-commit-config.yaml`

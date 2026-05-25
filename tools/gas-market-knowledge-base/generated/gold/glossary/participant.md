@@ -4,20 +4,19 @@
   "generated_path": "generated/gold/glossary/participant.md",
   "related_concepts": [
     "facility",
-    "bid-offer",
-    "settlement"
+    "settlement",
+    "bid-offer"
   ],
   "schema_version": 1,
   "slug": "participant",
   "source_chunk_ids": [
-    "chunk-gbb-guide-participants-report",
-    "chunk-gbb-procedures-registration",
-    "chunk-sttm-procedures-settlement-terms"
+    "chunk-08b58cadbd19f6adf45bc748",
+    "chunk-cf24e54db07b61394d60e00b",
+    "chunk-89bad1fea4cc288659da1743"
   ],
   "source_hashes": [
     "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93",
-    "9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410",
-    "f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35"
+    "aff88ed883f10349a1f8643b207a016593e977203ee233655337f99f944953db"
   ],
   "title": "Participant"
 }
@@ -25,18 +24,18 @@
 
 # Participant
 
-## Definition
+    ## Definition
 
-A participant is the registered or trading party that submits market data, retrieves market reports, or receives charges and payments; BB reports list registered participants and STTM settlement equations calculate amounts for Trading Participant p. [[chunk:chunk-gbb-guide-participants-report]] [[chunk:chunk-gbb-procedures-registration]] [[chunk:chunk-sttm-procedures-settlement-terms]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]] [[source:sha256:9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410]] [[source:sha256:f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35]]
+    A participant is represented in GBB reports as a registered company or organisation and in STTM settlement equations as Trading Participant p, the party to whom charges and payments are calculated. [[chunk:chunk-08b58cadbd19f6adf45bc748]] [[chunk:chunk-cf24e54db07b61394d60e00b]] [[chunk:chunk-89bad1fea4cc288659da1743]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]] [[source:sha256:aff88ed883f10349a1f8643b207a016593e977203ee233655337f99f944953db]]
 
-## Source Citations
+    ## Source Citations
 
-- `chunk-gbb-guide-participants-report`: [silver chunk](../../silver/chunks/gbb/guide-to-gbb-reports/sha256-9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410/chunk-gbb-guide-participants-report.md) from [source document](../../silver/documents/gbb/guide-to-gbb-reports/sha256-9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410.md); source hash `sha256:9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410`. [[chunk:chunk-gbb-guide-participants-report]] [[source:sha256:9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410]]
-- `chunk-gbb-procedures-registration`: [silver chunk](../../silver/chunks/gbb/bb-procedures/sha256-f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35/chunk-gbb-procedures-registration.md) from [source document](../../silver/documents/gbb/bb-procedures/sha256-f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35.md); source hash `sha256:f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35`. [[chunk:chunk-gbb-procedures-registration]] [[source:sha256:f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35]]
-- `chunk-sttm-procedures-settlement-terms`: [silver chunk](../../silver/chunks/sttm/sttm-procedures-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93/chunk-sttm-procedures-settlement-terms.md) from [source document](../../silver/documents/sttm/sttm-procedures-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93.md); source hash `sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93`. [[chunk:chunk-sttm-procedures-settlement-terms]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
+    - `chunk-08b58cadbd19f6adf45bc748`: [silver chunk](../../silver/chunks/gbb/gbb-guide-to-gas-bulletin-board-reports/sha256-aff88ed883f10349a1f8643b207a016593e977203ee233655337f99f944953db/chunk-08b58cadbd19f6adf45bc748.md) from [source document](../../silver/documents/gbb/gbb-guide-to-gas-bulletin-board-reports/sha256-aff88ed883f10349a1f8643b207a016593e977203ee233655337f99f944953db.md); source hash `sha256:aff88ed883f10349a1f8643b207a016593e977203ee233655337f99f944953db`. [[chunk:chunk-08b58cadbd19f6adf45bc748]] [[source:sha256:aff88ed883f10349a1f8643b207a016593e977203ee233655337f99f944953db]]
+- `chunk-cf24e54db07b61394d60e00b`: [silver chunk](../../silver/chunks/sttm/sttm-sttm-procedures-effective-date-3-march-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93/chunk-cf24e54db07b61394d60e00b.md) from [source document](../../silver/documents/sttm/sttm-sttm-procedures-effective-date-3-march-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93.md); source hash `sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93`. [[chunk:chunk-cf24e54db07b61394d60e00b]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
+- `chunk-89bad1fea4cc288659da1743`: [silver chunk](../../silver/chunks/sttm/sttm-sttm-procedures-effective-date-3-march-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93/chunk-89bad1fea4cc288659da1743.md) from [source document](../../silver/documents/sttm/sttm-sttm-procedures-effective-date-3-march-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93.md); source hash `sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93`. [[chunk:chunk-89bad1fea4cc288659da1743]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
 
 ## Related Concepts
 
 - [Facility](facility.md)
-- [Bid / Offer](bid-offer.md)
 - [Settlement](settlement.md)
+- [Bid / Offer](bid-offer.md)

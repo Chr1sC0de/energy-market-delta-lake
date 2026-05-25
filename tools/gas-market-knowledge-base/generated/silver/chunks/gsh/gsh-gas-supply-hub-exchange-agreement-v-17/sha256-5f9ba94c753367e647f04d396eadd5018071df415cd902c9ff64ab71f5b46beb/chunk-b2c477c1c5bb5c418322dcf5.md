@@ -1,0 +1,171 @@
+---
+{
+  "chunk_id": "chunk-b2c477c1c5bb5c418322dcf5",
+  "chunk_ordinal": 49,
+  "chunk_text_sha256": "2ab6958c69f12c434c6496fa6f8b3d686e7dadc4afc157e77a26a77a424029ae",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/9"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 265.75878291015624,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 524.22904,
+              "t": 287.74086291015624
+            },
+            "charspan": [
+              0,
+              196
+            ],
+            "page_no": 16
+          }
+        ],
+        "self_ref": "#/texts/265"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/9"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 233.11878291015626,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 510.2990400000003,
+              "t": 255.10086291015625
+            },
+            "charspan": [
+              0,
+              103
+            ],
+            "page_no": 16
+          }
+        ],
+        "self_ref": "#/texts/266"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/9"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 200.59878291015627,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 526.4940000000006,
+              "t": 222.58086291015627
+            },
+            "charspan": [
+              0,
+              134
+            ],
+            "page_no": 16
+          }
+        ],
+        "self_ref": "#/texts/267"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/9"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 167.92878291015631,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 533.2369200000006,
+              "t": 189.94086291015628
+            },
+            "charspan": [
+              0,
+              152
+            ],
+            "page_no": 16
+          }
+        ],
+        "self_ref": "#/texts/268"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/9"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 122.08878291015628,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 527.5890400000001,
+              "t": 157.27086291015632
+            },
+            "charspan": [
+              0,
+              296
+            ],
+            "page_no": 16
+          }
+        ],
+        "self_ref": "#/texts/269"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md",
+    "source_manifest_line_number": 16,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-supply-hub-gsh/exchange-agreement-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/gas_supply_hubs/market_operations/gsh-exchange-agreement.pdf?rev=94860e2e688b4adcbb0b9d3593846af6&sc_lang=en"
+  },
+  "content_sha256": "5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "corpus": "gsh",
+  "document_family": "gsh__gas-supply-hub-exchange-agreement-v-17",
+  "document_family_id": "gsh__gas-supply-hub-exchange-agreement-v-17",
+  "document_identity": "gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "document_title": "##### Gas Supply Hub exchange agreement v.17",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-b2c477c1c5bb5c418322dcf5.md",
+  "heading_path": [
+    "2.4. Exchange Agreement"
+  ],
+  "path": "generated/silver/chunks/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-b2c477c1c5bb5c418322dcf5.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md"
+}
+---
+
+- (a) Each Membership Agreement forms part of, and is incorporated into, this Exchange Agreement and together they form one agreement to which, at any time, all Members and the Operator are a party.
+- (b) This Exchange Agreement and the Membership Agreements are to be read and construed as one document.
+- (c) Any schedule or annexure forms part of this Exchange Agreement and has effect as if set out in full in the body of this agreement.
+- (d) The Settlements and Prudential Methodology forms part of this Exchange Agreement and has effect as if set out in full in the body of this agreement.
+- (e) This Exchange Agreement, as amended from time to time, will be published in electronic form by the Operator.  The Parties agree that the authoritative text of this Exchange Agreement, and each amendment to it, will be the text designated and maintained as such by the Operator on its website.

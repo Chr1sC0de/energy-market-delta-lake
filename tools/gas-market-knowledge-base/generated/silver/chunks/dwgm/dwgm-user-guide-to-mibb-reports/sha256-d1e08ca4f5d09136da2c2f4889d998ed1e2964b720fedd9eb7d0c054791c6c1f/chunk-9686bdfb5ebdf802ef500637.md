@@ -1,0 +1,67 @@
+---
+{
+  "chunk_id": "chunk-9686bdfb5ebdf802ef500637",
+  "chunk_ordinal": 561,
+  "chunk_text_sha256": "42cfd6795c3047f423b04d689cab89cf58d328ac7e0edd0f7b0b29c854fa1296",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "table",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 113.11859130859375,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 43.02423858642578,
+              "r": 539.651123046875,
+              "t": 696.4654846191406
+            },
+            "charspan": [
+              0,
+              0
+            ],
+            "page_no": 93
+          }
+        ],
+        "self_ref": "#/tables/149"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/dwgm/dwgm-user-guide-to-mibb-reports/sha256-d1e08ca4f5d09136da2c2f4889d998ed1e2964b720fedd9eb7d0c054791c6c1f.md",
+    "source_manifest_line_number": 4,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/declared-wholesale-gas-market-dwgm/procedures-policies-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/stakeholder_consultation/consultations/gas_consultations/2024/april-2024-amendment-to-user-guide-to-mibb-reports/user-guide-to-mibb-reports.pdf?rev=b5b659bce66a4808b505db05ecb0ca13&sc_lang=en"
+  },
+  "content_sha256": "d1e08ca4f5d09136da2c2f4889d998ed1e2964b720fedd9eb7d0c054791c6c1f",
+  "corpus": "dwgm",
+  "document_family": "dwgm__user-guide-to-mibb-reports",
+  "document_family_id": "dwgm__user-guide-to-mibb-reports",
+  "document_identity": "dwgm/dwgm-user-guide-to-mibb-reports/sha256-d1e08ca4f5d09136da2c2f4889d998ed1e2964b720fedd9eb7d0c054791c6c1f",
+  "document_title": "##### User Guide to MIBB Reports",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/dwgm/dwgm-user-guide-to-mibb-reports/sha256-d1e08ca4f5d09136da2c2f4889d998ed1e2964b720fedd9eb7d0c054791c6c1f/chunk-9686bdfb5ebdf802ef500637.md",
+  "heading_path": [
+    "Data content"
+  ],
+  "path": "generated/silver/chunks/dwgm/dwgm-user-guide-to-mibb-reports/sha256-d1e08ca4f5d09136da2c2f4889d998ed1e2964b720fedd9eb7d0c054791c6c1f/chunk-9686bdfb5ebdf802ef500637.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/dwgm/dwgm-user-guide-to-mibb-reports/sha256-d1e08ca4f5d09136da2c2f4889d998ed1e2964b720fedd9eb7d0c054791c6c1f.md"
+}
+---
+
+hour_4, Data Type = Numeric (18,3). hour_4, No Nulls = False. hour_4, Primary Key = False. hour_4, CQ = N. hour_4, Comments = Energy value for 9:00 AM- 3 decimal places. hour_5, Data Type = Numeric (18,3). hour_5, No Nulls = False. hour_5, Primary Key = False. hour_5, CQ = N. hour_5, Comments = Energy value for 10:00 AM- 3 decimal places. hour_6, Data Type = Numeric (18,3). hour_6, No Nulls = False. hour_6, Primary Key = False. hour_6, CQ = N. hour_6, Comments = Energy value for 11:00 AM- 3 decimal places. hour_7, Data Type = Numeric (18,3). hour_7, No Nulls = False. hour_7, Primary Key = False. hour_7, CQ = N. hour_7, Comments = Energy value for 12:00 PM- 3 decimal places. hour_8, Data Type = Numeric

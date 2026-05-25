@@ -1,0 +1,67 @@
+---
+{
+  "chunk_id": "chunk-1d344dbe5ce188cd42bbe435",
+  "chunk_ordinal": 10,
+  "chunk_text_sha256": "da152fd2b63c54ef77ea9f19a9a3bed69970c847d363a616fad9c92c66a80e9e",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "document_index",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 75.30059814453125,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 66.60857391357422,
+              "r": 529.6434936523438,
+              "t": 746.1536407470703
+            },
+            "charspan": [
+              0,
+              0
+            ],
+            "page_no": 4
+          }
+        ],
+        "self_ref": "#/tables/2"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md",
+    "source_manifest_line_number": 16,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-supply-hub-gsh/exchange-agreement-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/gas_supply_hubs/market_operations/gsh-exchange-agreement.pdf?rev=94860e2e688b4adcbb0b9d3593846af6&sc_lang=en"
+  },
+  "content_sha256": "5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "corpus": "gsh",
+  "document_family": "gsh__gas-supply-hub-exchange-agreement-v-17",
+  "document_family_id": "gsh__gas-supply-hub-exchange-agreement-v-17",
+  "document_identity": "gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "document_title": "##### Gas Supply Hub exchange agreement v.17",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-1d344dbe5ce188cd42bbe435.md",
+  "heading_path": [
+    "CONTENTS"
+  ],
+  "path": "generated/silver/chunks/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-1d344dbe5ce188cd42bbe435.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md"
+}
+---
+
+7.2., 1 = Security. 7.2., 2 = 33. 7.3., 1 = Communication failures. 7.3., 2 = 33. 7.4., 1 = Trading System maintenance. 7.4., 2 = 33. 8., 1 = MARKET CONDUCT. 8., 2 = 33. 9., 1 = PRUDENTIAL REQUIREMENTS. 9., 2 = 34. 9.1., 1 = Confidentiality. 9.1., 2 = 34. 9.2., 1 = Credit Support - Market Participants. 9.2., 2 = 34. 9.3., 1 = Security deposit amounts. 9.3., 2 = 35. 9.4., 1 = Calculation of prudential amounts for Market Participants. 9.4., 2 = 36. 9.5., 1 = Participant responsibility. 9.5., 2 = 37. 10., 1 = EXCHANGE INFORMATION AND CAPACITY LISTINGS. 10., 2 = 37. 10.1., 1 = Information available to Trading and Viewing Participants. 10.1., 2 = 37. 10.2., 1 = Information for Market Participants. 10.2., 2 =

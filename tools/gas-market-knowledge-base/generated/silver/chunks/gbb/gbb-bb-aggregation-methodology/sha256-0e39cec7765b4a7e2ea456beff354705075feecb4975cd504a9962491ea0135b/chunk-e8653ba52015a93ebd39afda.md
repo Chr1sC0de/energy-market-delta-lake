@@ -1,0 +1,67 @@
+---
+{
+  "chunk_id": "chunk-e8653ba52015a93ebd39afda",
+  "chunk_ordinal": 6,
+  "chunk_text_sha256": "238b5cdaf8ea6a3e60baeeb8594e1754b3ff4703a3d737ad8ff608979bb43460",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "table",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 93.6612548828125,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 102.38058471679688,
+              "r": 527.4515380859375,
+              "t": 360.9729919433594
+            },
+            "charspan": [
+              0,
+              0
+            ],
+            "page_no": 3
+          }
+        ],
+        "self_ref": "#/tables/3"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/gbb/gbb-bb-aggregation-methodology/sha256-0e39cec7765b4a7e2ea456beff354705075feecb4975cd504a9962491ea0135b.md",
+    "source_manifest_line_number": 11,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-bulletin-board-gbb/procedures-policies-and-guides/procedures-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/natural_gas_services_bulletin_board/site-content/gbb-documents/guides-and-procedures/bb-aggregation-methodology.pdf?rev=6f5ca7b8c81c4c8d958db29c29bb20e6"
+  },
+  "content_sha256": "0e39cec7765b4a7e2ea456beff354705075feecb4975cd504a9962491ea0135b",
+  "corpus": "gbb",
+  "document_family": "gbb__bb-aggregation-methodology",
+  "document_family_id": "gbb__bb-aggregation-methodology",
+  "document_identity": "gbb/gbb-bb-aggregation-methodology/sha256-0e39cec7765b4a7e2ea456beff354705075feecb4975cd504a9962491ea0135b",
+  "document_title": "##### BB Aggregation Methodology",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/gbb/gbb-bb-aggregation-methodology/sha256-0e39cec7765b4a7e2ea456beff354705075feecb4975cd504a9962491ea0135b/chunk-e8653ba52015a93ebd39afda.md",
+  "heading_path": [
+    "1.3.1. Glossary"
+  ],
+  "path": "generated/silver/chunks/gbb/gbb-bb-aggregation-methodology/sha256-0e39cec7765b4a7e2ea456beff354705075feecb4975cd504a9962491ea0135b/chunk-e8653ba52015a93ebd39afda.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/gbb/gbb-bb-aggregation-methodology/sha256-0e39cec7765b4a7e2ea456beff354705075feecb4975cd504a9962491ea0135b.md"
+}
+---
+
+Border Demand, Definition = An estimate of gas flows within a BB pipeline from one State or Territory to another State or Territory.. Connection Point, Definition = A Demand Point, a Supply Point or a Transfer Point.. Demand Point, Definition = A delivery point on a BB pipeline : • that is connected to either a gate station, a storage facility, an LNG export facility , a large user or a pipeline that is not a BB pipeline , or • from which a person takes natural gas for consumption purposes.. Forecast Method, Definition = For each nameplate capacity that a BB pipeline has, AEMO will assign a Forecast Method to determine a representation of the gas flows for that nameplate capacity.. GPG Point, Definition = A Demand Point on a BB pipeline which is solely used for the delivery of natural gas used by a market generating unit (GPG) for the generation of electricity or the operation of the market generating unit .. Node, Definition = A Node is used as the link between two facilities and will consist of either: • a delivery point on one facility and a receipt point on the other facility; or • a delivery point and a receipt point on one facility and a receipt point and a delivery point on the other facility. Supply Point,

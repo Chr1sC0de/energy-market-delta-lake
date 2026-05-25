@@ -1,15 +1,18 @@
 """Component tests for the Marimo dashboard registry."""
 
+import json
 from pathlib import Path
 
 import pytest
 
+import marimoserver.dashboard_registry as registry_module
 from marimoserver.dashboard_registry import (
     DASHBOARD_REGISTRY_RECORDS,
     ROADMAP_AUDIENCES,
     DashboardAudience,
     DashboardRegistryError,
     DashboardStatus,
+    SourceChunkReference,
     dashboard_registry,
     dashboard_registry_payload,
     load_dashboard_registry,
@@ -18,6 +21,38 @@ from marimoserver.dashboard_registry import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+def _gold_metadata(generated_path: str) -> dict[str, object]:
+    text = (REPO_ROOT / generated_path).read_text(encoding="utf-8")
+    _, raw_frontmatter, _ = text.split("---", maxsplit=2)
+    metadata = json.loads(raw_frontmatter)
+    assert isinstance(metadata, dict)
+    return metadata
+
+
+def _gold_source_chunk_ids(*generated_paths: str) -> tuple[str, ...]:
+    source_chunk_ids: list[str] = []
+    for generated_path in generated_paths:
+        raw_chunk_ids = _gold_metadata(generated_path).get("source_chunk_ids", [])
+        assert isinstance(raw_chunk_ids, list)
+        for chunk_id in raw_chunk_ids:
+            assert isinstance(chunk_id, str)
+            if chunk_id not in source_chunk_ids:
+                source_chunk_ids.append(chunk_id)
+    return tuple(source_chunk_ids)
+
+
+def _gold_source_hashes(*generated_paths: str) -> tuple[str, ...]:
+    source_hashes: list[str] = []
+    for generated_path in generated_paths:
+        raw_hashes = _gold_metadata(generated_path).get("source_hashes", [])
+        assert isinstance(raw_hashes, list)
+        for source_hash in raw_hashes:
+            assert isinstance(source_hash, str)
+            if source_hash not in source_hashes:
+                source_hashes.append(source_hash)
+    return tuple(source_hashes)
 
 
 def test_dashboard_registry_parses_structured_entries() -> None:
@@ -98,8 +133,8 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md"
         in scheduled_quantities.generated_gold_paths
     )
-    assert "chunk-gbb-procedures-scheduled-flow" in (
-        scheduled_quantities.source_chunk_ids
+    assert scheduled_quantities.source_chunk_ids == _gold_source_chunk_ids(
+        *scheduled_quantities.generated_gold_paths,
     )
 
     settlement = registry_entry_by_concept_id("settlement-context", entries)
@@ -136,14 +171,8 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md"
         in sttm_market_settlement.generated_gold_paths
     )
-    assert sttm_market_settlement.source_chunk_ids == (
-        "chunk-gbb-guide-gas-day",
-        "chunk-gbb-guide-nodes-facilities",
-        "chunk-sttm-procedures-definitions",
-        "chunk-sttm-procedures-settlement-terms",
-        "chunk-sttm-procedures-settlement-amounts",
-        "chunk-sttm-procedures-shortfall-settlement",
-        "chunk-sttm-procedures-capacity-settlement",
+    assert sttm_market_settlement.source_chunk_ids == _gold_source_chunk_ids(
+        *sttm_market_settlement.generated_gold_paths,
     )
 
     sttm_capacity_settlement = registry_entry_by_concept_id(
@@ -168,14 +197,8 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/mos.md"
         in sttm_capacity_settlement.generated_gold_paths
     )
-    assert sttm_capacity_settlement.source_chunk_ids == (
-        "chunk-gbb-guide-gas-day",
-        "chunk-gbb-guide-nodes-facilities",
-        "chunk-sttm-procedures-definitions",
-        "chunk-sttm-procedures-settlement-terms",
-        "chunk-sttm-procedures-mos-estimates",
-        "chunk-sttm-procedures-mos-settlement",
-        "chunk-sttm-procedures-capacity-settlement",
+    assert sttm_capacity_settlement.source_chunk_ids == _gold_source_chunk_ids(
+        *sttm_capacity_settlement.generated_gold_paths,
     )
 
     sttm_mos_allocation = registry_entry_by_concept_id(
@@ -200,11 +223,8 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/allocation.md"
         in sttm_mos_allocation.generated_gold_paths
     )
-    assert "chunk-sttm-procedures-mos-estimates" in (
-        sttm_mos_allocation.source_chunk_ids
-    )
-    assert "chunk-dwgm-settlement-withdrawal-allocation" in (
-        sttm_mos_allocation.source_chunk_ids
+    assert sttm_mos_allocation.source_chunk_ids == _gold_source_chunk_ids(
+        *sttm_mos_allocation.generated_gold_paths,
     )
 
     readiness = registry_entry_by_concept_id("data-readiness-overview", entries)
@@ -343,9 +363,8 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md"
         in facility_flow_storage.generated_gold_paths
     )
-    assert (
-        "chunk-gbb-procedures-daily-flow-storage"
-        in facility_flow_storage.source_chunk_ids
+    assert facility_flow_storage.source_chunk_ids == _gold_source_chunk_ids(
+        *facility_flow_storage.generated_gold_paths,
     )
 
     forecast_actual = registry_entry_by_concept_id("forecast-vs-actual", entries)
@@ -361,8 +380,8 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md"
         in forecast_actual.generated_gold_paths
     )
-    assert "chunk-gbb-procedures-daily-flow-storage" in (
-        forecast_actual.source_chunk_ids
+    assert forecast_actual.source_chunk_ids == _gold_source_chunk_ids(
+        *forecast_actual.generated_gold_paths,
     )
 
     customer_transfer = registry_entry_by_concept_id(
@@ -396,8 +415,8 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/bid-offer.md"
         in contingency_gas.generated_gold_paths
     )
-    assert contingency_gas.source_chunk_ids == (
-        "chunk-sttm-procedures-contingency-gas-bids",
+    assert contingency_gas.source_chunk_ids == _gold_source_chunk_ids(
+        *contingency_gas.generated_gold_paths,
     )
 
     participant = registry_entry_by_concept_id("participant-context", entries)
@@ -412,10 +431,8 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         "silver.gas_model.silver_gas_fact_bid_stack",
         "silver.gas_model.silver_gas_fact_settlement_activity",
     )
-    assert participant.source_chunk_ids == (
-        "chunk-gbb-guide-participants-report",
-        "chunk-gbb-procedures-registration",
-        "chunk-sttm-procedures-settlement-terms",
+    assert participant.source_chunk_ids == _gold_source_chunk_ids(
+        *participant.generated_gold_paths,
     )
 
     facility = registry_entry_by_concept_id("facility-context", entries)
@@ -428,9 +445,8 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         "silver.gas_model.silver_gas_fact_facility_flow_storage",
         "silver.gas_model.silver_gas_fact_capacity_outlook",
     )
-    assert facility.source_chunk_ids == (
-        "chunk-gbb-guide-nodes-facilities",
-        "chunk-gbb-procedures-facility-nameplate",
+    assert facility.source_chunk_ids == _gold_source_chunk_ids(
+        *facility.generated_gold_paths,
     )
 
     hub_zone = registry_entry_by_concept_id("hub-zone-context", entries)
@@ -443,11 +459,8 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md"
         in hub_zone.generated_gold_paths
     )
-    assert hub_zone.source_chunk_ids == (
-        "chunk-sttm-procedures-definitions",
-        "chunk-sttm-procedures-settlement-terms",
-        "chunk-dwgm-operations-glossary-schedule",
-        "chunk-dwgm-operations-capacity-certificates-modelling",
+    assert hub_zone.source_chunk_ids == _gold_source_chunk_ids(
+        *hub_zone.generated_gold_paths,
     )
 
     connection_point = registry_entry_by_concept_id(
@@ -469,9 +482,8 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert connection_point.generated_gold_paths == (
         "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md",
     )
-    assert connection_point.source_chunk_ids == (
-        "chunk-gbb-guide-connection-point-identifiers",
-        "chunk-gbb-guide-flow-report",
+    assert connection_point.source_chunk_ids == _gold_source_chunk_ids(
+        *connection_point.generated_gold_paths,
     )
 
     pipeline_connection = registry_entry_by_concept_id(
@@ -497,9 +509,8 @@ def test_dashboard_registry_parses_structured_entries() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md"
         in pipeline_connection.generated_gold_paths
     )
-    assert (
-        "chunk-gbb-guide-connection-point-identifiers"
-        in pipeline_connection.source_chunk_ids
+    assert pipeline_connection.source_chunk_ids == _gold_source_chunk_ids(
+        *pipeline_connection.generated_gold_paths,
     )
 
     meter_flow = registry_entry_by_concept_id("operational-meter-flow", entries)
@@ -516,10 +527,8 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert meter_flow.generated_gold_paths == (
         "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
     )
-    assert meter_flow.source_chunk_ids == (
-        "chunk-gbb-guide-flow-report",
-        "chunk-gbb-procedures-scheduled-flow",
-        "chunk-sttm-procedures-settlement-terms",
+    assert meter_flow.source_chunk_ids == _gold_source_chunk_ids(
+        *meter_flow.generated_gold_paths,
     )
 
     flow = registry_entry_by_concept_id("flow-context", entries)
@@ -536,10 +545,8 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert flow.generated_gold_paths == (
         "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
     )
-    assert flow.source_chunk_ids == (
-        "chunk-gbb-guide-flow-report",
-        "chunk-gbb-procedures-scheduled-flow",
-        "chunk-sttm-procedures-settlement-terms",
+    assert flow.source_chunk_ids == _gold_source_chunk_ids(
+        *flow.generated_gold_paths,
     )
 
     linepack = registry_entry_by_concept_id("linepack-context", entries)
@@ -554,9 +561,8 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     assert linepack.generated_gold_paths == (
         "tools/gas-market-knowledge-base/generated/gold/glossary/linepack.md",
     )
-    assert linepack.source_chunk_ids == (
-        "chunk-sttm-procedures-definitions",
-        "chunk-gbb-procedures-linepack-capacity-adequacy",
+    assert linepack.source_chunk_ids == _gold_source_chunk_ids(
+        *linepack.generated_gold_paths,
     )
 
 
@@ -620,21 +626,22 @@ def test_dashboard_registry_keeps_gold_context_as_metadata_paths() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md"
         in capacity.generated_gold_paths
     )
-    assert "chunk-gbb-procedures-capacity-outlooks" in capacity.source_chunk_ids
-    assert (
-        "tools/gas-market-knowledge-base/generated/silver/chunks/gbb/"
-        "bb-procedures/sha256-f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35/"
-        "chunk-gbb-procedures-capacity-outlooks.md" in capacity.silver_chunk_paths
+    assert capacity.source_chunk_ids == _gold_source_chunk_ids(
+        *capacity.generated_gold_paths,
     )
-    assert (
-        "f8b62c200c0e087fd69e1634ee041832c6f7cdfbf26800b2a572a27c02f35e35"
-        in capacity.source_hashes
+    assert set(capacity.source_hashes) == set(
+        _gold_source_hashes(*capacity.generated_gold_paths),
     )
 
     for generated_path in capacity.generated_gold_paths:
         assert (REPO_ROOT / generated_path).is_file()
 
-    for silver_chunk_path in capacity.silver_chunk_paths:
+    for chunk_id, silver_chunk_path in zip(
+        capacity.source_chunk_ids,
+        capacity.silver_chunk_paths,
+        strict=True,
+    ):
+        assert silver_chunk_path.endswith(f"{chunk_id}.md")
         assert (REPO_ROOT / silver_chunk_path).is_file()
 
 
@@ -745,6 +752,9 @@ def test_dashboard_registry_rejects_non_gas_model_backing_asset() -> None:
 
 def test_dashboard_registry_rejects_gold_paths_without_source_chunks() -> None:
     records = _registry_records()
+    records[-1]["generated_gold_paths"] = (
+        "tools/gas-market-knowledge-base/generated/gold/glossary/missing-context.md",
+    )
     records[-1]["source_chunk_ids"] = ()
 
     with pytest.raises(DashboardRegistryError, match="without source chunks"):
@@ -792,6 +802,162 @@ def test_dashboard_registry_parses_structured_source_chunks() -> None:
     )
     assert structured.source_hashes == ("structured-source-hash",)
     assert structured.source_chunks[0].complete
+
+
+def test_dashboard_registry_resolves_legacy_source_chunk_references() -> None:
+    known = registry_module._source_chunk_reference_by_id("chunk-gbb-guide-gas-day")
+    unknown = registry_module._source_chunk_reference_by_id("chunk-unknown")
+
+    assert known.chunk_id == "chunk-gbb-guide-gas-day"
+    assert known.complete
+    assert unknown == SourceChunkReference(chunk_id="chunk-unknown")
+
+
+def test_dashboard_registry_reads_generated_chunk_index_defensively(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index_path = tmp_path / "chunks.jsonl"
+    index_path.write_text(
+        "\n".join(
+            (
+                "",
+                '"not a mapping"',
+                json.dumps({"chunk_id": "missing-fields"}),
+                json.dumps(
+                    {
+                        "chunk_id": "chunk-valid",
+                        "path": "generated/silver/chunks/x/chunk-valid.md",
+                        "content_sha256": "source-hash",
+                    }
+                ),
+            )
+        ),
+        encoding="utf-8",
+    )
+    registry_module._generated_source_chunk_references_by_id.cache_clear()
+    monkeypatch.setattr(registry_module, "_REPO_ROOT", tmp_path)
+    monkeypatch.setattr(registry_module, "_SILVER_CHUNK_INDEX_PATH", "chunks.jsonl")
+
+    try:
+        references = registry_module._generated_source_chunk_references_by_id()
+    finally:
+        registry_module._generated_source_chunk_references_by_id.cache_clear()
+
+    assert tuple(references) == ("chunk-valid",)
+    assert references["chunk-valid"].silver_chunk_path == (
+        "tools/gas-market-knowledge-base/generated/silver/chunks/x/chunk-valid.md"
+    )
+    assert references["chunk-valid"].source_hash == "source-hash"
+
+
+def test_dashboard_registry_rejects_invalid_generated_chunk_index_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "chunks.jsonl").write_text("{not-json", encoding="utf-8")
+    registry_module._generated_source_chunk_references_by_id.cache_clear()
+    monkeypatch.setattr(registry_module, "_REPO_ROOT", tmp_path)
+    monkeypatch.setattr(registry_module, "_SILVER_CHUNK_INDEX_PATH", "chunks.jsonl")
+
+    try:
+        with pytest.raises(DashboardRegistryError, match="not valid JSON"):
+            registry_module._generated_source_chunk_references_by_id()
+    finally:
+        registry_module._generated_source_chunk_references_by_id.cache_clear()
+
+
+def test_dashboard_registry_generated_gold_metadata_handles_absent_or_invalid_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(registry_module, "_REPO_ROOT", tmp_path)
+    (tmp_path / "plain.md").write_text("# Plain", encoding="utf-8")
+    (tmp_path / "unterminated.md").write_text("---\n{}", encoding="utf-8")
+    (tmp_path / "empty.md").write_text("---\n\n---\n", encoding="utf-8")
+    (tmp_path / "list.md").write_text("---\n[]\n---\n", encoding="utf-8")
+
+    assert registry_module._generated_gold_metadata("missing.md") == {}
+    assert registry_module._generated_gold_metadata("plain.md") == {}
+    assert registry_module._generated_gold_metadata("unterminated.md") == {}
+    assert registry_module._generated_gold_metadata("empty.md") == {}
+    assert registry_module._generated_gold_metadata("list.md") == {}
+
+
+def test_dashboard_registry_validates_generated_gold_source_chunk_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "chunks.jsonl").write_text(
+        json.dumps(
+            {
+                "chunk_id": "chunk-valid",
+                "path": "generated/silver/chunks/x/chunk-valid.md",
+                "content_sha256": "source-hash",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "not-list.md").write_text(
+        '---\n{"source_chunk_ids": "chunk-valid"}\n---\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "not-string.md").write_text(
+        '---\n{"source_chunk_ids": [5]}\n---\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "valid.md").write_text(
+        '---\n{"source_chunk_ids": ["chunk-valid", "chunk-valid", "chunk-missing"]}\n---\n',
+        encoding="utf-8",
+    )
+    registry_module._generated_source_chunk_references_by_id.cache_clear()
+    monkeypatch.setattr(registry_module, "_REPO_ROOT", tmp_path)
+    monkeypatch.setattr(registry_module, "_SILVER_CHUNK_INDEX_PATH", "chunks.jsonl")
+
+    try:
+        with pytest.raises(DashboardRegistryError, match="must be a list"):
+            registry_module._source_chunks_from_generated_gold_paths(
+                ("not-list.md",), 1
+            )
+        with pytest.raises(DashboardRegistryError, match="must contain strings"):
+            registry_module._source_chunks_from_generated_gold_paths(
+                ("not-string.md",),
+                1,
+            )
+
+        source_chunks = registry_module._source_chunks_from_generated_gold_paths(
+            ("valid.md",),
+            1,
+        )
+    finally:
+        registry_module._generated_source_chunk_references_by_id.cache_clear()
+
+    assert tuple(chunk.chunk_id for chunk in source_chunks) == (
+        "chunk-valid",
+        "chunk-missing",
+    )
+    assert source_chunks[0].complete
+    assert not source_chunks[1].complete
+
+
+def test_dashboard_registry_ignores_generated_gold_paths_without_chunk_index(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry_module._generated_source_chunk_references_by_id.cache_clear()
+    monkeypatch.setattr(registry_module, "_REPO_ROOT", tmp_path)
+    monkeypatch.setattr(registry_module, "_SILVER_CHUNK_INDEX_PATH", "missing.jsonl")
+
+    try:
+        assert (
+            registry_module._source_chunks_from_generated_gold_paths(
+                ("missing.md",),
+                1,
+            )
+            == ()
+        )
+    finally:
+        registry_module._generated_source_chunk_references_by_id.cache_clear()
 
 
 def test_dashboard_registry_rejects_non_tuple_source_chunks() -> None:

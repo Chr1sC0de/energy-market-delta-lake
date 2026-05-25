@@ -1,0 +1,249 @@
+---
+{
+  "chunk_id": "chunk-cfd3cb494f50679914b5e4dd",
+  "chunk_ordinal": 36,
+  "chunk_text_sha256": "3b088f6c7063d3d48f417b1123a67e771f61ed0e63f3f9cb310dae505298d6ce",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 431.85878291015626,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 530.5656800000006,
+              "t": 453.84086291015626
+            },
+            "charspan": [
+              0,
+              116
+            ],
+            "page_no": 12
+          }
+        ],
+        "self_ref": "#/texts/154"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 412.53878291015627,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 523.98904,
+              "t": 421.2008629101563
+            },
+            "charspan": [
+              0,
+              99
+            ],
+            "page_no": 12
+          }
+        ],
+        "self_ref": "#/texts/155"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 366.67878291015626,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 528.4290400000001,
+              "t": 402.0008629101563
+            },
+            "charspan": [
+              0,
+              285
+            ],
+            "page_no": 12
+          }
+        ],
+        "self_ref": "#/texts/156"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 334.03878291015627,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 510.59732000000025,
+              "t": 356.02086291015627
+            },
+            "charspan": [
+              0,
+              109
+            ],
+            "page_no": 12
+          }
+        ],
+        "self_ref": "#/texts/157"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 301.51878291015623,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 532.0419200000005,
+              "t": 323.50086291015623
+            },
+            "charspan": [
+              0,
+              123
+            ],
+            "page_no": 12
+          }
+        ],
+        "self_ref": "#/texts/158"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 282.1987829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 411.27904,
+              "t": 290.86086291015636
+            },
+            "charspan": [
+              0,
+              67
+            ],
+            "page_no": 12
+          }
+        ],
+        "self_ref": "#/texts/159"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 262.87878291015636,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 301.81904,
+              "t": 271.5408629101563
+            },
+            "charspan": [
+              0,
+              45
+            ],
+            "page_no": 12
+          }
+        ],
+        "self_ref": "#/texts/160"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 216.91878291015632,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 530.0714000000007,
+              "t": 252.22086291015626
+            },
+            "charspan": [
+              0,
+              215
+            ],
+            "page_no": 12
+          }
+        ],
+        "self_ref": "#/texts/161"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md",
+    "source_manifest_line_number": 20,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/pipeline-capacity-trading-pct/procedures-policies-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/gas_supply_hubs/market_operations/gsh-exchange-agreement.pdf?rev=94860e2e688b4adcbb0b9d3593846af6&sc_lang=en"
+  },
+  "content_sha256": "5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "corpus": "pct",
+  "document_family": "pct__gas-supply-hub-exchange-agreement-v-17",
+  "document_family_id": "pct__gas-supply-hub-exchange-agreement-v-17",
+  "document_identity": "pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "document_title": "##### Gas Supply Hub exchange agreement v.17",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-cfd3cb494f50679914b5e4dd.md",
+  "heading_path": [
+    "2.1. Definitions"
+  ],
+  "path": "generated/silver/chunks/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-cfd3cb494f50679914b5e4dd.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md"
+}
+---
+
+Market Conduct Rules means the market conduct rules applicable to the Exchange in Part 22 of the National Gas Rules.
+Market Participant means a Trading Participant, a Reallocation Participant or a Broker Participant.
+Member means a person (other than the Operator) who is a party to the agreement constituted by this Exchange Agreement from time to time, by reason of that person (or an Agent Member for and on behalf of that person) having executed a Membership Agreement that has not been terminated.
+Membership Agreement means an agreement in the form of the Gas Supply Hub Membership Agreement in schedule 1.
+National Gas Law means the National Gas Law as set out in the Schedule to the National Gas (South Australia) Act 2008 (SA).
+National Gas Rules has the same meaning as in the National Gas Law.
+Net Swap Imbalance is defined in clause 15.4.
+Nominated DWGM Participant means in relation to a DWGM Transfer, a Trading Participant who is a party to the DWGM Transfer or the person nominated by the Trading Participant in its capacity as agent for that person.

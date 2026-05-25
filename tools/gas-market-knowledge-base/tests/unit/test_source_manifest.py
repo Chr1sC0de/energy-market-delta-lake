@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 
@@ -132,6 +133,31 @@ def test_source_manifest_filters_counts_and_sorts_fixture_rows(tmp_path: Path) -
         "excluded_by_decision_count": 2,
         "excluded_without_content_sha256_count": 1,
         "excluded_without_archive_storage_count": 1,
+    }
+
+
+def test_source_manifest_bounds_long_document_identity_path_parts() -> None:
+    long_family_id = (
+        "dwgm__wholesale-market-operations-procedures-this-document-contains-"
+        "the-accreditation-procedures-administered-pricing-procedures-capacity-"
+        "certificates-auction-procedures"
+    )
+
+    rows, _ = build_source_manifest_rows(
+        [_metadata_row(document_family_id=long_family_id)]
+    )
+
+    identity_parts = str(rows[0]["document_identity"]).split("/")
+    expected_digest = hashlib.sha256(long_family_id.encode("utf-8")).hexdigest()[:12]
+    assert len(identity_parts[1]) == 96
+    assert identity_parts[1].endswith(f"-{expected_digest}")
+    assert rows[0]["generated_paths"] == {
+        "silver_document_markdown": (
+            f"generated/silver/documents/{rows[0]['document_identity']}.md"
+        ),
+        "silver_chunks": f"generated/silver/chunks/{rows[0]['document_identity']}",
+        "silver_chunk_index": "generated/silver/index/chunks.jsonl",
+        "gold_context": f"generated/gold/{rows[0]['document_identity']}.md",
     }
 
 

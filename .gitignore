@@ -7,6 +7,7 @@ dist/
 !.ignore
 !.git
 !.dockerignore
+!.gitleaksignore
 !.pre-commit*
 !.agents
 !.agents/skills
