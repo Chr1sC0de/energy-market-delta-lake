@@ -41,6 +41,8 @@ class _FakeBrowserPage:
 
     def evaluate(self, expression: str, arg: object = None) -> object:
         self.evaluate_calls.append((expression, arg))
+        if isinstance(arg, dict) and arg.get("text") == "Traceback":
+            return False
         return True
 
     def screenshot(self, *, path: str, full_page: bool) -> bytes:
@@ -142,6 +144,7 @@ def test_print_plan_cli_outputs_json_without_playwright_dependency() -> None:
             "/marimo/gas_sttm_capacity_settlement/",
             "/marimo/gas_sttm_contingency_gas/",
             "/marimo/gas_sttm_market_settlement/",
+            "/marimo/gas_sttm_mos_allocation/",
             "/marimo/glossary_explorer/",
             "/marimo/heating_value_pressure/",
             "/marimo/hub_zone_explainer/",
@@ -163,7 +166,7 @@ def test_print_plan_cli_outputs_json_without_playwright_dependency() -> None:
         {"name": "desktop", "width": 1440, "height": 1100},
         {"name": "narrow", "width": 390, "height": 900},
     ]
-    assert len(payload["runs"]) == 70
+    assert len(payload["runs"]) == 72
     assert all(run["screenshot_path"] is None for run in payload["runs"])
 
 
@@ -440,12 +443,52 @@ def test_promotion_2ddac3f_batch_declares_browser_review_surface(
     }
 
 
+def test_promotion_9d437f_batch_declares_browser_review_surface(
+    tmp_path: Path,
+) -> None:
+    review = _load_review_script()
+
+    runs = review.build_review_plan(
+        "http://example.test:8000",
+        tmp_path,
+        routes=review.PROMOTED_DASHBOARD_ROUTES_9D437F,
+    )
+    route_payloads = {
+        run["route"]: run
+        for run in review.review_plan_payload(runs)["runs"]
+        if run["viewport"] == "desktop"
+    }
+
+    assert set(route_payloads) == set(review.PROMOTED_DASHBOARD_ROUTES_9D437F)
+    sttm_mos_allocation_payload = route_payloads["/marimo/gas_sttm_mos_allocation/"]
+
+    assert (
+        "STTM MOS/allocation read diagnostics"
+        in sttm_mos_allocation_payload["required_texts"]
+    )
+    assert (
+        "STTM MOS And Allocation Summary"
+        in sttm_mos_allocation_payload["required_texts"]
+    )
+    assert "Source Coverage" in sttm_mos_allocation_payload["required_texts"]
+    assert {
+        probe["description"] for probe in sttm_mos_allocation_payload["control_probes"]
+    } == {
+        "refresh data run button",
+        "gas-day dropdown",
+        "source-system dropdown",
+        "hub/zone dropdown",
+        "facility dropdown",
+    }
+
+
 def test_existing_promoted_dashboard_coverage_is_preserved() -> None:
     review = _load_review_script()
 
     assert "/marimo/gas_market_prices/" in review.PROMOTED_DASHBOARD_ROUTES
     assert "/marimo/gas_bid_offer_stack/" in review.PROMOTED_DASHBOARD_ROUTES
     assert "/marimo/capacity_transactions/" in review.PROMOTED_DASHBOARD_ROUTES
+    assert "/marimo/gas_sttm_mos_allocation/" in review.PROMOTED_DASHBOARD_ROUTES
 
 
 def test_review_run_checks_shadow_dom_text_and_controls() -> None:
@@ -474,6 +517,7 @@ def test_review_run_checks_shadow_dom_text_and_controls() -> None:
     assert wait_arg == {"text": "Dashboard brief", "exact": False}
     assert all("shadowRoot" in call[0] for call in page.evaluate_calls)
     assert [call[1] for call in page.evaluate_calls] == [
+        {"text": "Traceback", "exact": False},
         {"text": "Refresh readiness", "exact": True},
         {"text": "Refresh readiness", "exact": True},
     ]
@@ -483,5 +527,6 @@ def test_review_run_checks_shadow_dom_text_and_controls() -> None:
             "(http://example.test/marimo/data_readiness_overview/)"
         ),
         "verified required text: Dashboard brief",
+        "verified absent text: Traceback",
         "exercised controls: refresh readiness button",
     ]

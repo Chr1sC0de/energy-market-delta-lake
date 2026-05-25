@@ -61,12 +61,17 @@ PROMOTED_DASHBOARD_ROUTES_C47C461: tuple[str, ...] = (
 
 PROMOTED_DASHBOARD_ROUTES_2DDAC3F: tuple[str, ...] = ("/marimo/capacity_transactions/",)
 
+PROMOTED_DASHBOARD_ROUTES_9D437F: tuple[str, ...] = (
+    "/marimo/gas_sttm_mos_allocation/",
+)
+
 PROMOTED_DASHBOARD_ROUTES: tuple[str, ...] = (
     *PROMOTED_DASHBOARD_ROUTES_248,
     *PROMOTED_DASHBOARD_ROUTES_256,
     *PROMOTED_DASHBOARD_ROUTES_258,
     *PROMOTED_DASHBOARD_ROUTES_C47C461,
     *PROMOTED_DASHBOARD_ROUTES_2DDAC3F,
+    *PROMOTED_DASHBOARD_ROUTES_9D437F,
 )
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
@@ -1051,6 +1056,29 @@ REVIEW_SPECS: tuple[DashboardReviewSpec, ...] = (
             ),
         ),
     ),
+    DashboardReviewSpec(
+        route="/marimo/gas_sttm_mos_allocation/",
+        required_texts=(
+            "STTM MOS And Allocation",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "STTM MOS/allocation read diagnostics",
+            "Filters",
+            "STTM MOS And Allocation Summary",
+            "Source Coverage",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+            ControlProbe(description="gas-day dropdown", text="All gas dates"),
+            ControlProbe(
+                description="source-system dropdown",
+                text="All source systems",
+            ),
+            ControlProbe(description="hub/zone dropdown", text="All hubs"),
+            ControlProbe(description="facility dropdown", text="All facilities"),
+        ),
+    ),
 )
 
 
@@ -1174,6 +1202,9 @@ def _review_one_run(
         _require_visible_text(page, required_text, timeout_ms=timeout_ms)
     evidence.append(f"verified required text: {', '.join(run.required_texts)}")
 
+    _require_absent_visible_text(page, "Traceback")
+    evidence.append("verified absent text: Traceback")
+
     exercised_controls = _exercise_control_probes(
         page,
         run.control_probes,
@@ -1208,6 +1239,11 @@ def _require_visible_text(
         raise RuntimeError(
             f"required dashboard text was not visible: {text}"
         ) from visibility_error
+
+
+def _require_absent_visible_text(page: BrowserPage, text: str) -> None:
+    if _visible_text_present(page, text, exact=False):
+        raise RuntimeError(f"unexpected dashboard text was visible: {text}")
 
 
 def _exercise_control_probes(
