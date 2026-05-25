@@ -22,8 +22,9 @@ Use this page as the agent documentation map. The imperative policy lives in
   target**, **Full-access implementation pass**, **Issue completion review**,
   **Ready issue refresh**, **Exploratory acceptance review**, **Promotion**, and
   **Post-promotion review**, including **Post-Promotion deployment
-  classification**, deploy-repair issue creation after failed checkpointed
-  deployment evidence, and checkpointed Operator runs:
+  classification**, source-table archive replay recovery, deploy-repair issue
+  creation after failed checkpointed deployment evidence, and checkpointed
+  Operator runs:
   [ralph-loop.md](ralph-loop.md)
 - GitHub Issue queue rules:
   [issue-tracker.md](issue-tracker.md)
@@ -102,6 +103,7 @@ Use this page as the agent documentation map. The imperative policy lives in
   - `docs/agents/domain.md`
   - `docs/repository/documentation-sync.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
+  - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
   - `docs/adr/0010-gas-market-knowledge-base.md`
 - `sync.scope`: `operations`

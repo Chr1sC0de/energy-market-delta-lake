@@ -2242,8 +2242,13 @@ class BaselineGuardLoop(ralph.RalphLoop):
 
 
 class PromotionClassificationGit:
-    def __init__(self, changed_files: list[str]) -> None:
+    def __init__(
+        self,
+        changed_files: list[str],
+        file_texts: dict[tuple[str, str], str | None] | None = None,
+    ) -> None:
         self.changed_files = changed_files
+        self.file_texts = file_texts or {}
 
     def fetch_base(self, base: str, *, run_dir: Path) -> None:
         pass
@@ -2257,6 +2262,9 @@ class PromotionClassificationGit:
 
     def changed_files_between(self, *, base_ref: str, head_ref: str) -> list[str]:
         return sorted(self.changed_files)
+
+    def file_text_at_ref(self, ref: str, path: str) -> str | None:
+        return self.file_texts.get((ref, path))
 
     def promoted_source_commits(
         self, *, base_ref: str, head_ref: str
@@ -2307,9 +2315,10 @@ class PromotionClassificationProbeLoop(ralph.RalphLoop):
         config: ralph.LoopConfig,
         runner: FakeRunner,
         changed_files: list[str],
+        file_texts: dict[tuple[str, str], str | None] | None = None,
     ) -> None:
         super().__init__(config, runner)
-        self.git = PromotionClassificationGit(changed_files)
+        self.git = PromotionClassificationGit(changed_files, file_texts=file_texts)
 
     def _run_qa_commands(
         self,
@@ -2837,8 +2846,15 @@ class RalphHelperTests(unittest.TestCase):
             deployment["agent_workflow_paths"],
             [".agents/skills/ralph-loop/SKILL.md"],
         )
+        recovery = payload["source_table_replay_recovery"]
+        self.assertEqual(
+            recovery["status"],
+            ralph.POST_PROMOTION_SOURCE_TABLE_REPLAY_NOT_REQUIRED,
+        )
+        self.assertEqual(recovery["affected_tables"], [])
         self.assertIn("Post-Promotion deployment tier", stdout.getvalue())
         self.assertIn("redeploy-user-code", stdout.getvalue())
+        self.assertNotIn("aemo-replay-bronze-archive", stdout.getvalue())
         deployment_commands = {
             ralph.POST_PROMOTION_DEPLOYMENT_REDEPLOY_USER_CODE_COMMAND,
             ralph.POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND,
@@ -2848,6 +2864,143 @@ class RalphHelperTests(unittest.TestCase):
                 call.args and call.args[0] in deployment_commands
                 for call in runner.calls
             )
+        )
+
+    def test_direct_promotion_records_source_table_replay_recovery_guidance(
+        self,
+    ) -> None:
+        gbb_path = (
+            "backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/gbb/"
+            "gasbb_field_interest_v2.py"
+        )
+        vicgas_path = (
+            "backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/vicgas/"
+            "int934_v4_ecgs_contacts_1.py"
+        )
+        gbb_old = """
+defs = df_from_s3_keys_definitions_factory(
+    domain="gbb",
+    name_suffix="gasbb_field_interest_v2",
+    glob_pattern="gasbbgasfieldinterest*",
+    schema={},
+    schema_descriptions={},
+    surrogate_key_sources=["FieldInterestId", "CompanyId", "EffectiveDate"],
+)
+"""
+        gbb_new = """
+defs = df_from_s3_keys_definitions_factory(
+    domain="gbb",
+    name_suffix="gasbb_field_interest_v2",
+    glob_pattern="gasbbgasfieldinterest*",
+    schema={},
+    schema_descriptions={},
+    surrogate_key_sources=[
+        "FieldInterestId",
+        "CompanyId",
+        "EffectiveDate",
+        "GroupMembers",
+    ],
+)
+"""
+        vicgas_old = """
+defs = df_from_s3_keys_definitions_factory(
+    domain="vicgas",
+    name_suffix="int934_v4_ecgs_contacts_1",
+    glob_pattern="int934_v4_ecgs_contacts_1*",
+    schema={},
+    schema_descriptions={},
+    surrogate_key_sources=["company_id", "first_name", "last_name"],
+)
+"""
+        vicgas_new = """
+defs = df_from_s3_keys_definitions_factory(
+    domain="vicgas",
+    name_suffix="int934_v4_ecgs_contacts_1",
+    glob_pattern="int934_v4_ecgs_contacts_1*",
+    schema={},
+    schema_descriptions={},
+    surrogate_key_sources=[
+        "company_id",
+        "first_name",
+        "last_name",
+        "contact_email",
+    ],
+)
+"""
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            config = make_loop(tmp_path, runner, promote=True).config
+            loop = PromotionClassificationProbeLoop(
+                config,
+                runner,
+                [gbb_path, vicgas_path],
+                file_texts={
+                    ("origin/main", gbb_path): gbb_old,
+                    ("source-sha", gbb_path): gbb_new,
+                    ("origin/main", vicgas_path): vicgas_old,
+                    ("source-sha", vicgas_path): vicgas_new,
+                },
+            )
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                manifest = loop._promote()
+
+            payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        deployment = payload["deployment_classification"]
+        self.assertEqual(
+            deployment["tier"],
+            ralph.POST_PROMOTION_DEPLOYMENT_USER_CODE,
+        )
+        recovery = payload["source_table_replay_recovery"]
+        self.assertEqual(
+            recovery["status"],
+            ralph.POST_PROMOTION_SOURCE_TABLE_REPLAY_REQUIRED,
+        )
+        self.assertEqual(
+            [table["table_id"] for table in recovery["affected_tables"]],
+            [
+                "gbb.bronze_gasbb_field_interest_v2",
+                "vicgas.bronze_int934_v4_ecgs_contacts_1",
+            ],
+        )
+        self.assertEqual(
+            recovery["affected_tables"][0]["old_surrogate_key_sources"],
+            ["FieldInterestId", "CompanyId", "EffectiveDate"],
+        )
+        self.assertEqual(
+            recovery["affected_tables"][0]["new_surrogate_key_sources"],
+            ["FieldInterestId", "CompanyId", "EffectiveDate", "GroupMembers"],
+        )
+        self.assertEqual(
+            recovery["affected_tables"][1]["old_surrogate_key_sources"],
+            ["company_id", "first_name", "last_name"],
+        )
+        self.assertEqual(
+            recovery["affected_tables"][1]["new_surrogate_key_sources"],
+            ["company_id", "first_name", "last_name", "contact_email"],
+        )
+        for table in recovery["affected_tables"]:
+            self.assertEqual(table["dry_run"]["cwd"], ralph.AEMO_ETL_SUBPROJECT_PATH)
+            self.assertEqual(table["replace"]["cwd"], ralph.AEMO_ETL_SUBPROJECT_PATH)
+            self.assertIn("aemo-replay-bronze-archive", table["dry_run"]["command"])
+            self.assertNotIn("--replace", table["dry_run"]["command"])
+            self.assertIn("--replace", table["replace"]["command"])
+
+        output = stdout.getvalue()
+        self.assertIn("Post-Promotion deployment tier: user_code_redeploy", output)
+        self.assertIn("Source-table archive replay recovery required", output)
+        self.assertIn(
+            "uv run aemo-replay-bronze-archive --table "
+            "gbb.bronze_gasbb_field_interest_v2",
+            output,
+        )
+        self.assertIn(
+            "uv run aemo-replay-bronze-archive --table "
+            "vicgas.bronze_int934_v4_ecgs_contacts_1 --replace",
+            output,
         )
 
     def test_parse_repo_slug_accepts_common_github_remote_forms(self) -> None:
@@ -13412,6 +13565,14 @@ Build it.
         )
         self.assertIn(
             "Do not create the follow-up issues yourself.",
+            runner.calls[review_index].input_text,
+        )
+        self.assertIn(
+            "run archive replay commands",
+            runner.calls[review_index].input_text,
+        )
+        self.assertIn(
+            "Source-table archive replay recovery guidance",
             runner.calls[review_index].input_text,
         )
         self.assertIn(

@@ -48,7 +48,8 @@ Subproject docs for detailed commands, defaults, diagrams, and behavior.
   **Issue completion review**, **Ready issue refresh**, **Exploratory
   acceptance review**, checkpointed Operator runs, **Promotion**,
   **Post-promotion review**, **Post-Promotion deployment classification**, and
-  deploy-repair issue creation behavior.
+  source-table archive replay recovery and deploy-repair issue creation
+  behavior.
 
 ## Sync metadata
 
@@ -59,6 +60,7 @@ Subproject docs for detailed commands, defaults, diagrams, and behavior.
   - `AGENTS.md`
   - `docs/README.md`
   - `docs/agents/README.md`
+  - `docs/agents/ralph-loop.md`
   - `docs/repository/architecture.md`
   - `docs/repository/workflow.md`
   - `docs/repository/documentation-sync.md`

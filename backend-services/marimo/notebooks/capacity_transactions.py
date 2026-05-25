@@ -67,34 +67,29 @@ def _():
 
 
 @app.cell
-def _(
-    CAPACITY_TRANSACTION_CONTEXT_ID,
-    mo,
-    render_capacity_transaction_context_links,
-    render_dashboard_context_panel,
-):
+def _(mo):
+    source_table_markup = (
+        '<code style="white-space: normal; overflow-wrap: anywhere; '
+        'word-break: break-word;">'
+        "silver.gas_model.<wbr>silver_gas_fact_capacity_<wbr>transaction"
+        "</code>"
+    )
     mo.vstack(
         [
-            mo.md("""
+            mo.md(f"""
             # Capacity Transactions
 
             **Dashboard brief**: **Dashboard intent**: Analytical. Operators
             and analysts use this dashboard to inspect bounded capacity and LNG
             transaction observations from
-            `silver.gas_model.silver_gas_fact_capacity_transaction`, including
-            transaction type, transaction and supply dates, source location,
-            source facility, quantity, volume, price, source-system, and
-            source-table fields. Data scope is read-only recent/sample Parquet
-            data from the configured `silver.gas_model` bucket plus copied
-            Marimo dashboard registry metadata for Capacity, Capacity Auctions,
-            market overview, source lineage, source coverage, and table
-            explorer context. Freshness, load status, cache state, row-limit
-            policy, and missing-source behavior come from the shared gas model
-            loader; unavailable tables, empty reads, filter misses, and missing
-            columns render designed empty states instead of notebook tracebacks.
+            {source_table_markup}, including
+            transaction type/date, source location/facility, quantity, volume,
+            price, source-system, and source-table fields. The view uses
+            read-only bounded recent/sample Parquet data from the configured
+            `silver.gas_model` bucket plus registry context. Freshness, load
+            status, cache state, row-limit policy, and empty or missing-source
+            behavior come from the shared gas model loader.
             """),
-            mo.Html(render_dashboard_context_panel(CAPACITY_TRANSACTION_CONTEXT_ID)),
-            mo.Html(render_capacity_transaction_context_links()),
         ]
     )
     return
@@ -153,6 +148,22 @@ def _(
                 },
                 multiple=False,
             ),
+        ]
+    )
+    return
+
+
+@app.cell
+def _(
+    CAPACITY_TRANSACTION_CONTEXT_ID,
+    mo,
+    render_capacity_transaction_context_links,
+    render_dashboard_context_panel,
+):
+    mo.vstack(
+        [
+            mo.Html(render_dashboard_context_panel(CAPACITY_TRANSACTION_CONTEXT_ID)),
+            mo.Html(render_capacity_transaction_context_links()),
         ]
     )
     return

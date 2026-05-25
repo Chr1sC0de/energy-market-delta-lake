@@ -789,6 +789,17 @@ class GitClient:
             line.strip() for line in result.stdout.splitlines() if line.strip()
         )
 
+    def file_text_at_ref(self, ref: str, path: str) -> str | None:
+        try:
+            result = self.runner.run(
+                ["git", "show", f"{ref}:{path}"], cwd=self.repo_root
+            )
+        except CommandFailure as error:
+            if error.returncode == 128:
+                return None
+            raise
+        return result.stdout
+
     def promoted_source_commits(
         self,
         *,
@@ -3771,6 +3782,42 @@ class RalphLoop:
             )
         return classification
 
+    def _record_post_promotion_source_table_replay_recovery(
+        self,
+        *,
+        changed_files: list[str],
+        base_ref: str,
+        head_ref: str,
+        manifest: RunManifest,
+    ) -> PostPromotionSourceTableReplayRecovery:
+        recovery = post_promotion_source_table_replay_recovery(
+            changed_files,
+            base_ref=base_ref,
+            head_ref=head_ref,
+            file_text_at_ref=self.git.file_text_at_ref,
+        )
+        manifest.record_source_table_replay_recovery(recovery)
+        if not recovery.affected_tables:
+            return recovery
+
+        emit("Source-table archive replay recovery required.")
+        emit(recovery.credential_boundary)
+        for table in recovery.affected_tables:
+            emit(
+                f"Source table {table.table_id}: surrogate_key_sources changed "
+                f"from {list(table.old_surrogate_key_sources)} to "
+                f"{list(table.new_surrogate_key_sources)}."
+            )
+            emit(
+                "Dry-run command: "
+                f"(cd {table.cwd} && {format_command(table.dry_run_command)})"
+            )
+            emit(
+                "Replace rebuild command: "
+                f"(cd {table.cwd} && {format_command(table.replace_command)})"
+            )
+        return recovery
+
     def _promote(self) -> RunManifest:
         source_branch = self.config.source_branch
         target_branch = self._promotion_target_branch()
@@ -3835,6 +3882,12 @@ class RalphLoop:
             )
             self._record_post_promotion_deployment_classification(
                 changed_files, manifest
+            )
+            self._record_post_promotion_source_table_replay_recovery(
+                changed_files=changed_files,
+                base_ref=promotion_base_ref,
+                head_ref=source_revision,
+                manifest=manifest,
             )
             if not changed_files:
                 emit(f"No changes to promote from {source_branch} to {target_branch}.")
@@ -4228,6 +4281,9 @@ class RalphLoop:
                     run_dir=run_dir,
                     promotion_outcome=promotion_outcome,
                     promotion_error=promotion_error,
+                    source_table_replay_recovery=manifest.data.get(
+                        "source_table_replay_recovery"
+                    ),
                     automatic_followups_enabled=(
                         promotion_outcome == "succeeded"
                         and not self.config.skip_post_promotion_followups
@@ -12017,6 +12073,7 @@ def post_promotion_review_prompt(
     run_dir: Path,
     promotion_outcome: str,
     promotion_error: str | None,
+    source_table_replay_recovery: object,
     automatic_followups_enabled: bool,
 ) -> str:
     changed_lines = "\n".join(f"- {path}" for path in changed_files)
@@ -12036,6 +12093,9 @@ def post_promotion_review_prompt(
         if automatic_followups_enabled
         else "disabled for this Promotion attempt"
     )
+    source_table_replay_recovery_text = json.dumps(
+        source_table_replay_recovery, indent=2, sort_keys=True
+    )
     return textwrap.dedent(
         f"""
         Run a Post-promotion review for {repo}.
@@ -12045,11 +12105,13 @@ def post_promotion_review_prompt(
         check, Push check, Local integration, Delivery mode, Integration
         target, and Promotion.
 
-        Do not edit repo files, commit, push, create issues directly, comment, label,
-        close, reopen, or edit GitHub Issues. You may read Promotion context and
-        GitHub Issues with `gh auth status`, `gh issue view`, `gh issue list`,
-        and `gh issue status` only. Report findings in the command output only;
-        Ralph will save your final Markdown report as `post-promotion-review.md`.
+        Do not edit repo files, commit, push, run AWS commands, run Pulumi
+        commands, run deployment commands, run archive replay commands, create
+        issues directly, comment, label, close, reopen, or edit GitHub Issues.
+        You may read Promotion context and GitHub Issues with `gh auth status`,
+        `gh issue view`, `gh issue list`, and `gh issue status` only. Report
+        findings in the command output only; Ralph will save your final
+        Markdown report as `post-promotion-review.md`.
         Automatic validated follow-up issue creation is {automatic_followups_text}.
 
         Review the Promotion attempt for regressions, missed issue evidence,
@@ -12121,6 +12183,12 @@ def post_promotion_review_prompt(
         Verified promoted issues:
 
         {issue_lines}
+
+        Source-table archive replay recovery guidance:
+
+        ```json
+        {source_table_replay_recovery_text}
+        ```
         """
     ).strip()
 

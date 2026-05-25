@@ -19,7 +19,6 @@ def _():
         cached_load_sttm_mos_allocation_tables,
         discover_dashboard_config,
         gas_table_load_status_frame,
-        gas_table_load_status_message,
         render_dashboard_context_panel,
         render_sttm_mos_allocation_context_links,
         sttm_allocation_limit_summary_frame,
@@ -47,7 +46,6 @@ def _():
         cached_load_sttm_mos_allocation_tables,
         discover_dashboard_config,
         gas_table_load_status_frame,
-        gas_table_load_status_message,
         mo,
         pl,
         refresh_token_from_control,
@@ -69,12 +67,7 @@ def _():
 
 
 @app.cell
-def _(
-    STTM_MOS_ALLOCATION_CONTEXT_ID,
-    mo,
-    render_dashboard_context_panel,
-    render_sttm_mos_allocation_context_links,
-):
+def _(mo):
     mo.vstack(
         [
             mo.md("""
@@ -82,21 +75,13 @@ def _(
 
             **Dashboard brief**: **Dashboard intent**: Analytical. Operators
             and analysts use this dashboard to inspect curated STTM MOS stack,
-            allocation quantity, allocation warning-limit, and default
-            allocation notice rows in `silver.gas_model`. Data scope is
-            `silver_gas_fact_sttm_mos_stack`,
-            `silver_gas_fact_sttm_allocation_quantity`,
-            `silver_gas_fact_sttm_allocation_limit`, and
-            `silver_gas_fact_sttm_default_allocation_notice`, including Gas
-            Day, Hub / Zone, Facility, source system, source report, MOS stack
-            quantity, allocation quantity, warning-limit, and default notice
-            fields where available. Freshness, row coverage, load timing, cache
-            status, and bounded preview policy come from the shared gas model
-            loader. Missing LocalStack/AWS data and filter matches with no rows
-            render as designed empty states instead of notebook tracebacks.
+            allocation quantities/limits, and default allocation notices in
+            `silver.gas_model`. Scope covers the four STTM MOS/allocation facts,
+            filterable by Gas Day, source system, Hub / Zone, and Facility.
+            Freshness, load timing, cache status, and bounded-read policy come
+            from the shared loader; missing data and no-match filters render as
+            designed empty states instead of Python error output.
             """),
-            mo.Html(render_dashboard_context_panel(STTM_MOS_ALLOCATION_CONTEXT_ID)),
-            mo.Html(render_sttm_mos_allocation_context_links()),
         ]
     )
     return
@@ -135,18 +120,41 @@ def _(
 @app.cell
 def _(
     gas_table_load_status_frame,
-    gas_table_load_status_message,
     mo,
     sttm_mos_allocation_loads,
 ):
+    available_table_count = sum(load.available for load in sttm_mos_allocation_loads)
+    unavailable_table_count = sum(
+        load.error is not None for load in sttm_mos_allocation_loads
+    )
+    cache_hit_count = sum(load.cache_hit for load in sttm_mos_allocation_loads)
+    total_duration_seconds = sum(
+        load.load_duration_seconds for load in sttm_mos_allocation_loads
+    )
+    row_limits = {
+        load.row_limit
+        for load in sttm_mos_allocation_loads
+        if load.row_limit is not None
+    }
+    if len(sttm_mos_allocation_loads) == 0:
+        read_policy = "No table reads requested"
+    elif not row_limits:
+        read_policy = "Full table scans enabled"
+    elif len(row_limits) == 1:
+        read_policy = f"Preview limited to {row_limits.pop()} rows per table"
+    else:
+        read_policy = "Mixed bounded preview row limits"
+
     mo.vstack(
         [
             mo.md(
-                f"""
-                ## Data Health
-
-                {gas_table_load_status_message(sttm_mos_allocation_loads)}
-                """
+                "## Data Health\n\n"
+                f"**Tables**: {available_table_count} of "
+                f"{len(sttm_mos_allocation_loads)} available; "
+                f"**unavailable**: {unavailable_table_count}; "
+                f"**load**: {total_duration_seconds:.2f} s; "
+                f"**cache**: {cache_hit_count} hits; "
+                f"**read policy**: {read_policy}."
             ),
             mo.accordion(
                 {
@@ -159,34 +167,6 @@ def _(
             ),
         ]
     )
-    return
-
-
-@app.cell
-def _(STTM_MOS_ALLOCATION_TABLE_SPECS, config, mo, pl):
-    config_frame = pl.DataFrame(
-        {
-            "setting": [
-                "AEMO bucket",
-                "Parquet root",
-                "MOS/allocation facts",
-                "AWS endpoint",
-                "AWS region",
-                "Environment",
-                "Preview rows",
-            ],
-            "value": [
-                config.aemo_bucket,
-                f"s3://{config.aemo_bucket}/silver/gas_model",
-                ", ".join(spec.table_name for spec in STTM_MOS_ALLOCATION_TABLE_SPECS),
-                config.aws_endpoint_url or "(default AWS)",
-                config.aws_region,
-                config.development_environment,
-                str(config.max_preview_rows),
-            ],
-        }
-    )
-    mo.ui.table(config_frame, selection=None)
     return
 
 
@@ -235,15 +215,8 @@ def _(
     mo.vstack(
         [
             mo.md("## Filters"),
-            mo.hstack(
-                [
-                    gas_date_filter,
-                    source_system_filter,
-                    hub_filter,
-                    facility_filter,
-                ],
-                gap=1,
-            ),
+            mo.hstack([gas_date_filter, source_system_filter], gap=1),
+            mo.hstack([hub_filter, facility_filter], gap=1),
         ],
         gap=0.5,
     )
@@ -294,6 +267,55 @@ def _(
             mo.md("## STTM MOS And Allocation Summary"),
             kpi_view,
             fact_summary_view,
+        ]
+    )
+    return
+
+
+@app.cell
+def _(
+    STTM_MOS_ALLOCATION_CONTEXT_ID,
+    mo,
+    render_dashboard_context_panel,
+    render_sttm_mos_allocation_context_links,
+):
+    mo.vstack(
+        [
+            mo.Html(render_dashboard_context_panel(STTM_MOS_ALLOCATION_CONTEXT_ID)),
+            mo.Html(render_sttm_mos_allocation_context_links()),
+        ]
+    )
+    return
+
+
+@app.cell
+def _(STTM_MOS_ALLOCATION_TABLE_SPECS, config, mo, pl):
+    config_frame = pl.DataFrame(
+        {
+            "setting": [
+                "AEMO bucket",
+                "Parquet root",
+                "MOS/allocation facts",
+                "AWS endpoint",
+                "AWS region",
+                "Environment",
+                "Preview rows",
+            ],
+            "value": [
+                config.aemo_bucket,
+                f"s3://{config.aemo_bucket}/silver/gas_model",
+                ", ".join(spec.table_name for spec in STTM_MOS_ALLOCATION_TABLE_SPECS),
+                config.aws_endpoint_url or "(default AWS)",
+                config.aws_region,
+                config.development_environment,
+                str(config.max_preview_rows),
+            ],
+        }
+    )
+    mo.vstack(
+        [
+            mo.md("## Runtime Configuration"),
+            mo.ui.table(config_frame, selection=None),
         ]
     )
     return

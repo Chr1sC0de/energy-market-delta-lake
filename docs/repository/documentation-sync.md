@@ -282,6 +282,17 @@ way:
   [docs/agents/issue-tracker.md](../agents/issue-tracker.md),
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md), and ADR
   [0009](../adr/0009-ralph-post-promotion-deployment-classification.md).
+- #263: Ralph **Promotion** records source-table archive replay recovery
+  guidance when a promoted AEMO ETL `df_from_s3_keys` source-table definition
+  changes `surrogate_key_sources`. The manifest stores affected source-table
+  IDs and dry-run plus `--replace` `aemo-replay-bronze-archive --table`
+  commands without running AWS, Pulumi, deployment, or archive replay commands
+  from direct Promotion or sandboxed **Post-promotion review**. The contract
+  lives in [OPERATOR.md](../../OPERATOR.md),
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md), ADR
+  [0009](../adr/0009-ralph-post-promotion-deployment-classification.md), and
+  ADR
+  [0003](../adr/0003-bounded-current-state-bronze-source-tables.md).
 - #168: Ralph owns the risk-based **Issue completion review** gate after
   implementation QA and before **Local integration**, Trunk push, or
   Exploratory handoff. The gate receives read-only GitHub Issue access, records
@@ -351,6 +362,7 @@ These commands support the intended flow:
   - `docs/agents/README.md`
   - `docs/agents/issue-tracker.md`
   - `docs/agents/ralph-loop.md`
+  - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
