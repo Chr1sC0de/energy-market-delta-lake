@@ -50,11 +50,31 @@ _REGISTRY_BACKED_CONCEPT_IDS = frozenset(
         "schema-data-dictionary-explorer",
     }
 )
-_REPO_ROOT = Path(__file__).resolve().parents[4]
 _GAS_MARKET_KB_PREFIX = "tools/gas-market-knowledge-base"
 _SILVER_CHUNK_INDEX_PATH = (
     f"{_GAS_MARKET_KB_PREFIX}/generated/silver/index/chunks.jsonl"
 )
+
+
+def _repo_root_for_module(module_path: Path) -> Path:
+    resolved = module_path.resolve()
+    for parent in resolved.parents:
+        if (parent / _SILVER_CHUNK_INDEX_PATH).is_file():
+            return parent
+    if (
+        len(resolved.parents) > 1
+        and resolved.parents[0].name == "marimoserver"
+        and resolved.parents[1].name == "marimo"
+    ):
+        return resolved.parents[1]
+    if len(resolved.parents) > 4:
+        return resolved.parents[4]
+    if len(resolved.parents) > 1:
+        return resolved.parents[1]
+    return resolved.parent
+
+
+_REPO_ROOT = _repo_root_for_module(Path(__file__))
 
 
 @dataclass(frozen=True)
