@@ -1183,7 +1183,7 @@ class RunManifest:
                 "number": warning.issue.number,
                 "title": warning.issue.title,
                 "url": warning.issue.url,
-                "integrated_commit": None,
+                "integrated_commit": warning.integrated_commit,
                 "metadata_status": warning.metadata_status,
                 "warning": warning.reason,
                 "recovery_action": warning.recovery_action,

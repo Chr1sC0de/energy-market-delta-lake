@@ -4909,11 +4909,18 @@ class RalphLoop:
                     "Exploratory acceptance commit."
                 )
                 continue
-            if not self._commit_is_in_promotion_range(
-                commit_sha,
-                source_ref=source_ref,
-                target_branch=target_branch,
-            ):
+            target_ref = f"origin/{target_branch}"
+            if self.git.is_ancestor(ancestor=commit_sha, descendant=target_ref):
+                warning = already_promoted_gitflow_issue_warning(
+                    issue,
+                    integrated_commit=commit_sha,
+                    target_branch=target_branch,
+                )
+                warnings.append(warning)
+                emit(f"Promotion warning: {warning.reason}", err=True)
+                emit(f"Recovery action: {warning.recovery_action}", err=True)
+                continue
+            if not self.git.is_ancestor(ancestor=commit_sha, descendant=source_ref):
                 emit(
                     f"Skipping #{issue.number}: commit {commit_sha} is not in "
                     f"origin/{target_branch}..{source_ref} from {source_branch}."
@@ -4921,22 +4928,6 @@ class RalphLoop:
                 continue
             issues.append((issue, commit_sha))
         return issues, warnings
-
-    def _commit_is_in_promotion_range(
-        self,
-        commit_sha: str,
-        *,
-        source_ref: str,
-        target_branch: str,
-    ) -> bool:
-        target_ref = f"origin/{target_branch}"
-        return self.git.is_ancestor(
-            ancestor=commit_sha,
-            descendant=source_ref,
-        ) and not self.git.is_ancestor(
-            ancestor=commit_sha,
-            descendant=target_ref,
-        )
 
     def _close_promoted_issues(
         self,

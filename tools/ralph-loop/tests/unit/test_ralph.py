@@ -14745,6 +14745,217 @@ Build it.
             "closed",
         )
 
+    def test_promotion_closes_recovered_gitflow_issue_with_local_integration_commit_line(
+        self,
+    ) -> None:
+        recovered_sha = "114676ec1523a91c4d6cc94c7201cd44a30c310a"
+        issue_list = issue_list_command()
+        issue_comments = issue_comments_command(242)
+        target_ancestor_command = (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            recovered_sha,
+            "origin/main",
+        )
+        promotion_log_command = (
+            "git",
+            "log",
+            "--reverse",
+            "--format=%H%x00%s",
+            "origin/main..source-sha",
+        )
+        recovered_comment = "\n".join(
+            [
+                "Recovered stale Ralph run and completed Gitflow Local integration "
+                "for this issue.",
+                "",
+                "Integrated to `dev`:",
+                f"- Local integration commit: `{recovered_sha}`.",
+                "- Pushed `dev`: `27a9bfa5..114676ec`.",
+                "",
+                "Leaving this open under `delivery-gitflow` for Promotion from "
+                "`dev` to `main`.",
+            ]
+        )
+        runner = FakeRunner(
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+            command_outputs={
+                issue_list: [json.dumps([issue_payload(242, ["agent-integrated"])])],
+                issue_comments: [
+                    json.dumps({"comments": [{"body": recovered_comment}]})
+                ],
+                promotion_log_command: [
+                    f"{recovered_sha}\x00Recovered Gitflow Local integration\n"
+                ],
+            },
+            fail_commands={target_ancestor_command: 1},
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+            )
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "close",
+                "242",
+                "-R",
+                "example/repo",
+                "--reason",
+                "completed",
+            ),
+            commands,
+        )
+        self.assertEqual(
+            manifest["promotion_commit_inventory"]["commits"],
+            [
+                {
+                    "sha": recovered_sha,
+                    "subject": "Recovered Gitflow Local integration",
+                    "verified_local_integration": True,
+                    "classification": "verified_local_integration",
+                    "issue": {
+                        "number": 242,
+                        "title": "Issue 242",
+                        "url": "https://github.com/example/repo/issues/242",
+                    },
+                    "integrated_commit": recovered_sha,
+                },
+            ],
+        )
+        self.assertEqual(manifest["github_metadata"]["issues"][0]["number"], 242)
+        self.assertEqual(
+            manifest["github_metadata"]["issues"][0]["integrated_commit"],
+            recovered_sha,
+        )
+        self.assertEqual(
+            manifest["github_metadata"]["issues"][0]["metadata_status"],
+            "closed",
+        )
+
+    def test_promotion_records_recovery_for_integrated_commit_already_on_target(
+        self,
+    ) -> None:
+        recovered_sha = "114676ec1523a91c4d6cc94c7201cd44a30c310a"
+        issue_list = issue_list_command()
+        issue_comments = issue_comments_command(242)
+        promotion_log_command = (
+            "git",
+            "log",
+            "--reverse",
+            "--format=%H%x00%s",
+            "origin/main..source-sha",
+        )
+        recovered_comment = "\n".join(
+            [
+                "Recovered stale Ralph run and completed Gitflow Local integration "
+                "for this issue.",
+                "",
+                "Integrated to `dev`:",
+                f"- Local integration commit: `{recovered_sha}`.",
+                "",
+                "Leaving this open under `delivery-gitflow` for Promotion from "
+                "`dev` to `main`.",
+            ]
+        )
+        runner = FakeRunner(
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["source-sha\n", "promotion-sha\n"],
+            command_outputs={
+                issue_list: [json.dumps([issue_payload(242, ["agent-integrated"])])],
+                issue_comments: [
+                    json.dumps({"comments": [{"body": recovered_comment}]})
+                ],
+                promotion_log_command: [
+                    "def5678\x00Manual follow-up after issue integration\n"
+                ],
+            },
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+            )
+            stderr = io.StringIO()
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "comment") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "close") for command in commands)
+        )
+        self.assertIn(
+            f"Promotion warning: #242 has recorded Gitflow Local integration commit "
+            f"{recovered_sha} already reachable from origin/main",
+            stderr.getvalue(),
+        )
+        self.assertEqual(
+            manifest["promotion_commit_inventory"]["commits"],
+            [
+                {
+                    "sha": "def5678",
+                    "subject": "Manual follow-up after issue integration",
+                    "verified_local_integration": False,
+                    "classification": "unverified_promotion_commit",
+                },
+            ],
+        )
+        self.assertEqual(
+            manifest["github_metadata"]["status"],
+            "verified_issues_with_warnings",
+        )
+        self.assertEqual(
+            manifest["github_metadata"]["issues"],
+            [
+                {
+                    "number": 242,
+                    "title": "Issue 242",
+                    "url": "https://github.com/example/repo/issues/242",
+                    "integrated_commit": recovered_sha,
+                    "metadata_status": "integrated_commit_already_promoted",
+                    "warning": (
+                        "#242 has recorded Gitflow Local integration commit "
+                        f"{recovered_sha} already reachable from origin/main, but "
+                        "the GitHub Issue is still open with agent-integrated."
+                    ),
+                    "recovery_action": (
+                        "Confirm issue #242 is still open with `agent-integrated`, "
+                        "then replace `agent-integrated` with `agent-merged` and "
+                        "close it as completed, or rerun Ready issue refresh to "
+                        "reconcile the stale post-Promotion metadata."
+                    ),
+                },
+            ],
+        )
+
     def test_promotion_warns_on_unparseable_manual_recovery_evidence(self) -> None:
         recovered_sha = "7c4599f152ca03b125d9ef4c93fdd1900af2195c"
         issue_list_command = (

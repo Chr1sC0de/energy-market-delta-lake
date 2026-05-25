@@ -76,6 +76,10 @@ QA_RUNTIME_MIN_FREE_INODES_ENV = "RALPH_QA_RUNTIME_MIN_FREE_INODES"
 DIRTY_WORKTREE_STATUS_PREVIEW_LIMIT = 12
 COMMAND_READ_CHUNK_SIZE = 65536
 COMMIT_LINE_PATTERN = re.compile(r"(?m)^Commit: `(?P<sha>[0-9a-f]{7,40})`$")
+LOCAL_INTEGRATION_COMMIT_LINE_PATTERN = re.compile(
+    r"(?im)^\s*(?:[-*]\s*)?Local integration commit:\s*"
+    r"`(?P<sha>[0-9a-f]{7,40})`\.?\s*$"
+)
 RUN_MANIFEST_LINE_PATTERN = re.compile(
     r"(?im)^\s*(?:-\s*)?run manifest:\s*(?P<path>.+?)\s*$"
 )
@@ -89,6 +93,10 @@ MANUAL_GITFLOW_RECOVERY_HINT_PATTERN = re.compile(
 )
 GITFLOW_RECOVERY_CONTEXT_PATTERN = re.compile(
     r"(?is)\b(gitflow|agent-integrated|integrat(?:e|ed|ion)|origin/dev)\b|`dev`"
+)
+RECOVERED_LOCAL_INTEGRATION_CONTEXT_PATTERN = re.compile(
+    r"(?is)\b(this issue|delivery-gitflow|agent-integrated|for Promotion|"
+    r"Gitflow Local integration)\b"
 )
 MANIFEST_NAME = "ralph-run.json"
 MANIFEST_SCHEMA_VERSION = 1
@@ -768,6 +776,7 @@ class PromotionIssueWarning:
     metadata_status: str
     reason: str
     recovery_action: str
+    integrated_commit: str | None = None
 
 
 @dataclass(frozen=True)
@@ -4505,11 +4514,31 @@ def integrated_commit_from_comments(comments: list[dict[str, Any]]) -> str | Non
     for comment in reversed(comments):
         body = str(comment.get("body") or "")
         if not any(title in body for title in evidence_titles):
+            commit_sha = recovered_local_integration_commit_from_body(body)
+            if commit_sha is not None:
+                return commit_sha
             continue
-        match = COMMIT_LINE_PATTERN.search(body)
+        commit_sha = integration_commit_from_evidence_body(body)
+        if commit_sha is not None:
+            return commit_sha
+    return None
+
+
+def integration_commit_from_evidence_body(body: str) -> str | None:
+    for pattern in (COMMIT_LINE_PATTERN, LOCAL_INTEGRATION_COMMIT_LINE_PATTERN):
+        match = pattern.search(body)
         if match is not None:
             return match.group("sha")
     return None
+
+
+def recovered_local_integration_commit_from_body(body: str) -> str | None:
+    match = LOCAL_INTEGRATION_COMMIT_LINE_PATTERN.search(body)
+    if match is None:
+        return None
+    if RECOVERED_LOCAL_INTEGRATION_CONTEXT_PATTERN.search(body) is None:
+        return None
+    return match.group("sha")
 
 
 def has_manual_gitflow_recovery_evidence(comments: list[dict[str, Any]]) -> bool:
@@ -4550,4 +4579,30 @@ def manual_gitflow_recovery_commit_warning(
         metadata_status="manual_recovery_commit_unparseable",
         reason=reason,
         recovery_action=recovery_action,
+    )
+
+
+def already_promoted_gitflow_issue_warning(
+    issue: Issue,
+    *,
+    integrated_commit: str,
+    target_branch: str,
+) -> PromotionIssueWarning:
+    reason = (
+        f"#{issue.number} has recorded Gitflow Local integration commit "
+        f"{integrated_commit} already reachable from origin/{target_branch}, "
+        "but the GitHub Issue is still open with agent-integrated."
+    )
+    recovery_action = (
+        f"Confirm issue #{issue.number} is still open with `{AGENT_INTEGRATED_LABEL}`, "
+        f"then replace `{AGENT_INTEGRATED_LABEL}` with `{AGENT_MERGED_LABEL}` and "
+        "close it as completed, or rerun Ready issue refresh to reconcile the stale "
+        "post-Promotion metadata."
+    )
+    return PromotionIssueWarning(
+        issue=issue,
+        metadata_status="integrated_commit_already_promoted",
+        reason=reason,
+        recovery_action=recovery_action,
+        integrated_commit=integrated_commit,
     )

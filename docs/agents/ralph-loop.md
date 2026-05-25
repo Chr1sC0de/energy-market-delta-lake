@@ -922,6 +922,12 @@ documented contract, it emits a warning with the recovery action and records
 `manual_recovery_commit_unparseable` in the Promotion manifest instead of
 leaving the issue silently unreconciled.
 
+Promotion also accepts legacy recovered Gitflow evidence that records the
+commit as `Local integration commit: <dev-commit-sha>` when the surrounding
+comment clearly describes completed Gitflow **Local integration** for that
+issue. This keeps historical recovery comments usable without requiring an
+operator to rewrite evidence before Promotion.
+
 ## Implementation pass
 
 An implementation issue must have these sections:
@@ -1328,6 +1334,13 @@ an open `agent-integrated` issue has manual recovery evidence but no parseable
 commit, Ralph warns with the exact recovery action and records the issue under
 `github_metadata.issues` with
 `metadata_status: manual_recovery_commit_unparseable`.
+If Ralph parses a recorded Gitflow **Local integration** commit but finds that
+the commit is already reachable from `origin/main`, it records the open issue
+under `github_metadata.issues` with
+`metadata_status: integrated_commit_already_promoted`, the parsed commit SHA,
+and recovery guidance to replace `agent-integrated` with `agent-merged` and
+close the issue as completed, or rerun **Ready issue refresh** to reconcile the
+stale post-Promotion metadata.
 Per-issue Promotion comments describe promoted files as the full
 Promotion-range file inventory, not as files owned only by the issue being
 closed. Successful Promotions with changed files then run a **Post-promotion

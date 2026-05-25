@@ -112,9 +112,15 @@ including each promoted commit SHA and subject. Commits matching verified issue
 `integrated_commit` values are treated as verified issue evidence commits, while
 other commits remain visible as unverified **Promotion** commits in the manifest
 and **Post-promotion review** prompt. Manual Gitflow recovery comments are
-verified only when they use the documented title plus `Commit:` line; otherwise
-Promotion warns and records the issue as
-`manual_recovery_commit_unparseable` without silently closing or forgetting it.
+verified when they use the documented title plus `Commit:` line, or when legacy
+recovered evidence records the completed Gitflow **Local integration** commit
+as `Local integration commit: <sha>`. If Promotion parses recovered Gitflow
+evidence but finds the recorded **Local integration** commit already reachable
+from `origin/main`, it records `integrated_commit_already_promoted` recovery
+metadata instead of silently omitting the still-open `agent-integrated` issue.
+If manual recovery evidence does not contain a parseable commit, Promotion
+warns and records the issue as `manual_recovery_commit_unparseable` without
+silently closing or forgetting it.
 Successful Promotions also record deterministic **Post-Promotion deployment
 classification** from the changed-file inventory. Agent workflow-only
 Promotions select `no_deployment`; deployed AEMO ETL user-code runtime changes
