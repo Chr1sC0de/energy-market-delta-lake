@@ -218,8 +218,9 @@ Ralph internals live in [docs/agents/ralph-loop.md](../agents/ralph-loop.md),
 including **Local integration**, **Delivery mode**, **Integration target**,
 **Issue completion review**, **Ready issue refresh**, **Exploratory acceptance
 review**, checkpointed Operator runs, **Promotion**, **Post-promotion review**,
-**Post-Promotion deployment classification**, and deploy-repair issue creation
-after failed checkpointed deployment evidence.
+**Post-Promotion deployment classification**, source-table archive replay
+recovery guidance, and deploy-repair issue creation after failed checkpointed
+deployment evidence.
 
 ## Where to work
 

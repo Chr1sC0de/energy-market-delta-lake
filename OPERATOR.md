@@ -277,6 +277,18 @@ Direct `$ralph-loop promote` also records
 **Post-Promotion deployment classification** in the Promotion manifest and
 prints the recommended deployment action. This is report-only: direct Promotion
 does not run AWS or Pulumi commands.
+If the promoted diff changes `surrogate_key_sources` for an existing AEMO ETL
+`df_from_s3_keys` source-table definition, direct Promotion also records
+`source_table_replay_recovery` and prints table-specific archive replay
+commands. Run the dry-run command first from the AEMO ETL **Subproject**, then
+run the `--replace` command only after confirming the archive scope:
+
+```bash
+cd backend-services/dagster-user/aemo-etl
+uv run aemo-replay-bronze-archive --table <table>
+uv run aemo-replay-bronze-archive --table <table> --replace
+```
+
 The checkpointed Operator run path uses the same recorded classifier only after
 successful Promotion metadata updates, **Post-promotion review**, follow-up
 creation, and **Ready issue refresh** have completed. It records the deployment
@@ -309,10 +321,13 @@ deployable subset. Ralph reports the Agent workflow paths as non-triggering
 context so operators can see why those paths did not raise the deployment tier.
 The **AWS/Pulumi credential boundary** keeps deployed workflow credentials in
 the operator/Ralph outer loop; sandboxed Codex subprocesses and
-**Post-promotion review** do not receive AWS or Pulumi credentials. The
-deploy-failure analysis subprocess also receives no AWS or Pulumi credentials
-and is explicitly prohibited from running AWS, Pulumi, or deployment commands
-or mutating GitHub Issues directly.
+**Post-promotion review** do not receive AWS or Pulumi credentials. Source-table
+archive replay follows that same boundary: Ralph reports
+`aemo-replay-bronze-archive` commands, but direct Promotion, sandboxed
+**Post-promotion review**, and sandboxed implementation subprocesses do not run
+archive replay. The deploy-failure analysis subprocess also receives no AWS or
+Pulumi credentials and is explicitly prohibited from running AWS, Pulumi, or
+deployment commands or mutating GitHub Issues directly.
 During AFK issue implementation, Codex may update deployed-test expectations
 for future validation, but it must not run `pulumi up`, AWS CLI live checks,
 deployed tests, or `scripts/run-integration-tests`. Those checks belong to the
@@ -468,6 +483,7 @@ Keep failed worktrees unless the maintainer asks for cleanup.
   - `backend-services/scripts/aemo-etl-e2e`
   - `docs/agents/issue-tracker.md`
   - `docs/agents/triage-labels.md`
+  - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`

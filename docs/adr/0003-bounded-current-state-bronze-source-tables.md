@@ -108,6 +108,15 @@ contents from the selected archive scope. A dry-run result is the evidence that
 the target table, archive prefix, file count, batch count, and total bytes match
 the intended rebuild.
 
+Ralph **Promotion** records recovery guidance for source-table key migrations.
+When the promoted diff changes `surrogate_key_sources` for an existing
+`df_from_s3_keys` source-table definition, the **Promotion** manifest records
+the affected source-table IDs plus dry-run and `--replace`
+`aemo-replay-bronze-archive --table <table>` commands. This guidance is
+operator-owned recovery only: direct Promotion, sandboxed **Post-promotion
+review**, and sandboxed implementation subprocesses do not run AWS, Pulumi, or
+archive replay commands.
+
 ## Sync metadata
 
 - `sync.owner`: `docs`
@@ -160,6 +169,10 @@ the intended rebuild.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
+  - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/state.py`
+  - `tools/ralph-loop/src/ralph_loop/workflow.py`
+  - `tools/ralph-loop/tests/unit/test_ralph.py`
   - `docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md`
 - `sync.scope`: `architecture, operations`
 - `sync.qa`:

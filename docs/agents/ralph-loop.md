@@ -11,7 +11,9 @@ Exploratory handoff, plus **Promotion** as the success paths after QA.
 Risky implementation paths also pass an automated **Issue completion review**
 before Ralph updates an **Integration target** or publishes an Exploratory
 handoff. Promotion records a deterministic **Post-Promotion deployment
-classification** from the promoted changed-file inventory.
+classification** from the promoted changed-file inventory and source-table
+archive replay recovery guidance when a Promotion changes existing source-table
+`surrogate_key_sources`.
 
 ## Table of contents
 
@@ -717,6 +719,13 @@ Key fields for inspection:
   deployable paths, non-triggering **Agent workflow changes**, and other
   non-triggering paths. Direct Promotion records this field and prints the
   recommendation without running AWS or Pulumi commands.
+- `source_table_replay_recovery`: deterministic recovery guidance for
+  promoted AEMO ETL source-table `surrogate_key_sources` changes. When an
+  existing `df_from_s3_keys` source-table definition changes key columns, the
+  manifest records affected table IDs, old and new key sources, and dry-run and
+  `--replace` `aemo-replay-bronze-archive --table <table>` commands from the
+  AEMO ETL **Subproject**. Direct Promotion and **Post-promotion review** do
+  not run AWS, Pulumi, deployment, or archive replay commands.
 - `deploy_repair_issues`: deploy-failure analysis status, Markdown artifact
   path, created issue URLs, duplicate source-marker skips, validation downgrades
   to `needs-triage`, warning-only creation failures, and recovery guidance for
@@ -1171,13 +1180,37 @@ idempotency evidence. The classifier uses three tiers:
   changed. The recommendation is
   `infrastructure/aws-pulumi/scripts/run-integration-tests --with-idempotency`.
 
+Ralph also compares changed AEMO ETL raw source-table definitions between the
+Promotion base and source revision. If an existing `df_from_s3_keys`
+source-table definition changes `surrogate_key_sources`, Ralph records
+`source_table_replay_recovery` in the **Promotion** manifest and prints
+operator commands for each affected table:
+
+```bash
+cd backend-services/dagster-user/aemo-etl
+uv run aemo-replay-bronze-archive --table gbb.bronze_gasbb_field_interest_v2
+uv run aemo-replay-bronze-archive --table gbb.bronze_gasbb_field_interest_v2 --replace
+```
+
+The first command is the required dry-run evidence. Operators should run the
+`--replace` command only after confirming the archive scope, planned batches,
+total bytes, and target Delta table URI. This recovery guidance augments the
+deployment classification: a source-table key migration under AEMO ETL user
+code can still classify as `user_code_redeploy` while also requiring
+table-specific archive replay recovery. Ralph records and prints the commands
+only; direct Promotion, sandboxed **Post-promotion review**, and sandboxed
+implementation subprocesses must not run archive replay.
+
 When a Promotion mixes **Agent workflow changes** with deployable paths, Ralph
 classifies only the deployable subset and reports the Agent workflow paths as
 non-triggering context. The **AWS/Pulumi credential boundary** keeps deployed
 workflow credentials in the operator/Ralph outer loop: sandboxed Codex
 subprocesses and **Post-promotion review** receive no AWS or Pulumi
-credentials, and direct Promotion only reports the command an operator should
-run later from the AWS Pulumi **Subproject**.
+credentials, and direct Promotion only reports the deployment command an
+operator should run later from the AWS Pulumi **Subproject**. Source-table
+archive replay uses the same boundary: Ralph may report the AEMO ETL
+`aemo-replay-bronze-archive` commands, but credentials and execution remain
+operator-owned outside sandboxed review.
 The same boundary applies to allowlisted **Operator smoke** commands for
 Exploratory delivery: implementation subprocesses may prepare scripts and docs,
 but AWS and Pulumi credentials stay in Ralph's operator-owned outer loop.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import errno
 import json
 import os
@@ -208,6 +209,11 @@ DEPLOY_REPAIR_REQUIRED_ISSUE_SECTIONS = (
     "QA/deploy verification plan",
 )
 AEMO_ETL_PREFIX = "backend-services/dagster-user/aemo-etl/"
+AEMO_ETL_SUBPROJECT_PATH = AEMO_ETL_PREFIX.rstrip("/")
+AEMO_ETL_RAW_SOURCE_TABLE_PREFIX = f"{AEMO_ETL_PREFIX}src/aemo_etl/defs/raw/"
+AEMO_ETL_STTM_SOURCE_TABLE_MANIFEST_PATH = (
+    f"{AEMO_ETL_RAW_SOURCE_TABLE_PREFIX}sttm/source_tables.json"
+)
 MARIMO_PREFIX = "backend-services/marimo/"
 RALPH_LOOP_PREFIX = "tools/ralph-loop/"
 INTEGRATION_TARGET_BASELINE_GUARD_CHANGED_FILES = (
@@ -228,6 +234,15 @@ POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND = (
     "infrastructure/aws-pulumi/scripts/run-integration-tests"
 )
 POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG = "--with-idempotency"
+POST_PROMOTION_SOURCE_TABLE_REPLAY_REQUIRED = "required"
+POST_PROMOTION_SOURCE_TABLE_REPLAY_NOT_REQUIRED = "not_required"
+AEMO_REPLAY_BRONZE_ARCHIVE_COMMAND = "aemo-replay-bronze-archive"
+POST_PROMOTION_SOURCE_TABLE_REPLAY_CREDENTIAL_BOUNDARY = (
+    "Ralph records source-table archive replay guidance only. Direct Promotion "
+    "and Post-promotion review do not run AWS, Pulumi, or archive replay "
+    "commands; an operator runs the commands from the AEMO ETL Subproject with "
+    "the required deployed credentials."
+)
 OPERATOR_SMOKE_SECTION = "Operator smoke"
 OPERATOR_SMOKE_EC2_RUN_WORKER_PLACEMENT_ID = "ec2-run-worker-placement"
 OPERATOR_SMOKE_EC2_RUN_WORKER_PLACEMENT_COMMAND = (
@@ -892,6 +907,56 @@ class PostPromotionDeploymentClassification:
             "agent_workflow_paths": list(self.agent_workflow_paths),
             "non_triggering_paths": list(self.non_triggering_paths),
         }
+
+
+@dataclass(frozen=True)
+class SourceTableSurrogateKeyChange:
+    table_id: str
+    definition_path: str
+    old_surrogate_key_sources: tuple[str, ...]
+    new_surrogate_key_sources: tuple[str, ...]
+    dry_run_command: tuple[str, ...]
+    replace_command: tuple[str, ...]
+    cwd: str
+
+    def to_manifest(self) -> dict[str, Any]:
+        return {
+            "table_id": self.table_id,
+            "definition_path": self.definition_path,
+            "old_surrogate_key_sources": list(self.old_surrogate_key_sources),
+            "new_surrogate_key_sources": list(self.new_surrogate_key_sources),
+            "dry_run": {
+                "cwd": self.cwd,
+                "command": list(self.dry_run_command),
+            },
+            "replace": {
+                "cwd": self.cwd,
+                "command": list(self.replace_command),
+            },
+        }
+
+
+@dataclass(frozen=True)
+class PostPromotionSourceTableReplayRecovery:
+    status: str
+    reason: str
+    affected_tables: tuple[SourceTableSurrogateKeyChange, ...]
+    credential_boundary: str
+
+    def to_manifest(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "reason": self.reason,
+            "affected_tables": [table.to_manifest() for table in self.affected_tables],
+            "credential_boundary": self.credential_boundary,
+        }
+
+
+@dataclass(frozen=True)
+class DFFromS3KeysSourceTableDefinition:
+    table_id: str
+    definition_path: str
+    surrogate_key_sources: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -3230,6 +3295,223 @@ def classify_post_promotion_deployment(
         full_workflow_paths=full_workflow_paths,
         agent_workflow_paths=agent_workflow_paths,
         non_triggering_paths=non_triggering_paths,
+    )
+
+
+def is_aemo_etl_source_table_definition_path(changed_file: str) -> bool:
+    normalized_path = changed_file.strip().removeprefix("./")
+    if normalized_path == AEMO_ETL_STTM_SOURCE_TABLE_MANIFEST_PATH:
+        return True
+    if not normalized_path.startswith(AEMO_ETL_RAW_SOURCE_TABLE_PREFIX):
+        return False
+    if not normalized_path.endswith(".py"):
+        return False
+    return not normalized_path.endswith("/__init__.py")
+
+
+def source_table_definition_candidate_paths(
+    changed_files: list[str],
+) -> tuple[str, ...]:
+    return tuple(
+        path
+        for path in normalized_changed_file_inventory(changed_files)
+        if is_aemo_etl_source_table_definition_path(path)
+    )
+
+
+def _string_literal(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _string_sequence_literal(node: ast.AST) -> tuple[str, ...] | None:
+    if not isinstance(node, (ast.List, ast.Tuple)):
+        return None
+    values: list[str] = []
+    for element in node.elts:
+        value = _string_literal(element)
+        if value is None:
+            return None
+        values.append(value)
+    return tuple(values)
+
+
+def _call_keyword(call: ast.Call, name: str) -> ast.AST | None:
+    for keyword in call.keywords:
+        if keyword.arg == name:
+            return keyword.value
+    return None
+
+
+def _source_table_definition_from_call(
+    call: ast.Call, *, path: str
+) -> DFFromS3KeysSourceTableDefinition | None:
+    function = call.func
+    if not (
+        isinstance(function, ast.Name)
+        and function.id == "df_from_s3_keys_definitions_factory"
+    ):
+        return None
+
+    domain_node = _call_keyword(call, "domain")
+    name_suffix_node = _call_keyword(call, "name_suffix")
+    surrogate_key_sources_node = _call_keyword(call, "surrogate_key_sources")
+    if (
+        domain_node is None
+        or name_suffix_node is None
+        or surrogate_key_sources_node is None
+    ):
+        return None
+
+    domain = _string_literal(domain_node)
+    name_suffix = _string_literal(name_suffix_node)
+    surrogate_key_sources = _string_sequence_literal(surrogate_key_sources_node)
+    if domain is None or name_suffix is None or surrogate_key_sources is None:
+        return None
+
+    return DFFromS3KeysSourceTableDefinition(
+        table_id=f"{domain}.bronze_{name_suffix}",
+        definition_path=path,
+        surrogate_key_sources=surrogate_key_sources,
+    )
+
+
+def _python_source_table_definitions(
+    path: str, source_text: str
+) -> tuple[DFFromS3KeysSourceTableDefinition, ...]:
+    tree = ast.parse(source_text, filename=path)
+    definitions: list[DFFromS3KeysSourceTableDefinition] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        definition = _source_table_definition_from_call(node, path=path)
+        if definition is not None:
+            definitions.append(definition)
+    return tuple(definitions)
+
+
+def _sttm_manifest_source_table_definitions(
+    path: str, source_text: str
+) -> tuple[DFFromS3KeysSourceTableDefinition, ...]:
+    payload = json.loads(source_text)
+    if not isinstance(payload, dict):
+        return ()
+    reports = payload.get("reports")
+    if not isinstance(reports, list):
+        return ()
+
+    definitions: list[DFFromS3KeysSourceTableDefinition] = []
+    for report in reports:
+        if not isinstance(report, dict):
+            continue
+        name_suffix = report.get("name_suffix")
+        surrogate_key_sources = report.get("surrogate_key_sources")
+        if not isinstance(name_suffix, str) or not isinstance(
+            surrogate_key_sources, list
+        ):
+            continue
+        source_columns: list[str] = []
+        for source in surrogate_key_sources:
+            if not isinstance(source, str):
+                source_columns = []
+                break
+            source_columns.append(source)
+        if not source_columns:
+            continue
+        definitions.append(
+            DFFromS3KeysSourceTableDefinition(
+                table_id=f"sttm.bronze_{name_suffix}",
+                definition_path=path,
+                surrogate_key_sources=tuple(source_columns),
+            )
+        )
+    return tuple(definitions)
+
+
+def source_table_definitions_from_text(
+    path: str, source_text: str
+) -> tuple[DFFromS3KeysSourceTableDefinition, ...]:
+    normalized_path = path.strip().removeprefix("./")
+    if normalized_path == AEMO_ETL_STTM_SOURCE_TABLE_MANIFEST_PATH:
+        return _sttm_manifest_source_table_definitions(normalized_path, source_text)
+    if is_aemo_etl_source_table_definition_path(normalized_path):
+        return _python_source_table_definitions(normalized_path, source_text)
+    return ()
+
+
+def _archive_replay_commands(table_id: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    dry_run = ("uv", "run", AEMO_REPLAY_BRONZE_ARCHIVE_COMMAND, "--table", table_id)
+    replace = (*dry_run, "--replace")
+    return dry_run, replace
+
+
+def post_promotion_source_table_replay_recovery(
+    changed_files: list[str],
+    *,
+    base_ref: str,
+    head_ref: str,
+    file_text_at_ref: Callable[[str, str], str | None],
+) -> PostPromotionSourceTableReplayRecovery:
+    affected_by_table: dict[str, SourceTableSurrogateKeyChange] = {}
+    for path in source_table_definition_candidate_paths(changed_files):
+        old_text = file_text_at_ref(base_ref, path)
+        new_text = file_text_at_ref(head_ref, path)
+        if old_text is None or new_text is None:
+            continue
+
+        old_definitions = {
+            definition.table_id: definition
+            for definition in source_table_definitions_from_text(path, old_text)
+        }
+        new_definitions = {
+            definition.table_id: definition
+            for definition in source_table_definitions_from_text(path, new_text)
+        }
+        for table_id in sorted(old_definitions.keys() & new_definitions.keys()):
+            old_definition = old_definitions[table_id]
+            new_definition = new_definitions[table_id]
+            if (
+                old_definition.surrogate_key_sources
+                == new_definition.surrogate_key_sources
+            ):
+                continue
+            dry_run_command, replace_command = _archive_replay_commands(table_id)
+            affected_by_table[table_id] = SourceTableSurrogateKeyChange(
+                table_id=table_id,
+                definition_path=new_definition.definition_path,
+                old_surrogate_key_sources=old_definition.surrogate_key_sources,
+                new_surrogate_key_sources=new_definition.surrogate_key_sources,
+                dry_run_command=dry_run_command,
+                replace_command=replace_command,
+                cwd=AEMO_ETL_SUBPROJECT_PATH,
+            )
+
+    affected_tables = tuple(
+        affected_by_table[table_id] for table_id in sorted(affected_by_table)
+    )
+    if affected_tables:
+        return PostPromotionSourceTableReplayRecovery(
+            status=POST_PROMOTION_SOURCE_TABLE_REPLAY_REQUIRED,
+            reason=(
+                "Promotion changed surrogate_key_sources for existing AEMO ETL "
+                "source-table definitions. Normal current-state ingestion retains "
+                "target rows absent from later source batches, so operators should "
+                "dry-run and then replace-rebuild the affected bronze tables from "
+                "archive storage."
+            ),
+            affected_tables=affected_tables,
+            credential_boundary=POST_PROMOTION_SOURCE_TABLE_REPLAY_CREDENTIAL_BOUNDARY,
+        )
+
+    return PostPromotionSourceTableReplayRecovery(
+        status=POST_PROMOTION_SOURCE_TABLE_REPLAY_NOT_REQUIRED,
+        reason=(
+            "No changed existing AEMO ETL source-table surrogate_key_sources were "
+            "detected in the Promotion changed-file inventory."
+        ),
+        affected_tables=(),
+        credential_boundary=POST_PROMOTION_SOURCE_TABLE_REPLAY_CREDENTIAL_BOUNDARY,
     )
 
 

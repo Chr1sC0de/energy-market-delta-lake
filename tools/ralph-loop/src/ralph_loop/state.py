@@ -257,6 +257,12 @@ class RunManifest:
                 "agent_workflow_paths": [],
                 "non_triggering_paths": [],
             },
+            "source_table_replay_recovery": {
+                "status": "not_started",
+                "reason": None,
+                "affected_tables": [],
+                "credential_boundary": None,
+            },
             "deployment_execution": {
                 "status": "not_started",
                 "tier": None,
@@ -458,6 +464,18 @@ class RunManifest:
                 "tier": classification.tier,
                 "deployable_path_count": len(classification.deployable_paths),
                 "agent_workflow_path_count": len(classification.agent_workflow_paths),
+            },
+        )
+
+    def record_source_table_replay_recovery(
+        self, recovery: PostPromotionSourceTableReplayRecovery
+    ) -> None:
+        self.data["source_table_replay_recovery"] = recovery.to_manifest()
+        self.record_event(
+            "source_table_replay_recovery_recorded",
+            details={
+                "status": recovery.status,
+                "affected_table_count": len(recovery.affected_tables),
             },
         )
 

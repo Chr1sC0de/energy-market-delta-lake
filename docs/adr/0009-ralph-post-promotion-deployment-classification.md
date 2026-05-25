@@ -44,6 +44,23 @@ recommendation, but does not invoke AWS, Pulumi, or deployment scripts.
 Issue attempts reuse the same classification snapshot in the implementation
 manifest when **Issue completion review** is required by deployable paths.
 
+Ralph also records source-table archive replay recovery guidance alongside, not
+inside, the deployment tier. When a Promotion changes `surrogate_key_sources`
+for an existing AEMO ETL `df_from_s3_keys` raw source-table definition, Ralph
+compares the Promotion base and source revision, maps the changed definition to
+its source-table ID, and writes `source_table_replay_recovery` in the Promotion
+manifest. Each affected table records old and new key sources plus dry-run and
+`--replace` commands from the AEMO ETL **Subproject**:
+
+```bash
+uv run aemo-replay-bronze-archive --table <table>
+uv run aemo-replay-bronze-archive --table <table> --replace
+```
+
+This recovery guidance does not change the deployment tier. A promoted
+source-table key migration can still classify as `user_code_redeploy`; the
+archive replay commands are additional operator recovery instructions.
+
 The checkpointed Operator path consumes the recorded decision after successful
 Promotion metadata updates, **Post-promotion review**, follow-up creation, and
 post-Promotion **Ready issue refresh**. It records `deployment_execution` in
@@ -59,7 +76,10 @@ The **AWS/Pulumi credential boundary** remains in the operator/Ralph outer loop:
 deployment commands may run only when the checkpointed Operator path or another
 explicit Ralph outer-loop automation owns the AWS and Pulumi credentials.
 Sandboxed Codex subprocesses and **Post-promotion review** remain outside that
-credential boundary.
+credential boundary. Source-table archive replay follows the same boundary:
+Ralph may record and print `aemo-replay-bronze-archive` dry-run and `--replace`
+commands, but direct Promotion and sandboxed **Post-promotion review** must not
+run them.
 Allowlisted **Operator smoke** commands for selected **Exploratory delivery**
 issues use the same boundary: Codex may prepare scripts and docs, but the
 credentialed deployed smoke runs only from Ralph's operator-owned outer loop
@@ -75,6 +95,12 @@ Operators can review the Promotion manifest and terminal output to decide the
 post-Promotion deployed action without re-reading every changed path. Agent
 workflow-only Promotions have a deterministic no-deploy rule, so Ralph changes
 do not create needless AWS work.
+
+Operators can also see when source-table key migrations need table-specific
+archive replay. The manifest preserves deterministic table IDs and commands, so
+operators can dry-run the archive scope before replacing current-state bronze
+tables whose old key shape may have left retained rows that normal ingestion
+will not delete.
 
 The user-code redeploy tier preserves the narrow existing AWS Pulumi command for
 Dagster user-code image, task definition, and ECS service updates. Platform,
