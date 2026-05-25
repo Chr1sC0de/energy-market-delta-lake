@@ -143,11 +143,12 @@ Available registry entries link only when their backing notebook is mounted in
 the current image. Planned entries stay visible as roadmap cards but do not
 emit notebook links. The same registry is served as JSON from
 `/marimo/dashboard-registry.json` so future Marimo notebooks can render context
-panels without reading the Gas market knowledge base generated files at
-runtime. Generated-gold paths, source chunk IDs, silver chunk paths, and source
-hashes are copied metadata only. In AWS mode this remains read-only, uses the
-existing dashboard image contents, and does not require a Docker build-context
-change.
+panels without reading Gas market knowledge base Markdown directly. When the
+packaged generated corpus is present, the registry loader resolves current
+source chunk IDs, silver chunk paths, and source hashes from generated gold
+frontmatter and the silver chunk index. In AWS mode this remains read-only,
+uses the existing dashboard image contents, and does not require a Docker
+build-context change.
 
 Registry-backed dashboards that only browse registry metadata may have no
 backing `silver.gas_model` assets. The concept gallery renders those entries as
@@ -157,10 +158,9 @@ registry metadata only instead of inventing table dependencies.
 `render_dashboard_context_panel()` for notebooks that need the same registry
 context in-page. The helper renders the concept summary, dashboard usage
 metadata, related concepts, generated-gold paths, source chunk IDs, and backing
-`silver.gas_model` assets from the registry without opening generated gold
-Markdown at runtime. It also exposes silver chunk paths and source hashes when
-the registry has them. The available roadmap notebooks call it with their
-registry concept IDs near the top of the notebook.
+`silver.gas_model` assets from the parsed registry. It also exposes silver
+chunk paths and source hashes when the registry has them. The available roadmap
+notebooks call it with their registry concept IDs near the top of the notebook.
 
 [src/marimoserver/bounded_read_diagnostics.py](src/marimoserver/bounded_read_diagnostics.py)
 renders the AWS bounded-read diagnostic surface from environment-derived
@@ -176,11 +176,12 @@ to list seeded glossary concepts from the Marimo-local dashboard registry and
 show each concept's generated-gold metadata path, source chunk IDs, inferred
 related concepts, and planned or available dashboard links.
 
-The dashboard does not read generated gold Markdown at runtime. Missing
-generated-gold paths or source chunk IDs render as validation-visible gaps
-inside the concept card rather than fallback prose. Its first viewport includes
-a registry health strip with source, freshness, concept count, scope,
-available-dashboard count, planned-dashboard count, and metadata-gap count.
+The dashboard consumes the parsed registry rather than opening generated gold
+Markdown itself. Missing generated-gold paths or source chunk IDs render as
+validation-visible gaps inside the concept card rather than fallback prose. Its
+first viewport includes a registry health strip with source, freshness, concept
+count, scope, available-dashboard count, planned-dashboard count, and
+metadata-gap count.
 
 ## Concept-to-asset explorer
 
@@ -191,8 +192,8 @@ to map generated-gold glossary concepts such as Flow, Capacity, Settlement,
 Facility, and Participant to backing `silver.gas_model` assets from the
 Marimo-local dashboard registry.
 
-The dashboard reads no table rows and does not open generated gold Markdown at
-runtime. Its first viewport shows registry health, mapped asset count,
+The dashboard reads no table rows and consumes generated-gold lineage through
+the parsed registry. Its first viewport shows registry health, mapped asset count,
 available dashboard count, planned dashboard count, and coverage-gap count.
 Concept cards link to mounted dashboard routes, planned concept-gallery cards,
 and Gas Model Table Explorer deep links where the registry asset can be
@@ -226,11 +227,12 @@ to list dashboard concept metadata alongside generated-gold paths, source chunk
 IDs, silver chunk paths, and source hashes from the code-local Marimo dashboard
 registry.
 
-The dashboard reads no table rows and does not open generated gold or silver
-Markdown at runtime. Its first viewport shows registry health, complete-record
-count, coverage-gap count, source chunk count, and source hash count. Concept
-cards make incomplete citation-chain metadata visible as registry coverage gaps
-instead of copying generated corpus prose into maintained docs.
+The dashboard reads no table rows and consumes generated-gold and silver
+lineage through the parsed registry. Its first viewport shows registry health,
+complete-record count, coverage-gap count, source chunk count, and source hash
+count. Concept cards make incomplete citation-chain metadata visible as
+registry coverage gaps instead of copying generated corpus prose into
+maintained docs.
 
 ## Data readiness overview
 

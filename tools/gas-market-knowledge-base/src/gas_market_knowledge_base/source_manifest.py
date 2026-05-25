@@ -1,5 +1,6 @@
 """Bronze source manifest builder for AEMO gas document metadata rows."""
 
+import hashlib
 import json
 import re
 from collections.abc import Iterable, Mapping, Sequence
@@ -15,6 +16,8 @@ DEFAULT_ENVIRONMENT = "dev"
 DEFAULT_NAME_PREFIX = "energy-market"
 SOURCE_MANIFEST_RELATIVE_PATH = Path("generated/bronze/source_manifest.jsonl")
 MANIFEST_SCHEMA_VERSION = 1
+MAX_DOCUMENT_IDENTITY_PART_CHARS = 96
+DOCUMENT_IDENTITY_HASH_CHARS = 12
 
 REQUIRED_METADATA_FIELDS = frozenset(
     {
@@ -339,7 +342,12 @@ def _path_part(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     if not slug:
         return "unknown"
-    return slug
+    if len(slug) <= MAX_DOCUMENT_IDENTITY_PART_CHARS:
+        return slug
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    prefix_length = MAX_DOCUMENT_IDENTITY_PART_CHARS - DOCUMENT_IDENTITY_HASH_CHARS - 1
+    prefix = slug[:prefix_length].rstrip("-")
+    return f"{prefix}-{digest[:DOCUMENT_IDENTITY_HASH_CHARS]}"
 
 
 def _archive_uri(

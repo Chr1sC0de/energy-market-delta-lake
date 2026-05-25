@@ -1,0 +1,67 @@
+---
+{
+  "chunk_id": "chunk-cb0014866cefa32d2dccd888",
+  "chunk_ordinal": 278,
+  "chunk_text_sha256": "665b7f3958d663b07ce9da46d9817ec8fb6a3f674b3add9ee55674dc07a494e1",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/180"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 288.9187829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 534.7807200000002,
+              "t": 337.5408629101563
+            },
+            "charspan": [
+              0,
+              385
+            ],
+            "page_no": 75
+          }
+        ],
+        "self_ref": "#/texts/1535"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md",
+    "source_manifest_line_number": 20,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/pipeline-capacity-trading-pct/procedures-policies-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/gas_supply_hubs/market_operations/gsh-exchange-agreement.pdf?rev=94860e2e688b4adcbb0b9d3593846af6&sc_lang=en"
+  },
+  "content_sha256": "5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "corpus": "pct",
+  "document_family": "pct__gas-supply-hub-exchange-agreement-v-17",
+  "document_family_id": "pct__gas-supply-hub-exchange-agreement-v-17",
+  "document_identity": "pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "document_title": "##### Gas Supply Hub exchange agreement v.17",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-cb0014866cefa32d2dccd888.md",
+  "heading_path": [
+    "18.5. Disputes on Revised Statements"
+  ],
+  "path": "generated/silver/chunks/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-cb0014866cefa32d2dccd888.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md"
+}
+---
+
+- (c) If a dispute under this clause is resolved in a way that causes the adjusted net amount payable for a Billing Period to differ from the amount calculated under the disputed Revised Statement, the Operator must, within 5 Business Days of the resolution of that dispute, make a further Revised Statement available to each Market Participant affected by the resolution of the dispute.

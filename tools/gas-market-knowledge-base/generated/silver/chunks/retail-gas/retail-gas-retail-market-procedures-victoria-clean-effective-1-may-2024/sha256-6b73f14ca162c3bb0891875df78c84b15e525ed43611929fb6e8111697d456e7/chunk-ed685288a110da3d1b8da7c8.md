@@ -1,0 +1,145 @@
+---
+{
+  "chunk_id": "chunk-ed685288a110da3d1b8da7c8",
+  "chunk_ordinal": 248,
+  "chunk_text_sha256": "59d842b74ad18ad1597d08abc8c55712d4f950bc6642083be81ba3edf84d62c5",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/125"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 721.2350158383331,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 138.62,
+              "r": 530.42464,
+              "t": 745.1771029101562
+            },
+            "charspan": [
+              0,
+              99
+            ],
+            "page_no": 63
+          }
+        ],
+        "self_ref": "#/texts/1017"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/125"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 670.2350158383331,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 104.06,
+              "r": 530.42224,
+              "t": 708.0971029101562
+            },
+            "charspan": [
+              0,
+              191
+            ],
+            "page_no": 63
+          }
+        ],
+        "self_ref": "#/texts/1018"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/125"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 633.155015838333,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 104.06,
+              "r": 530.45152,
+              "t": 657.0971029101562
+            },
+            "charspan": [
+              0,
+              154
+            ],
+            "page_no": 63
+          }
+        ],
+        "self_ref": "#/texts/1019"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/125"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 582.155015838333,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 104.06,
+              "r": 530.4284799999999,
+              "t": 620.1371029101563
+            },
+            "charspan": [
+              0,
+              209
+            ],
+            "page_no": 63
+          }
+        ],
+        "self_ref": "#/texts/1020"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/retail-gas/retail-gas-retail-market-procedures-victoria-clean-effective-1-may-2024/sha256-6b73f14ca162c3bb0891875df78c84b15e525ed43611929fb6e8111697d456e7.md",
+    "source_manifest_line_number": 35,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-retail-markets/procedures-policies-and-guides/victoria",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/retail_markets_and_metering/market-procedures/vic/2024/retail-market-procedures-victoria--version-180-clean.pdf?rev=36c4c14afff845fbb66943cbf02601c4&sc_lang=en"
+  },
+  "content_sha256": "6b73f14ca162c3bb0891875df78c84b15e525ed43611929fb6e8111697d456e7",
+  "corpus": "retail_gas",
+  "document_family": "retail-gas__retail-market-procedures-victoria-clean-effective-1-may-2024",
+  "document_family_id": "retail-gas__retail-market-procedures-victoria-clean-effective-1-may-2024",
+  "document_identity": "retail-gas/retail-gas-retail-market-procedures-victoria-clean-effective-1-may-2024/sha256-6b73f14ca162c3bb0891875df78c84b15e525ed43611929fb6e8111697d456e7",
+  "document_title": "##### Retail Market Procedures( Victoria) - (Clean) Effective 1 May 2024",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/retail-gas/retail-gas-retail-market-procedures-victoria-clean-effective-1-may-2024/sha256-6b73f14ca162c3bb0891875df78c84b15e525ed43611929fb6e8111697d456e7/chunk-ed685288a110da3d1b8da7c8.md",
+  "heading_path": [
+    "4.8.1  Notification by AEMO"
+  ],
+  "path": "generated/silver/chunks/retail-gas/retail-gas-retail-market-procedures-victoria-clean-effective-1-may-2024/sha256-6b73f14ca162c3bb0891875df78c84b15e525ed43611929fb6e8111697d456e7/chunk-ed685288a110da3d1b8da7c8.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/retail-gas/retail-gas-retail-market-procedures-victoria-clean-effective-1-may-2024/sha256-6b73f14ca162c3bb0891875df78c84b15e525ed43611929fb6e8111697d456e7.md"
+}
+---
+
+- immediately prior to the registration of that Market Participant as the FRO for that supply point ;
+- (c) where  the proposed  transfer  date nominated  in  the transfer  request is  a retrospective  transfer  date ,  the retrospectively  affected  FRO in  relation  to  the transfer request ;
+- (d) if  that supply  point is  a distribution  supply  point -  the Distributor in  whose distribution area that distribution supply point is located; and
+- (e) if  that supply  point is  a transmission  supply  point -  the transmission  system Service Provider with respect to that part of the transmission system on which the transmission supply point is located.

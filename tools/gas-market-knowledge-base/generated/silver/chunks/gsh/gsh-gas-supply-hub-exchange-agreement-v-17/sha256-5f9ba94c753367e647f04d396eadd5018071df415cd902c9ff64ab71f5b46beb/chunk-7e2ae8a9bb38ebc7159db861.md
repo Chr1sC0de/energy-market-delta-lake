@@ -1,0 +1,145 @@
+---
+{
+  "chunk_id": "chunk-7e2ae8a9bb38ebc7159db861",
+  "chunk_ordinal": 251,
+  "chunk_text_sha256": "cd3dc32f7645f48dd2b9ae5682f04316f52c160b742ae3571f9ea04c6c53df78",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/163"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 415.53878291015627,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 521.2849200000006,
+              "t": 437.52086291015627
+            },
+            "charspan": [
+              0,
+              145
+            ],
+            "page_no": 69
+          }
+        ],
+        "self_ref": "#/texts/1423"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/163"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 382.8987829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 518.6014400000006,
+              "t": 404.8808629101563
+            },
+            "charspan": [
+              0,
+              127
+            ],
+            "page_no": 69
+          }
+        ],
+        "self_ref": "#/texts/1424"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/163"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 350.35878291015626,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 533.3322800000008,
+              "t": 372.34086291015626
+            },
+            "charspan": [
+              0,
+              141
+            ],
+            "page_no": 69
+          }
+        ],
+        "self_ref": "#/texts/1425"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 331.03878291015627,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 518.22904,
+              "t": 339.7008629101563
+            },
+            "charspan": [
+              0,
+              91
+            ],
+            "page_no": 69
+          }
+        ],
+        "self_ref": "#/texts/1426"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md",
+    "source_manifest_line_number": 16,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-supply-hub-gsh/exchange-agreement-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/gas_supply_hubs/market_operations/gsh-exchange-agreement.pdf?rev=94860e2e688b4adcbb0b9d3593846af6&sc_lang=en"
+  },
+  "content_sha256": "5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "corpus": "gsh",
+  "document_family": "gsh__gas-supply-hub-exchange-agreement-v-17",
+  "document_family_id": "gsh__gas-supply-hub-exchange-agreement-v-17",
+  "document_identity": "gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "document_title": "##### Gas Supply Hub exchange agreement v.17",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-7e2ae8a9bb38ebc7159db861.md",
+  "heading_path": [
+    "15.2. Notification of delivered quantities"
+  ],
+  "path": "generated/silver/chunks/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-7e2ae8a9bb38ebc7159db861.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md"
+}
+---
+
+- (a) The Delivering Participant and the Receiving Participant in respect of a Delivery Quantity for delivery on a Gas Day may, at any time before:
+- (i) 9:00 am on the 14th Business Day after the end of the Billing Period in which the Gas Day falls (for a Final Statement); or
+- (ii) 9:00 am on the 1st Business Day of the 4th Billing Period after the Billing Period in which the Gas Day falls (for a Revised Statement),
+notify the Operator of the quantity of gas actually delivered and accepted on that Gas Day.

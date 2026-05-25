@@ -1,0 +1,145 @@
+---
+{
+  "chunk_id": "chunk-91ca84bbd6ea4a7b9191eb05",
+  "chunk_ordinal": 200,
+  "chunk_text_sha256": "8ae9fccb6576fa405dd8e550bf60210da1772a301938a1d5ad02ec4e17bb39d1",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/130"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 205.27878291015622,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 474.06904,
+              "t": 213.94086291015628
+            },
+            "charspan": [
+              0,
+              95
+            ],
+            "page_no": 56
+          }
+        ],
+        "self_ref": "#/texts/1169"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/130"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 159.40878291015633,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 527.4027200000007,
+              "t": 194.62086291015635
+            },
+            "charspan": [
+              0,
+              239
+            ],
+            "page_no": 56
+          }
+        ],
+        "self_ref": "#/texts/1170"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/130"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 113.4487829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 527.2433600000006,
+              "t": 148.75086291015623
+            },
+            "charspan": [
+              0,
+              236
+            ],
+            "page_no": 56
+          }
+        ],
+        "self_ref": "#/texts/1171"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 80.81278291015633,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 154.58,
+              "r": 534.2253200000009,
+              "t": 102.79486291015633
+            },
+            "charspan": [
+              0,
+              99
+            ],
+            "page_no": 56
+          }
+        ],
+        "self_ref": "#/texts/1172"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md",
+    "source_manifest_line_number": 20,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/pipeline-capacity-trading-pct/procedures-policies-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/gas_supply_hubs/market_operations/gsh-exchange-agreement.pdf?rev=94860e2e688b4adcbb0b9d3593846af6&sc_lang=en"
+  },
+  "content_sha256": "5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "corpus": "pct",
+  "document_family": "pct__gas-supply-hub-exchange-agreement-v-17",
+  "document_family_id": "pct__gas-supply-hub-exchange-agreement-v-17",
+  "document_identity": "pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "document_title": "##### Gas Supply Hub exchange agreement v.17",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-91ca84bbd6ea4a7b9191eb05.md",
+  "heading_path": [
+    "14.1. Application"
+  ],
+  "path": "generated/silver/chunks/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-91ca84bbd6ea4a7b9191eb05.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md"
+}
+---
+
+- (a) This clause 14 applies to a Trading Participant who is party to a Physical Gas Transaction:
+- (i) where Delivery Netting applies, in its capacity as a Delivering Participant or a Receiving Participant, in favour of the Trading Participant who is the corresponding Receiving Participant or Delivering Participant (as the case may be);
+- (ii) where Delivery Netting does not apply, in its capacity as the Seller or Buyer in that Physical Gas Transaction, in favour of the Trading Participant who is the corresponding Buyer or Seller (as the case may be) in that Transaction.
+Note:  Location Swap Transactions are Physical Gas Transactions for the purposes of this agreement.

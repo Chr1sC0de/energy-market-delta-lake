@@ -5,6 +5,7 @@ from marimoserver.dashboard_registry import (
     DashboardRegistryEntry,
     DashboardStatus,
     dashboard_registry,
+    registry_entry_by_concept_id,
 )
 from marimoserver.glossary_explorer import (
     GLOSSARY_GOLD_PREFIX,
@@ -54,7 +55,9 @@ def test_glossary_explorer_builds_concept_details_and_dashboard_references() -> 
     assert capacity is not None
     assert glossary_concept_by_generated_gold_path(explorer, "missing.md") is None
     assert capacity.title == "Capacity"
-    assert "chunk-gbb-procedures-capacity-outlooks" in capacity.source_chunk_ids
+    capacity_entry = registry_entry_by_concept_id("capacity-context")
+    assert capacity_entry is not None
+    assert capacity.source_chunk_ids == capacity_entry.source_chunk_ids
     assert any(
         reference.title == "Gas Market Overview"
         and reference.status is DashboardStatus.AVAILABLE
@@ -84,7 +87,9 @@ def test_glossary_explorer_html_renders_concept_details() -> None:
     assert "source chunk IDs" in html
     assert "related concepts" in html
     assert "dashboard links/statuses" in html
-    assert "chunk-gbb-procedures-capacity-outlooks" in html
+    capacity_entry = registry_entry_by_concept_id("capacity-context")
+    assert capacity_entry is not None
+    assert capacity_entry.source_chunk_ids[0] in html
     assert 'href="/marimo/sample_energy_market/"' in html
 
 

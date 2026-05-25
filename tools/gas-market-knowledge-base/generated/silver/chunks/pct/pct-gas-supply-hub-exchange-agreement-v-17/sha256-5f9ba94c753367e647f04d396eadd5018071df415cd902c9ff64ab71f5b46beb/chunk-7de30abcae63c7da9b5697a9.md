@@ -1,0 +1,145 @@
+---
+{
+  "chunk_id": "chunk-7de30abcae63c7da9b5697a9",
+  "chunk_ordinal": 175,
+  "chunk_text_sha256": "0a1765856ace523b15621acbbc227fc66aaded446482a107f70607e5deaba874",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/113"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 424.0587829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 511.1655600000005,
+              "t": 459.3608629101563
+            },
+            "charspan": [
+              0,
+              272
+            ],
+            "page_no": 50
+          }
+        ],
+        "self_ref": "#/texts/1037"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/113"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 378.2187829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 533.7050400000006,
+              "t": 413.52086291015627
+            },
+            "charspan": [
+              0,
+              272
+            ],
+            "page_no": 50
+          }
+        ],
+        "self_ref": "#/texts/1038"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/113"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 332.23878291015626,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 518.2072800000004,
+              "t": 367.5408629101563
+            },
+            "charspan": [
+              0,
+              286
+            ],
+            "page_no": 50
+          }
+        ],
+        "self_ref": "#/texts/1039"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/113"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 286.39878291015634,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 521.4841200000008,
+              "t": 321.7008629101563
+            },
+            "charspan": [
+              0,
+              249
+            ],
+            "page_no": 50
+          }
+        ],
+        "self_ref": "#/texts/1040"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md",
+    "source_manifest_line_number": 20,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/pipeline-capacity-trading-pct/procedures-policies-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/gas_supply_hubs/market_operations/gsh-exchange-agreement.pdf?rev=94860e2e688b4adcbb0b9d3593846af6&sc_lang=en"
+  },
+  "content_sha256": "5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "corpus": "pct",
+  "document_family": "pct__gas-supply-hub-exchange-agreement-v-17",
+  "document_family_id": "pct__gas-supply-hub-exchange-agreement-v-17",
+  "document_identity": "pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "document_title": "##### Gas Supply Hub exchange agreement v.17",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-7de30abcae63c7da9b5697a9.md",
+  "heading_path": [
+    "13.6. Transactions in error"
+  ],
+  "path": "generated/silver/chunks/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-7de30abcae63c7da9b5697a9.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md"
+}
+---
+
+- (a) The Operator may void any Transaction formed through the Trading System which the Operator reasonably considers has been formed as a result of a malfunction of the Trading System, and the Operator must notify the Seller and the Buyer as soon as reasonably practicable.
+- (b) Any Transaction formed through the Trading System is void if the Operator fails to send a confirmation (or information purporting to be a confirmation) to the Trading Participants by means of the Trading System within 4 hours after the time the Transaction was formed.
+- (c) In the case of Transactions formed as part of a Spread Product or based on an Implied Order, the Operator may void all Transactions formed in connection with the Spread Product or Implied Order even if the relevant malfunction or delay directly affects only one of the Transactions.
+- (d) If a Trading Participant becomes aware, or is of the opinion, that a Transaction has (or has not) been formed as a result of a malfunction of the Trading System, the Trading Participant must notify the Operator as soon as reasonably practicable.

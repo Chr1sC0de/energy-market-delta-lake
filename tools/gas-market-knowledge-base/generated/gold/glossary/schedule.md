@@ -4,19 +4,18 @@
   "generated_path": "generated/gold/glossary/schedule.md",
   "related_concepts": [
     "bid-offer",
-    "settlement",
-    "gas-day"
+    "flow",
+    "settlement"
   ],
   "schema_version": 1,
   "slug": "schedule",
   "source_chunk_ids": [
-    "chunk-sttm-procedures-spa-requirements",
-    "chunk-sttm-procedures-spa-outputs",
-    "chunk-dwgm-operations-glossary-schedule"
+    "chunk-49e8dd3114adbdcd92c368e3",
+    "chunk-5a8e037670d33e0339ed7630",
+    "chunk-c8b547c0105789fc5d3dba26"
   ],
   "source_hashes": [
-    "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93",
-    "dac5b2d83b332770261fdfb80ab07389611cc06cb1f48a2886bf1e9097d1fe07"
+    "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93"
   ],
   "title": "Schedule"
 }
@@ -24,18 +23,18 @@
 
 # Schedule
 
-## Definition
+    ## Definition
 
-A schedule is a market result produced by scheduling logic: the STTM SPA produces provisional and ex ante market schedule outputs, and the DWGM glossary defines a schedule as either an operating schedule or a pricing schedule. [[chunk:chunk-sttm-procedures-spa-requirements]] [[chunk:chunk-sttm-procedures-spa-outputs]] [[chunk:chunk-dwgm-operations-glossary-schedule]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]] [[source:sha256:dac5b2d83b332770261fdfb80ab07389611cc06cb1f48a2886bf1e9097d1fe07]]
+    A schedule is a market result produced by scheduling logic; the STTM SPA takes defined inputs and produces provisional or ex ante market schedule quantities, with procedures specifying when a schedule is taken to be issued. [[chunk:chunk-49e8dd3114adbdcd92c368e3]] [[chunk:chunk-5a8e037670d33e0339ed7630]] [[chunk:chunk-c8b547c0105789fc5d3dba26]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
 
-## Source Citations
+    ## Source Citations
 
-- `chunk-sttm-procedures-spa-requirements`: [silver chunk](../../silver/chunks/sttm/sttm-procedures-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93/chunk-sttm-procedures-spa-requirements.md) from [source document](../../silver/documents/sttm/sttm-procedures-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93.md); source hash `sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93`. [[chunk:chunk-sttm-procedures-spa-requirements]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
-- `chunk-sttm-procedures-spa-outputs`: [silver chunk](../../silver/chunks/sttm/sttm-procedures-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93/chunk-sttm-procedures-spa-outputs.md) from [source document](../../silver/documents/sttm/sttm-procedures-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93.md); source hash `sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93`. [[chunk:chunk-sttm-procedures-spa-outputs]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
-- `chunk-dwgm-operations-glossary-schedule`: [silver chunk](../../silver/chunks/dwgm/operations-procedures-2026/sha256-dac5b2d83b332770261fdfb80ab07389611cc06cb1f48a2886bf1e9097d1fe07/chunk-dwgm-operations-glossary-schedule.md) from [source document](../../silver/documents/dwgm/operations-procedures-2026/sha256-dac5b2d83b332770261fdfb80ab07389611cc06cb1f48a2886bf1e9097d1fe07.md); source hash `sha256:dac5b2d83b332770261fdfb80ab07389611cc06cb1f48a2886bf1e9097d1fe07`. [[chunk:chunk-dwgm-operations-glossary-schedule]] [[source:sha256:dac5b2d83b332770261fdfb80ab07389611cc06cb1f48a2886bf1e9097d1fe07]]
+    - `chunk-49e8dd3114adbdcd92c368e3`: [silver chunk](../../silver/chunks/sttm/sttm-sttm-procedures-effective-date-3-march-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93/chunk-49e8dd3114adbdcd92c368e3.md) from [source document](../../silver/documents/sttm/sttm-sttm-procedures-effective-date-3-march-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93.md); source hash `sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93`. [[chunk:chunk-49e8dd3114adbdcd92c368e3]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
+- `chunk-5a8e037670d33e0339ed7630`: [silver chunk](../../silver/chunks/sttm/sttm-sttm-procedures-effective-date-3-march-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93/chunk-5a8e037670d33e0339ed7630.md) from [source document](../../silver/documents/sttm/sttm-sttm-procedures-effective-date-3-march-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93.md); source hash `sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93`. [[chunk:chunk-5a8e037670d33e0339ed7630]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
+- `chunk-c8b547c0105789fc5d3dba26`: [silver chunk](../../silver/chunks/sttm/sttm-sttm-procedures-effective-date-3-march-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93/chunk-c8b547c0105789fc5d3dba26.md) from [source document](../../silver/documents/sttm/sttm-sttm-procedures-effective-date-3-march-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93.md); source hash `sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93`. [[chunk:chunk-c8b547c0105789fc5d3dba26]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
 
 ## Related Concepts
 
 - [Bid / Offer](bid-offer.md)
+- [Flow](flow.md)
 - [Settlement](settlement.md)
-- [Gas Day](gas-day.md)

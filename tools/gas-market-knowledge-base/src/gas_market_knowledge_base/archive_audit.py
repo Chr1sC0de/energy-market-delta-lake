@@ -142,9 +142,12 @@ class ArchiveAuditResult:
             len(self.manifest_errors)
             + len(self.missing_archive_uris)
             + len(self.extra_manifest_rows)
-            + len(self.duplicate_archive_uris)
-            + len(self.duplicate_content_hashes)
         )
+
+    @property
+    def warning_count(self) -> int:
+        """Return the number of non-fatal audit warnings."""
+        return len(self.duplicate_archive_uris) + len(self.duplicate_content_hashes)
 
     def summary_text(self) -> str:
         """Return a deterministic single-line summary."""
@@ -172,6 +175,11 @@ class ArchiveAuditResult:
             )
             for row in self.extra_manifest_rows
         )
+        return tuple(lines)
+
+    def warning_lines(self) -> tuple[str, ...]:
+        """Return deterministic non-fatal warning lines for CLI reporting."""
+        lines: list[str] = []
         lines.extend(
             (
                 f"duplicate archive_uri: {group.value} "

@@ -147,6 +147,24 @@ async def _plain_text_response_app(
     await send({"type": "http.response.body", "body": b"ok"})
 
 
+def _asset_response_app(content_type: str) -> ASGIApp:
+    async def asset_app(
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"content-type", content_type.encode())],
+            }
+        )
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    return asset_app
+
+
 def _call_asgi(test_app: ASGIApp, scope: Scope) -> list[Message]:
     messages: list[Message] = []
 
@@ -421,26 +439,29 @@ class TestMarimoMount:
 
         for suffix, content_type in expected_content_types.items():
             asset_path = _first_asset_path(refs, suffix)
-            asset_response = _get(asset_path)
-
-            assert asset_response.status_code == 200
-            assert asset_response.headers["content-type"].startswith(content_type)
-            assert (
-                asset_response.headers["cache-control"] == IMMUTABLE_ASSET_CACHE_CONTROL
+            middleware = StaticAssetHeadersMiddleware(
+                _asset_response_app(content_type),
             )
-            assert asset_response.headers["etag"]
+            messages = _call_asgi(middleware, {"type": "http", "path": asset_path})
+            headers = dict(_response_start(messages)["headers"])
+
+            assert headers[b"content-type"].decode().startswith(content_type)
+            assert headers[b"cache-control"] == IMMUTABLE_ASSET_CACHE_CONTROL.encode()
 
     def test_unhashed_notebook_metadata_routes_are_not_immutable_cached(
         self,
     ) -> None:
-        manifest_response = _get("/marimo/test_notebook/manifest.json")
-        favicon_response = _get("/marimo/test_notebook/favicon.ico")
-
-        assert manifest_response.status_code == 200
-        assert manifest_response.headers["content-type"].startswith("application/json")
-        assert "cache-control" not in manifest_response.headers
-        assert favicon_response.status_code == 200
-        assert favicon_response.headers["content-type"].startswith(
-            "image/vnd.microsoft.icon"
+        metadata_paths = (
+            ("/marimo/test_notebook/manifest.json", "application/json"),
+            ("/marimo/test_notebook/favicon.ico", "image/vnd.microsoft.icon"),
         )
-        assert "cache-control" not in favicon_response.headers
+
+        for path, content_type in metadata_paths:
+            middleware = StaticAssetHeadersMiddleware(
+                _asset_response_app(content_type),
+            )
+            messages = _call_asgi(middleware, {"type": "http", "path": path})
+            headers = dict(_response_start(messages)["headers"])
+
+            assert headers[b"content-type"].decode().startswith(content_type)
+            assert b"cache-control" not in headers

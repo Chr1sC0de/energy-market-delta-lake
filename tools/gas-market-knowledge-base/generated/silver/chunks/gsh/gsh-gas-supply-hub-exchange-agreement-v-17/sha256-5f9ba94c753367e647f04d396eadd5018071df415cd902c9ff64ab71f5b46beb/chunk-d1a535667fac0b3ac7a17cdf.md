@@ -1,0 +1,145 @@
+---
+{
+  "chunk_id": "chunk-d1a535667fac0b3ac7a17cdf",
+  "chunk_ordinal": 34,
+  "chunk_text_sha256": "90ad21835dcd56baddf9295440a5f6f5ce46867e264a66e73ec3e7b7c0fadb02",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 242.23878291015626,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 510.53652000000045,
+              "t": 277.5408629101563
+            },
+            "charspan": [
+              0,
+              235
+            ],
+            "page_no": 11
+          }
+        ],
+        "self_ref": "#/texts/137"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 129.76878291015623,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 531.2340399999999,
+              "t": 231.70086291015627
+            },
+            "charspan": [
+              0,
+              710
+            ],
+            "page_no": 11
+          }
+        ],
+        "self_ref": "#/texts/138"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 70.61278291015628,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 524.8291200000006,
+              "t": 119.23086291015625
+            },
+            "charspan": [
+              0,
+              366
+            ],
+            "page_no": 11
+          }
+        ],
+        "self_ref": "#/texts/139"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 744.6087829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 97.824,
+              "r": 270.49904,
+              "t": 753.2708629101563
+            },
+            "charspan": [
+              0,
+              40
+            ],
+            "page_no": 12
+          }
+        ],
+        "self_ref": "#/texts/143"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md",
+    "source_manifest_line_number": 16,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-supply-hub-gsh/exchange-agreement-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/gas_supply_hubs/market_operations/gsh-exchange-agreement.pdf?rev=94860e2e688b4adcbb0b9d3593846af6&sc_lang=en"
+  },
+  "content_sha256": "5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "corpus": "gsh",
+  "document_family": "gsh__gas-supply-hub-exchange-agreement-v-17",
+  "document_family_id": "gsh__gas-supply-hub-exchange-agreement-v-17",
+  "document_identity": "gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "document_title": "##### Gas Supply Hub exchange agreement v.17",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-d1a535667fac0b3ac7a17cdf.md",
+  "heading_path": [
+    "2.1. Definitions"
+  ],
+  "path": "generated/silver/chunks/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-d1a535667fac0b3ac7a17cdf.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md"
+}
+---
+
+Gas Transportation Agreement means an agreement (which may consist of one or more instruments) under which a Gas Transporter provides gas transportation and delivery services to another person by means of a gas transportation pipeline.
+Gas Transporter means each of the entities identified in schedule 2 or schedule 3 as a service provider for a gas transportation pipeline or other facility (such as a gas storage facility) identified in schedule 2 or schedule 3 respectively, and their respective successors in that capacity or, in relation to a Pre-matched Trade or Broker Pre-matched Trade (excluding a Pre-matched Trade or Broker Prematched Trade for a Physical Gas Transaction in respect of a Delivery Point at a gas storage facility), the service provider for the gas transportation pipeline agreed between the Trading Participants to the Pre-matched Trade or the Trading Participant and Broker Participant to the Broker Pre-matched Trade.
+Good Gas Industry Practice means the practices, methods and acts that would reasonably be expected from experienced and competent persons engaged in a business of providing natural gas services in Australia, acting with all due skill, diligence, prudence and foresight and in compliance with all applicable legislation, authorisations and industry codes of practice.
+Implied Order is defined in clause 12.1.

@@ -170,6 +170,7 @@ def load_source_document_manifest(
         raise SilverExtractionInputError(f"source manifest not found: {path}")
 
     rows: list[SourceDocumentEntry] = []
+    seen_document_identities: set[str] = set()
     errors: list[str] = []
     row_count = 0
     try:
@@ -191,6 +192,10 @@ def load_source_document_manifest(
             output_dir=output_dir,
         )
         if entry is not None:
+            if entry.document_identity in seen_document_identities:
+                errors.extend(row_errors)
+                continue
+            seen_document_identities.add(entry.document_identity)
             rows.append(entry)
         errors.extend(row_errors)
 

@@ -1,0 +1,223 @@
+---
+{
+  "chunk_id": "chunk-98193b55feffa1b9add5dd11",
+  "chunk_ordinal": 922,
+  "chunk_text_sha256": "9b26c3bc2bfbfb5a17eeae752e11769429bec518bbe43f3675ee5a4b505c4655",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 697.4887646484375,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 42.75,
+              "r": 141.50672903999998,
+              "t": 705.7800146484376
+            },
+            "charspan": [
+              0,
+              25
+            ],
+            "page_no": 145
+          }
+        ],
+        "self_ref": "#/texts/2215"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/140"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 678.7387646484375,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 61.515,
+              "r": 131.98369598999994,
+              "t": 687.0300146484376
+            },
+            "charspan": [
+              0,
+              18
+            ],
+            "page_no": 145
+          }
+        ],
+        "self_ref": "#/texts/2216"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/140"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 659.2387646484375,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 61.515,
+              "r": 106.82522904000001,
+              "t": 667.5300146484376
+            },
+            "charspan": [
+              0,
+              10
+            ],
+            "page_no": 145
+          }
+        ],
+        "self_ref": "#/texts/2217"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/140"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 639.7387646484375,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 61.515,
+              "r": 450.8476612500001,
+              "t": 648.0300146484376
+            },
+            "charspan": [
+              0,
+              99
+            ],
+            "page_no": 145
+          }
+        ],
+        "self_ref": "#/texts/2218"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/140"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 620.2387646484375,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 61.515,
+              "r": 203.89635753000002,
+              "t": 628.5300146484376
+            },
+            "charspan": [
+              0,
+              37
+            ],
+            "page_no": 145
+          }
+        ],
+        "self_ref": "#/texts/2219"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/140"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 600.7387646484375,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 61.515,
+              "r": 191.19003149999995,
+              "t": 609.0300146484376
+            },
+            "charspan": [
+              0,
+              32
+            ],
+            "page_no": 145
+          }
+        ],
+        "self_ref": "#/texts/2220"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/140"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 581.2387646484375,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 61.515,
+              "r": 233.2104223500001,
+              "t": 589.5300146484376
+            },
+            "charspan": [
+              0,
+              40
+            ],
+            "page_no": 145
+          }
+        ],
+        "self_ref": "#/texts/2221"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/dwgm/dwgm-user-guide-to-mibb-reports/sha256-d1e08ca4f5d09136da2c2f4889d998ed1e2964b720fedd9eb7d0c054791c6c1f.md",
+    "source_manifest_line_number": 4,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/declared-wholesale-gas-market-dwgm/procedures-policies-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/stakeholder_consultation/consultations/gas_consultations/2024/april-2024-amendment-to-user-guide-to-mibb-reports/user-guide-to-mibb-reports.pdf?rev=b5b659bce66a4808b505db05ecb0ca13&sc_lang=en"
+  },
+  "content_sha256": "d1e08ca4f5d09136da2c2f4889d998ed1e2964b720fedd9eb7d0c054791c6c1f",
+  "corpus": "dwgm",
+  "document_family": "dwgm__user-guide-to-mibb-reports",
+  "document_family_id": "dwgm__user-guide-to-mibb-reports",
+  "document_identity": "dwgm/dwgm-user-guide-to-mibb-reports/sha256-d1e08ca4f5d09136da2c2f4889d998ed1e2964b720fedd9eb7d0c054791c6c1f",
+  "document_title": "##### User Guide to MIBB Reports",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/dwgm/dwgm-user-guide-to-mibb-reports/sha256-d1e08ca4f5d09136da2c2f4889d998ed1e2964b720fedd9eb7d0c054791c6c1f/chunk-98193b55feffa1b9add5dd11.md",
+  "heading_path": [
+    "Content notes"
+  ],
+  "path": "generated/silver/chunks/dwgm/dwgm-user-guide-to-mibb-reports/sha256-d1e08ca4f5d09136da2c2f4889d998ed1e2964b720fedd9eb7d0c054791c6c1f/chunk-98193b55feffa1b9add5dd11.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/dwgm/dwgm-user-guide-to-mibb-reports/sha256-d1e08ca4f5d09136da2c2f4889d998ed1e2964b720fedd9eb7d0c054791c6c1f.md"
+}
+---
+
+Each report contains the:
+- l meter identifier
+- l gas date
+- l hourly time interval (where 1= 6:00 AM to 7:00 AM, 2= 7:00 AM to 800 AM, until the 24th interval)
+- l injection point or withdrawal point
+- l energy and quality description
+- l date and time when report was produced

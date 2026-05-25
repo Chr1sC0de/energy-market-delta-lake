@@ -1,0 +1,119 @@
+---
+{
+  "chunk_id": "chunk-b1d7c4331f71b1f3bb69a6cb",
+  "chunk_ordinal": 80,
+  "chunk_text_sha256": "d571454e02be1099c52f946a6b37a20bd53b76f836de64d1c64db4adadc176c0",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/32"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 535.6587829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 515.4981600000008,
+              "t": 570.9908629101564
+            },
+            "charspan": [
+              0,
+              286
+            ],
+            "page_no": 25
+          }
+        ],
+        "self_ref": "#/texts/486"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/32"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 463.17878291015626,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 525.7095200000003,
+              "t": 525.1208629101563
+            },
+            "charspan": [
+              0,
+              378
+            ],
+            "page_no": 25
+          }
+        ],
+        "self_ref": "#/texts/487"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/32"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 430.53878291015627,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 493.0307600000002,
+              "t": 452.52086291015627
+            },
+            "charspan": [
+              0,
+              91
+            ],
+            "page_no": 25
+          }
+        ],
+        "self_ref": "#/texts/488"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md",
+    "source_manifest_line_number": 20,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/pipeline-capacity-trading-pct/procedures-policies-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/gas_supply_hubs/market_operations/gsh-exchange-agreement.pdf?rev=94860e2e688b4adcbb0b9d3593846af6&sc_lang=en"
+  },
+  "content_sha256": "5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "corpus": "pct",
+  "document_family": "pct__gas-supply-hub-exchange-agreement-v-17",
+  "document_family_id": "pct__gas-supply-hub-exchange-agreement-v-17",
+  "document_identity": "pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "document_title": "##### Gas Supply Hub exchange agreement v.17",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-b1d7c4331f71b1f3bb69a6cb.md",
+  "heading_path": [
+    "4.5.1. Agent Member applications"
+  ],
+  "path": "generated/silver/chunks/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-b1d7c4331f71b1f3bb69a6cb.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/pct/pct-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md"
+}
+---
+
+- (g) There is deemed to be a Suspension Event for the purposes of clause 19.2(a)(ii) in relation to all the Appointing Members for the Agent Member and the Operator may impose a Trading Halt in accordance with and subject to the provisions of clause 19 if either of the following occurs:
+- (i) if the Operator has reasonable grounds to believe that an Agent Member is no longer eligible to be an Agent Member and the Appointing Members (themselves or through the Agent Member) have failed to give the Operator information to verify the Agent Member's continued eligibility within 2 Business Days of the Operator requesting that information from the Appointing Members;
+- (ii) for any reason, there is no current Agent Member in respect of the Appointing Members.

@@ -4,19 +4,18 @@
   "generated_path": "generated/gold/glossary/bid-offer.md",
   "related_concepts": [
     "schedule",
-    "participant",
-    "settlement"
+    "capacity",
+    "mos"
   ],
   "schema_version": 1,
   "slug": "bid-offer",
   "source_chunk_ids": [
-    "chunk-sttm-procedures-bid-offer-price-steps",
-    "chunk-sttm-procedures-contingency-gas-bids",
-    "chunk-dwgm-operations-glossary-schedule"
+    "chunk-db679a25e3fd2c5f209213a4",
+    "chunk-a6cd295ae46ad80ba29725ec",
+    "chunk-c022e0d1163dae7da9b1437d"
   ],
   "source_hashes": [
-    "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93",
-    "dac5b2d83b332770261fdfb80ab07389611cc06cb1f48a2886bf1e9097d1fe07"
+    "285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93"
   ],
   "title": "Bid / Offer"
 }
@@ -24,18 +23,18 @@
 
 # Bid / Offer
 
-## Definition
+    ## Definition
 
-A bid or offer is a price-and-quantity market input; STTM procedures process ex ante offers, ex ante bids, price taker bids, and contingency gas bids with price steps, while DWGM procedures use injection and withdrawal bid prices and quantities in schedules. [[chunk:chunk-sttm-procedures-bid-offer-price-steps]] [[chunk:chunk-sttm-procedures-contingency-gas-bids]] [[chunk:chunk-dwgm-operations-glossary-schedule]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]] [[source:sha256:dac5b2d83b332770261fdfb80ab07389611cc06cb1f48a2886bf1e9097d1fe07]]
+    A bid or offer is a price-and-quantity market input; STTM procedures use price steps for ex ante bids and offers, contingency gas bids, and MOS increase or decrease offers. [[chunk:chunk-db679a25e3fd2c5f209213a4]] [[chunk:chunk-a6cd295ae46ad80ba29725ec]] [[chunk:chunk-c022e0d1163dae7da9b1437d]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
 
-## Source Citations
+    ## Source Citations
 
-- `chunk-sttm-procedures-bid-offer-price-steps`: [silver chunk](../../silver/chunks/sttm/sttm-procedures-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93/chunk-sttm-procedures-bid-offer-price-steps.md) from [source document](../../silver/documents/sttm/sttm-procedures-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93.md); source hash `sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93`. [[chunk:chunk-sttm-procedures-bid-offer-price-steps]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
-- `chunk-sttm-procedures-contingency-gas-bids`: [silver chunk](../../silver/chunks/sttm/sttm-procedures-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93/chunk-sttm-procedures-contingency-gas-bids.md) from [source document](../../silver/documents/sttm/sttm-procedures-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93.md); source hash `sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93`. [[chunk:chunk-sttm-procedures-contingency-gas-bids]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
-- `chunk-dwgm-operations-glossary-schedule`: [silver chunk](../../silver/chunks/dwgm/operations-procedures-2026/sha256-dac5b2d83b332770261fdfb80ab07389611cc06cb1f48a2886bf1e9097d1fe07/chunk-dwgm-operations-glossary-schedule.md) from [source document](../../silver/documents/dwgm/operations-procedures-2026/sha256-dac5b2d83b332770261fdfb80ab07389611cc06cb1f48a2886bf1e9097d1fe07.md); source hash `sha256:dac5b2d83b332770261fdfb80ab07389611cc06cb1f48a2886bf1e9097d1fe07`. [[chunk:chunk-dwgm-operations-glossary-schedule]] [[source:sha256:dac5b2d83b332770261fdfb80ab07389611cc06cb1f48a2886bf1e9097d1fe07]]
+    - `chunk-db679a25e3fd2c5f209213a4`: [silver chunk](../../silver/chunks/sttm/sttm-sttm-procedures-effective-date-3-march-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93/chunk-db679a25e3fd2c5f209213a4.md) from [source document](../../silver/documents/sttm/sttm-sttm-procedures-effective-date-3-march-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93.md); source hash `sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93`. [[chunk:chunk-db679a25e3fd2c5f209213a4]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
+- `chunk-a6cd295ae46ad80ba29725ec`: [silver chunk](../../silver/chunks/sttm/sttm-sttm-procedures-effective-date-3-march-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93/chunk-a6cd295ae46ad80ba29725ec.md) from [source document](../../silver/documents/sttm/sttm-sttm-procedures-effective-date-3-march-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93.md); source hash `sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93`. [[chunk:chunk-a6cd295ae46ad80ba29725ec]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
+- `chunk-c022e0d1163dae7da9b1437d`: [silver chunk](../../silver/chunks/sttm/sttm-sttm-procedures-effective-date-3-march-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93/chunk-c022e0d1163dae7da9b1437d.md) from [source document](../../silver/documents/sttm/sttm-sttm-procedures-effective-date-3-march-2025/sha256-285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93.md); source hash `sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93`. [[chunk:chunk-c022e0d1163dae7da9b1437d]] [[source:sha256:285e6efed74bf48ab2c707804c70ac0ea431fca4d0acf4a00dd9358a1a846c93]]
 
 ## Related Concepts
 
 - [Schedule](schedule.md)
-- [Participant](participant.md)
-- [Settlement](settlement.md)
+- [Capacity](capacity.md)
+- [MOS](mos.md)

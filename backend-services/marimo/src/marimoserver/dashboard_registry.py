@@ -1,9 +1,11 @@
 """Code-local registry for curated and planned Marimo gas dashboards."""
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from functools import cache
+from pathlib import Path
 
 
 class DashboardRegistryError(ValueError):
@@ -47,6 +49,11 @@ _REGISTRY_BACKED_CONCEPT_IDS = frozenset(
         "s3-bucket-health",
         "schema-data-dictionary-explorer",
     }
+)
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_GAS_MARKET_KB_PREFIX = "tools/gas-market-knowledge-base"
+_SILVER_CHUNK_INDEX_PATH = (
+    f"{_GAS_MARKET_KB_PREFIX}/generated/silver/index/chunks.jsonl"
 )
 
 
@@ -1538,7 +1545,7 @@ def _entry_from_record(
     notebook_name = _optional_str(record, "notebook_name", index)
     backing_assets = _str_tuple(record, "backing_assets", index)
     generated_gold_paths = _str_tuple(record, "generated_gold_paths", index)
-    source_chunks = _source_chunks_from_record(record, index)
+    source_chunks = _source_chunks_from_record(record, generated_gold_paths, index)
 
     if status is DashboardStatus.AVAILABLE and notebook_name is None:
         raise DashboardRegistryError(
@@ -1560,10 +1567,17 @@ def _entry_from_record(
 
 def _source_chunks_from_record(
     record: DashboardRegistryRecord,
+    generated_gold_paths: Sequence[str],
     index: int,
 ) -> tuple[SourceChunkReference, ...]:
     raw_source_chunks = record.get("source_chunks", _MISSING)
     if raw_source_chunks is _MISSING:
+        generated_source_chunks = _source_chunks_from_generated_gold_paths(
+            generated_gold_paths,
+            index,
+        )
+        if generated_source_chunks:
+            return generated_source_chunks
         return tuple(
             _source_chunk_reference_by_id(chunk_id)
             for chunk_id in _str_tuple(record, "source_chunk_ids", index)
@@ -1588,6 +1602,106 @@ def _source_chunks_from_record(
 def _source_chunk_reference_by_id(chunk_id: str) -> SourceChunkReference:
     source_chunks_by_id = {chunk.chunk_id: chunk for chunk in SOURCE_CHUNK_REFERENCES}
     return source_chunks_by_id.get(chunk_id, SourceChunkReference(chunk_id=chunk_id))
+
+
+@cache
+def _generated_source_chunk_references_by_id() -> dict[str, SourceChunkReference]:
+    index_path = _REPO_ROOT / _SILVER_CHUNK_INDEX_PATH
+    if not index_path.is_file():
+        return {}
+
+    source_chunks: dict[str, SourceChunkReference] = {}
+    for line_number, line in enumerate(
+        index_path.read_text(encoding="utf-8").splitlines(),
+        start=1,
+    ):
+        if line.strip() == "":
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise DashboardRegistryError(
+                f"generated silver chunk index line {line_number} is not valid JSON"
+            ) from error
+        if not isinstance(row, Mapping):
+            continue
+
+        chunk_id = row.get("chunk_id")
+        chunk_path = row.get("path")
+        source_hash = row.get("content_sha256")
+        if (
+            not isinstance(chunk_id, str)
+            or not isinstance(chunk_path, str)
+            or not isinstance(source_hash, str)
+        ):
+            continue
+
+        source_chunks[chunk_id] = SourceChunkReference(
+            chunk_id=chunk_id,
+            silver_chunk_path=f"{_GAS_MARKET_KB_PREFIX}/{chunk_path}",
+            source_hash=source_hash,
+        )
+
+    return source_chunks
+
+
+def _source_chunks_from_generated_gold_paths(
+    paths: Sequence[str],
+    index: int,
+) -> tuple[SourceChunkReference, ...]:
+    source_chunks_by_id = _generated_source_chunk_references_by_id()
+    if not source_chunks_by_id:
+        return ()
+
+    source_chunks: list[SourceChunkReference] = []
+    seen_chunk_ids: set[str] = set()
+    for path in paths:
+        metadata = _generated_gold_metadata(path)
+        raw_chunk_ids = metadata.get("source_chunk_ids", [])
+        if not isinstance(raw_chunk_ids, list):
+            raise DashboardRegistryError(
+                f"dashboard registry record {index} generated gold path {path} "
+                "source_chunk_ids must be a list"
+            )
+        for chunk_id in raw_chunk_ids:
+            if not isinstance(chunk_id, str):
+                raise DashboardRegistryError(
+                    f"dashboard registry record {index} generated gold path {path} "
+                    "source_chunk_ids must contain strings"
+                )
+            if chunk_id in seen_chunk_ids:
+                continue
+            seen_chunk_ids.add(chunk_id)
+            source_chunks.append(
+                source_chunks_by_id.get(
+                    chunk_id,
+                    SourceChunkReference(chunk_id=chunk_id),
+                )
+            )
+
+    return tuple(source_chunks)
+
+
+def _generated_gold_metadata(path: str) -> Mapping[str, object]:
+    gold_path = _REPO_ROOT / path
+    if not gold_path.is_file():
+        return {}
+
+    text = gold_path.read_text(encoding="utf-8")
+    if not text.startswith("---\n"):
+        return {}
+    try:
+        _, raw_frontmatter, _ = text.split("---", maxsplit=2)
+    except ValueError:
+        return {}
+
+    if raw_frontmatter.strip() == "":
+        return {}
+
+    metadata = json.loads(raw_frontmatter)
+    if not isinstance(metadata, Mapping):
+        return {}
+    return metadata
 
 
 def _source_chunk_from_mapping(

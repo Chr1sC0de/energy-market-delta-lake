@@ -548,6 +548,25 @@ from marimoserver.table_explorer import (
 )
 
 
+def _assert_current_source_chunks(entry: DashboardRegistryEntry) -> None:
+    assert entry.source_chunk_ids
+    assert entry.silver_chunk_paths
+    assert len(entry.source_chunk_ids) == len(entry.silver_chunk_paths)
+    for chunk in entry.source_chunks:
+        assert chunk.complete
+        assert chunk.silver_chunk_path is not None
+        assert chunk.silver_chunk_path.endswith(f"{chunk.chunk_id}.md")
+
+
+def _assert_context_panel_renders_source_chunks(
+    entry: DashboardRegistryEntry,
+    html: str,
+) -> None:
+    _assert_current_source_chunks(entry)
+    assert entry.source_chunk_ids[0] in html
+    assert entry.silver_chunk_paths[0].rsplit("/", maxsplit=1)[-1] in html
+
+
 def test_read_parquet_table_delegates_to_polars(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -904,10 +923,14 @@ def test_citation_chain_explorer_uses_registry_metadata_by_default() -> None:
     assert concepts_by_id["citation-chain-explorer"].metadata_gaps == (
         "No source chunk IDs recorded in the Marimo registry.",
     )
+    gas_day = concepts_by_id["gas-day-context"]
     assert 'data-concept-id="gas-day-context"' in html
-    assert "chunk-gbb-guide-gas-day" in html
-    assert "chunk-gbb-guide-gas-day.md" in html
-    assert "9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410" in html
+    assert gas_day.source_chunks[0].chunk_id in html
+    assert gas_day.source_chunks[0].silver_chunk_path is not None
+    assert (
+        gas_day.source_chunks[0].silver_chunk_path.rsplit("/", maxsplit=1)[-1] in html
+    )
+    assert gas_day.source_chunks[0].source_hash in html
     assert "No source chunks recorded in the Marimo registry." in html
 
 
@@ -4534,9 +4557,8 @@ def test_facility_flow_storage_metadata_and_loader_use_recent_bounded_rows() -> 
         "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md"
         in entry.generated_gold_paths
     )
-    assert "chunk-gbb-procedures-daily-flow-storage" in entry.source_chunk_ids
+    _assert_context_panel_renders_source_chunks(entry, html)
     assert "Facility Flow And Storage" in html
-    assert "chunk-gbb-procedures-daily-flow-storage" in html
     assert 'href="/marimo/facility_flow_storage/"' in context_links
     assert "Facility Context" in context_links
     assert "Flow Context" in context_links
@@ -4870,9 +4892,8 @@ def test_linepack_metadata_and_loader_use_recent_bounded_rows() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/linepack.md"
         in entry.generated_gold_paths
     )
-    assert "chunk-gbb-procedures-linepack-capacity-adequacy" in (entry.source_chunk_ids)
+    _assert_context_panel_renders_source_chunks(entry, html)
     assert "Linepack Context" in html
-    assert "chunk-gbb-procedures-linepack-capacity-adequacy" in html
     assert 'href="/marimo/linepack_adequacy/"' in context_links
     assert "Linepack Context" in context_links
     assert "Flow Context" in context_links
@@ -4961,7 +4982,7 @@ def test_capacity_outlook_metadata_and_loader_use_recent_bounded_rows() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md"
         in entry.generated_gold_paths
     )
-    assert "chunk-gbb-procedures-capacity-outlooks" in entry.source_chunk_ids
+    _assert_context_panel_renders_source_chunks(entry, html)
     assert "Capacity Context" in html
     assert 'data-status="available"' in html
     assert 'href="/marimo/capacity_outlook/"' in context_links
@@ -5365,7 +5386,7 @@ def test_capacity_auction_metadata_and_loader_use_recent_bounded_rows() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md"
         in entry.generated_gold_paths
     )
-    assert "chunk-sttm-procedures-capacity-settlement" in entry.source_chunk_ids
+    _assert_context_panel_renders_source_chunks(entry, html)
     assert "Capacity Auctions" in html
     assert 'data-status="available"' in html
     assert 'href="/marimo/capacity_auction/"' in context_links
@@ -6240,9 +6261,8 @@ def test_nomination_forecast_metadata_and_loader_use_recent_bounded_rows() -> No
         "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md"
         in entry.generated_gold_paths
     )
-    assert "chunk-gbb-guide-flow-report" in entry.source_chunk_ids
+    _assert_context_panel_renders_source_chunks(entry, html)
     assert "Nomination And Demand Forecast" in html
-    assert "chunk-gbb-guide-flow-report" in html
     assert 'href="/marimo/nomination_demand_forecast/"' in context_links
     assert "Flow Context" in context_links
     assert "Facility Context" in context_links
@@ -6672,7 +6692,7 @@ def test_forecast_actual_metadata_and_loader_use_recent_bounded_rows() -> None:
         "silver.gas_model.silver_gas_fact_facility_flow_storage",
     )
     assert "Forecast Vs Actual Flow And Storage" in html
-    assert "chunk-gbb-procedures-daily-flow-storage" in html
+    _assert_context_panel_renders_source_chunks(entry, html)
     assert 'href="/marimo/forecast_vs_actual/"' in context_links
     assert "Nomination And Demand Forecast" in context_links
     assert "Facility Flow And Storage" in context_links
@@ -9054,11 +9074,7 @@ def test_participant_context_metadata_is_available_dashboard() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/participant.md"
         in entry.generated_gold_paths
     )
-    assert entry.source_chunk_ids == (
-        "chunk-gbb-guide-participants-report",
-        "chunk-gbb-procedures-registration",
-        "chunk-sttm-procedures-settlement-terms",
-    )
+    _assert_context_panel_renders_source_chunks(entry, html)
     assert "silver.gas_model.silver_gas_dim_participant" in entry.backing_assets
     assert (
         "silver.gas_model.silver_gas_participant_market_membership"
@@ -9069,7 +9085,6 @@ def test_participant_context_metadata_is_available_dashboard() -> None:
         "silver.gas_model.silver_gas_fact_settlement_activity" in entry.backing_assets
     )
     assert "Participant Context" in html
-    assert "chunk-gbb-guide-participants-report" in html
     assert 'data-status="available"' in html
     assert 'href="/marimo/participant_explainer/"' in context_links
     assert 'href="/marimo/gas_bid_offer_stack/"' in context_links
@@ -9442,13 +9457,9 @@ def test_facility_context_metadata_is_available_dashboard() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md"
         in entry.generated_gold_paths
     )
-    assert entry.source_chunk_ids == (
-        "chunk-gbb-guide-nodes-facilities",
-        "chunk-gbb-procedures-facility-nameplate",
-    )
+    _assert_context_panel_renders_source_chunks(entry, html)
     assert "silver.gas_model.silver_gas_dim_facility" in entry.backing_assets
     assert "Facility Context" in html
-    assert "chunk-gbb-guide-nodes-facilities" in html
     assert 'data-status="available"' in html
     assert 'href="/marimo/facility_explainer/"' in context_links
     assert "GBB Interactive Map" in context_links
@@ -9720,10 +9731,7 @@ def test_connection_point_context_metadata_is_available_dashboard() -> None:
     assert (
         "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md"
     ) in entry.generated_gold_paths
-    assert entry.source_chunk_ids == (
-        "chunk-gbb-guide-connection-point-identifiers",
-        "chunk-gbb-guide-flow-report",
-    )
+    _assert_context_panel_renders_source_chunks(entry, html)
     assert "silver.gas_model.silver_gas_dim_connection_point" in entry.backing_assets
     assert "silver.gas_model.silver_gas_dim_facility" in entry.backing_assets
     assert "silver.gas_model.silver_gas_dim_location" in entry.backing_assets
@@ -9732,7 +9740,6 @@ def test_connection_point_context_metadata_is_available_dashboard() -> None:
         entry.backing_assets
     )
     assert "Connection Point Context" in html
-    assert "chunk-gbb-guide-connection-point-identifiers" in html
     assert (
         "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md"
     ) in html
@@ -10186,11 +10193,7 @@ def test_flow_context_metadata_is_available_dashboard() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md"
         in entry.generated_gold_paths
     )
-    assert entry.source_chunk_ids == (
-        "chunk-gbb-guide-flow-report",
-        "chunk-gbb-procedures-scheduled-flow",
-        "chunk-sttm-procedures-settlement-terms",
-    )
+    _assert_context_panel_renders_source_chunks(entry, html)
     assert "silver.gas_model.silver_gas_fact_connection_point_flow" in (
         entry.backing_assets
     )
@@ -10204,7 +10207,6 @@ def test_flow_context_metadata_is_available_dashboard() -> None:
         entry.backing_assets
     )
     assert "Flow Context" in html
-    assert "chunk-gbb-guide-flow-report" in html
     assert 'data-status="available"' in html
     assert 'href="/marimo/flow_operations/"' in context_links
     assert "Facility Context" in context_links
@@ -10619,7 +10621,7 @@ def test_operational_meter_flow_metadata_is_available_dashboard() -> None:
     assert "silver.gas_model.silver_gas_dim_zone" in entry.backing_assets
     assert "silver.gas_model.silver_gas_dim_pipeline_segment" in (entry.backing_assets)
     assert "Operational Meter Flow" in html
-    assert "chunk-gbb-guide-flow-report" in html
+    _assert_context_panel_renders_source_chunks(entry, html)
     assert 'data-status="available"' in html
     assert 'href="/marimo/operational_meter_flow/"' in context_links
     assert "Flow Context" in context_links
@@ -11091,7 +11093,7 @@ def test_pipeline_connection_operations_metadata_is_available_dashboard() -> Non
     )
     assert "silver.gas_model.silver_gas_fact_capacity_outlook" in (entry.backing_assets)
     assert "Pipeline and Connection Operations" in html
-    assert "chunk-gbb-guide-connection-point-identifiers" in html
+    _assert_context_panel_renders_source_chunks(entry, html)
     assert 'data-status="available"' in html
     assert 'href="/marimo/pipeline_connection_operations/"' in context_links
     assert "Connection Point Context" in context_links
@@ -11615,15 +11617,9 @@ def test_hub_zone_context_metadata_is_available_dashboard() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md"
         in entry.generated_gold_paths
     )
-    assert entry.source_chunk_ids == (
-        "chunk-sttm-procedures-definitions",
-        "chunk-sttm-procedures-settlement-terms",
-        "chunk-dwgm-operations-glossary-schedule",
-        "chunk-dwgm-operations-capacity-certificates-modelling",
-    )
+    _assert_context_panel_renders_source_chunks(entry, html)
     assert "silver.gas_model.silver_gas_dim_zone" in entry.backing_assets
     assert "Hub / Zone Context" in html
-    assert "chunk-sttm-procedures-definitions" in html
     assert "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md" in html
     assert 'data-status="available"' in html
     assert 'href="/marimo/hub_zone_explainer/"' in context_links
@@ -11877,10 +11873,9 @@ def test_gas_day_context_metadata_is_available_dashboard() -> None:
         "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md"
         in entry.generated_gold_paths
     )
-    assert entry.source_chunk_ids == ("chunk-gbb-guide-gas-day",)
+    _assert_context_panel_renders_source_chunks(entry, html)
     assert "Gas Day Context" in html
     assert "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md" in html
-    assert "chunk-gbb-guide-gas-day" in html
     assert 'data-status="available"' in html
 
 
@@ -13617,12 +13612,14 @@ def test_source_lineage_explorer_uses_catalogue_link_contexts() -> None:
 
 
 def test_render_dashboard_context_panel_covers_complete_concept() -> None:
+    overview = registry_entry_by_concept_id("gas-market-overview")
     html = render_dashboard_context_panel("gas-market-overview")
     no_related_html = render_dashboard_context_panel(
         "gas-market-overview",
         related_limit=0,
     )
 
+    assert overview is not None
     assert "Gas Market Overview" in html
     assert "generated-gold paths" in html
     assert "source chunk IDs" in html
@@ -13630,9 +13627,7 @@ def test_render_dashboard_context_panel_covers_complete_concept() -> None:
     assert "source hashes" in html
     assert "backing assets" in html
     assert "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md" in html
-    assert "chunk-gbb-guide-gas-day" in html
-    assert "chunk-gbb-guide-gas-day.md" in html
-    assert "9f7cf6f33b646de55e0593af8612953bcaa59665fddf019fcdbf02da31720410" in html
+    _assert_context_panel_renders_source_chunks(overview, html)
     assert "silver.gas_model.silver_gas_fact_market_price" in html
     assert "Gas Day Context" in html
     assert "No related concepts share generated-gold paths" in no_related_html

@@ -23,8 +23,10 @@ uv run gas-market-kb sync-manifest --environment dev
 
 The default `dev` environment reads
 `s3://dev-energy-market-aemo/bronze/aemo_gas_documents/bronze_aemo_gas_document_sources`
-and writes `generated/bronze/source_manifest.jsonl`. Unit tests use fixture
-JSON or JSONL metadata rows through `--metadata-path` and do not read deployed
+and writes `generated/bronze/source_manifest.jsonl`. Manifest
+`document_identity` path parts are bounded with deterministic hash suffixes so
+long live metadata titles remain filesystem-safe. Unit tests use fixture JSON
+or JSONL metadata rows through `--metadata-path` and do not read deployed
 resources.
 
 Audit archive-prefix PDF completeness against the bronze source manifest:
@@ -40,7 +42,10 @@ the prefix PDF object total, manifest row total, unique manifest archive-object
 total, unique manifest hash total, missing archive PDFs, extra manifest rows,
 duplicate archive URIs, duplicate content hashes, and manifest row errors. It
 uses unique archive URIs and content hashes for object/hash totals, so duplicate
-metadata rows do not require duplicate downloaded PDFs.
+metadata rows do not require duplicate downloaded PDFs. Missing archive PDFs,
+extra manifest rows, and manifest errors fail the audit; duplicate archive URI
+and content hash groups are reported as non-fatal warnings because the live
+metadata can contain multiple eligible rows for one archived PDF object.
 
 Use fixture mode for deterministic local coverage or evidence when credentials
 are unavailable:
@@ -86,8 +91,11 @@ under `generated/silver/documents/<document_identity>.md`. Each generated file
 starts with stable JSON frontmatter containing the manifest line, source
 document fields, `content_sha256`, and extraction settings hash. Existing
 outputs are skipped when the source hash and extraction settings hash still
-match. Failed conversions, missing or mismatched cached PDFs, and low-text
-extractions are reported as errors instead of writing empty Markdown pages.
+match. Duplicate manifest rows with the same document identity are coalesced
+before extraction so live metadata duplicates do not create duplicate silver
+documents or chunks. Failed conversions, missing or mismatched cached PDFs, and
+low-text extractions are reported as errors instead of writing empty Markdown
+pages.
 
 Build silver Docling Hybrid chunks and the global retrieval index:
 

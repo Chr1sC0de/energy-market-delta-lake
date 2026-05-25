@@ -1,0 +1,67 @@
+---
+{
+  "chunk_id": "chunk-564e4d6fcc0c213498ea4b8e",
+  "chunk_ordinal": 210,
+  "chunk_text_sha256": "8e4e1adaa0803702e57b2a69ef8fc5911834ac43728cfb58a9d686d34d196971",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "table",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 74.08685302734375,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 76.79363250732422,
+              "r": 770.3515014648438,
+              "t": 439.7519226074219
+            },
+            "charspan": [
+              0,
+              0
+            ],
+            "page_no": 45
+          }
+        ],
+        "self_ref": "#/tables/52"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/gsh/gsh-end-to-end-example-an-end-to-end-example-demonstrating-the-participants-process-251855ee1626/sha256-b474eb2ee1f6b3da7a43cd6876a17817173a519a7bb06f294f72a93f81f6c7f4.md",
+    "source_manifest_line_number": 15,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-supply-hub-gsh/exchange-agreement-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/gas_supply_hubs/market_operations/2016/gas-supply-hub-end-to-end-example-v1-0.pdf?rev=95e2eb856bc543d4a7868fa187ea61af&sc_lang=en"
+  },
+  "content_sha256": "b474eb2ee1f6b3da7a43cd6876a17817173a519a7bb06f294f72a93f81f6c7f4",
+  "corpus": "gsh",
+  "document_family": "gsh__end-to-end-example-an-end-to-end-example-demonstrating-the-participants-processes-and-transactions-relating-to-a-trade-in-the-gsh",
+  "document_family_id": "gsh__end-to-end-example-an-end-to-end-example-demonstrating-the-participants-processes-and-transactions-relating-to-a-trade-in-the-gsh",
+  "document_identity": "gsh/gsh-end-to-end-example-an-end-to-end-example-demonstrating-the-participants-process-251855ee1626/sha256-b474eb2ee1f6b3da7a43cd6876a17817173a519a7bb06f294f72a93f81f6c7f4",
+  "document_title": "##### End-to-end example An end-to-end example demonstrating the participants, processes and transactions relating to a trade in the GSH.",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/gsh/gsh-end-to-end-example-an-end-to-end-example-demonstrating-the-participants-process-251855ee1626/sha256-b474eb2ee1f6b3da7a43cd6876a17817173a519a7bb06f294f72a93f81f6c7f4/chunk-564e4d6fcc0c213498ea4b8e.md",
+  "heading_path": [
+    "1.1.1 Full Transaction List - RBP"
+  ],
+  "path": "generated/silver/chunks/gsh/gsh-end-to-end-example-an-end-to-end-example-demonstrating-the-participants-process-251855ee1626/sha256-b474eb2ee1f6b3da7a43cd6876a17817173a519a7bb06f294f72a93f81f6c7f4/chunk-564e4d6fcc0c213498ea4b8e.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/gsh/gsh-end-to-end-example-an-end-to-end-example-demonstrating-the-participants-process-251855ee1626/sha256-b474eb2ee1f6b3da7a43cd6876a17817173a519a7bb06f294f72a93f81f6c7f4.md"
+}
+---
+
+21/05/2013. 11, To = 27/05/2013. 11, Produc t Group = RBP. 11, Product Type = Week. 11, Transaction Type = Auto-matched. 11, Transaction Time = 19/05/2013 10:00. 12, Buyer = 5. 12, Seller = 2. 12, Price = 6.25. 12, Qty = 4,000. 12, Delivery Point = Run 3. 12, From = 21/05/2013. 12, To = 21/05/2013. 12, Produc t Group = RBP. 12, Product Type = Day. 12, Transaction Type = Auto-matched. 12, Transaction Time = 19/05/2013 11:00. 13, Buyer = 2. 13, Seller = 3. 13, Price = 7.75. 13, Qty = 7,000. 13, Delivery Point = Run 3. 13, From = 21/05/2013. 13, To = 27/05/2013. 13, Produc t Group = RBP. 13, Product Type = Week. 13, Transaction Type = Auto-matched. 13, Transaction Time = 19/05/2013 11:00. 14,

@@ -1,0 +1,119 @@
+---
+{
+  "chunk_id": "chunk-c23e0fc74ece94a0aa21dc19",
+  "chunk_ordinal": 239,
+  "chunk_text_sha256": "502119e52ad4b8305f25d5cbd37ed3ae3fba6bdf71b3b0cceceb98a840af2641",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/153"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 454.53878291015627,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 530.0222000000008,
+              "t": 569.6708629101563
+            },
+            "charspan": [
+              0,
+              693
+            ],
+            "page_no": 66
+          }
+        ],
+        "self_ref": "#/texts/1358"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/153"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 422.0187829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 527.4601200000005,
+              "t": 444.0008629101563
+            },
+            "charspan": [
+              0,
+              191
+            ],
+            "page_no": 66
+          }
+        ],
+        "self_ref": "#/texts/1359"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/153"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 389.3787829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 531.6333600000006,
+              "t": 411.3608629101563
+            },
+            "charspan": [
+              0,
+              190
+            ],
+            "page_no": 66
+          }
+        ],
+        "self_ref": "#/texts/1360"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md",
+    "source_manifest_line_number": 16,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-supply-hub-gsh/exchange-agreement-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/gas_supply_hubs/market_operations/gsh-exchange-agreement.pdf?rev=94860e2e688b4adcbb0b9d3593846af6&sc_lang=en"
+  },
+  "content_sha256": "5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "corpus": "gsh",
+  "document_family": "gsh__gas-supply-hub-exchange-agreement-v-17",
+  "document_family_id": "gsh__gas-supply-hub-exchange-agreement-v-17",
+  "document_identity": "gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "document_title": "##### Gas Supply Hub exchange agreement v.17",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-c23e0fc74ece94a0aa21dc19.md",
+  "heading_path": [
+    "14A.3.  Daily Transfer Process"
+  ],
+  "path": "generated/silver/chunks/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-c23e0fc74ece94a0aa21dc19.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md"
+}
+---
+
+- (ii) the Transaction Quantity for all Physical Capacity Transactions for that Capacity Type to be taken into account for that Gas Day as provided for in paragraph (a) and for which the Trading Participant is the Seller and with a Service Term that includes that Gas Day, as adjusted by the Operator to correct Transfer Errors, if any. The Operator is not required to make any adjustment to correct a Transfer Error the Operator becomes aware of on Gas Day D and that relates to that Gas Day D or the following Gas Day. The Operator may make adjustments to correct a Transfer Error the Operator becomes aware of on a Gas Day and that relates to the Gas Day after the following Gas Day or later.
+- (c) A Trading Participant with a negative aggregate net trading position in relation to a Capacity Type for a Gas Day is a Delivering Participant in respect of that Gas Day and Capacity Type.
+- (d) A Trading Participant with a positive aggregate net trading position in relation to a Capacity Type for a Gas Day is a Receiving Participant in respect of that Gas Day and Capacity Type.

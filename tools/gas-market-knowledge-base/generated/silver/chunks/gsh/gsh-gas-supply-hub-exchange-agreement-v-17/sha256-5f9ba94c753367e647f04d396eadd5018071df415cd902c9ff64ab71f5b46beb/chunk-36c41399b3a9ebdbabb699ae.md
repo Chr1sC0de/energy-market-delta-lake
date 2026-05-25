@@ -1,0 +1,275 @@
+---
+{
+  "chunk_id": "chunk-36c41399b3a9ebdbabb699ae",
+  "chunk_ordinal": 181,
+  "chunk_text_sha256": "85b8adbb7a8b09782da59336b5b04f617e51f6d789b52db6a6027712b8383eeb",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/120"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 558.4887829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 507.6297600000004,
+              "t": 580.4708629101564
+            },
+            "charspan": [
+              0,
+              110
+            ],
+            "page_no": 52
+          }
+        ],
+        "self_ref": "#/texts/1076"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/120"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 512.4987829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 529.0836000000006,
+              "t": 547.8008629101563
+            },
+            "charspan": [
+              0,
+              242
+            ],
+            "page_no": 52
+          }
+        ],
+        "self_ref": "#/texts/1077"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/120"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 493.29878291015626,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 442.23904,
+              "t": 501.96086291015627
+            },
+            "charspan": [
+              0,
+              88
+            ],
+            "page_no": 52
+          }
+        ],
+        "self_ref": "#/texts/1078"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/120"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 473.97878291015627,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 331.81904,
+              "t": 482.6408629101563
+            },
+            "charspan": [
+              0,
+              58
+            ],
+            "page_no": 52
+          }
+        ],
+        "self_ref": "#/texts/1079"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/120"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 454.6587829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 358.71904,
+              "t": 463.3208629101563
+            },
+            "charspan": [
+              0,
+              50
+            ],
+            "page_no": 52
+          }
+        ],
+        "self_ref": "#/texts/1080"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/120"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 422.0187829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 535.2224000000006,
+              "t": 444.0008629101563
+            },
+            "charspan": [
+              0,
+              136
+            ],
+            "page_no": 52
+          }
+        ],
+        "self_ref": "#/texts/1081"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/120"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 389.4987829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 154.58,
+              "r": 532.9242800000007,
+              "t": 411.4808629101563
+            },
+            "charspan": [
+              0,
+              137
+            ],
+            "page_no": 52
+          }
+        ],
+        "self_ref": "#/texts/1082"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/120"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 356.8387829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 154.58,
+              "r": 522.0081200000006,
+              "t": 378.84086291015626
+            },
+            "charspan": [
+              0,
+              139
+            ],
+            "page_no": 52
+          }
+        ],
+        "self_ref": "#/texts/1083"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/120"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 324.1987829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 511.2077600000004,
+              "t": 346.1808629101563
+            },
+            "charspan": [
+              0,
+              160
+            ],
+            "page_no": 52
+          }
+        ],
+        "self_ref": "#/texts/1084"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md",
+    "source_manifest_line_number": 16,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-supply-hub-gsh/exchange-agreement-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/gas_supply_hubs/market_operations/gsh-exchange-agreement.pdf?rev=94860e2e688b4adcbb0b9d3593846af6&sc_lang=en"
+  },
+  "content_sha256": "5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "corpus": "gsh",
+  "document_family": "gsh__gas-supply-hub-exchange-agreement-v-17",
+  "document_family_id": "gsh__gas-supply-hub-exchange-agreement-v-17",
+  "document_identity": "gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "document_title": "##### Gas Supply Hub exchange agreement v.17",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-36c41399b3a9ebdbabb699ae.md",
+  "heading_path": [
+    "13.8.1. Overview"
+  ],
+  "path": "generated/silver/chunks/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-36c41399b3a9ebdbabb699ae.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md"
+}
+---
+
+- (a) Implied Orders are only calculated and displayed in respect of Spread Products and their Related Products.
+- (b) If Orders for any two Related Products for the same Delivery Period are displayed on the Exchange on a trading day, an Implied Order for the remaining Related Product for the same Delivery Period is automatically calculated and displayed.
+- (c) Each Implied Order is displayed in the form of a Bid or Offer to facilitate trading.
+- (d) Each Implied Order provides the following information:
+- (i) the category of the remaining Related Product;
+- (ii) the form of Order (Bid or Offer) required to be submitted for Transactions to be formed in the Related Products.  For this purpose:
+- (A) an Implied Order in the form of a Bid indicates that a corresponding Offer for the remaining Related Product should be submitted; and
+- (B) an Implied Order in the form of an Offer indicates that a corresponding Bid for the remaining Related Product should be submitted;  and
+- (iii) the Price at which a corresponding Order for the remaining Related Product would result in Transactions being formed using the two other Related Products.

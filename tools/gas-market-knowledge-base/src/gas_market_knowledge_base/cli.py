@@ -171,6 +171,8 @@ def audit_archive_prefix_command(
         raise SystemExit(1)
 
     click.echo(f"audited archive prefix {result.archive_prefix_uri}")
+    for line in result.warning_lines():
+        click.echo(f"Warning: {line}")
     click.echo(summary)
 
 

@@ -119,6 +119,12 @@ def _frontmatter(path: Path) -> Mapping[str, object]:
     return cast(Mapping[str, object], json.loads(text[len("---\n") : end_index]))
 
 
+def _body(path: Path) -> str:
+    text = path.read_text(encoding="utf-8")
+    end_index = text.find("\n---\n", len("---\n"))
+    return text[end_index + len("\n---\n") :]
+
+
 def _rewrite_frontmatter(path: Path, frontmatter: Mapping[str, object]) -> None:
     text = path.read_text(encoding="utf-8")
     end_index = text.find("\n---\n", len("---\n"))
@@ -218,6 +224,92 @@ def test_build_index_writes_stable_chunk_markdown_and_jsonl_index(
     assert first_chunk_path.read_text(encoding="utf-8").endswith(
         "Gas Guide overview chunk with enough retrieval text.\n"
     )
+
+
+def test_build_index_normalizes_chunk_line_trailing_whitespace(
+    tmp_path: Path,
+) -> None:
+    extractor = FakeHybridChunkExtractor(
+        chunks=(
+            ExtractedHybridChunk(
+                text="Gas Guide overview chunk with enough retrieval text.  \n"
+                "Second line has a tab.\t",
+                heading_path=("Gas Guide", "Overview"),
+                doc_items=({"self_ref": "#/texts/1", "label": "text"},),
+            ),
+        )
+    )
+    manifest_path, document_dir, chunk_dir, index_path, _ = _build_fixture(
+        tmp_path, extractor=extractor
+    )
+    chunk_path = Path(cast(str, _index_rows(index_path)[0]["path"]))
+
+    assert _body(chunk_path) == (
+        "\nGas Guide overview chunk with enough retrieval text.\n"
+        "Second line has a tab.\n"
+    )
+
+    result = validate_silver_index(
+        manifest_path=manifest_path,
+        document_dir=document_dir,
+        chunk_dir=chunk_dir,
+        index_path=index_path,
+        min_text_chars=20,
+    )
+
+    assert result.error_count == 0
+
+
+def test_build_index_coalesces_duplicate_document_identity_rows(
+    tmp_path: Path,
+) -> None:
+    pdf_content = b"%PDF-1.7\nfixture pdf bytes\n"
+    manifest_path = tmp_path / "source_manifest.jsonl"
+    cache_dir = tmp_path / ".cache" / "pdfs"
+    document_dir = tmp_path / "generated" / "silver" / "documents"
+    chunk_dir = tmp_path / "generated" / "silver" / "chunks"
+    index_path = tmp_path / "generated" / "silver" / "index" / "chunks.jsonl"
+    pdf_path = _write_cached_pdf(cache_dir, pdf_content)
+    _write_manifest(
+        manifest_path,
+        [
+            _manifest_row(pdf_content),
+            _manifest_row(pdf_content),
+        ],
+    )
+    extract_result = extract_silver_documents(
+        extractor=FakeMarkdownExtractor(),
+        manifest_path=manifest_path,
+        cache_dir=cache_dir,
+        output_dir=document_dir,
+        min_text_chars=20,
+    )
+    chunk_extractor = FakeHybridChunkExtractor()
+
+    build_result = build_silver_index(
+        extractor=chunk_extractor,
+        manifest_path=manifest_path,
+        cache_dir=cache_dir,
+        document_dir=document_dir,
+        chunk_dir=chunk_dir,
+        index_path=index_path,
+        min_text_chars=20,
+    )
+    validate_result = validate_silver_index(
+        manifest_path=manifest_path,
+        document_dir=document_dir,
+        chunk_dir=chunk_dir,
+        index_path=index_path,
+        min_text_chars=20,
+    )
+
+    assert extract_result.extractable_row_count == 1
+    assert build_result.manifest_row_count == 2
+    assert build_result.source_document_count == 1
+    assert build_result.chunk_count == 2
+    assert build_result.error_count == 0
+    assert validate_result.error_count == 0
+    assert chunk_extractor.requests == [pdf_path]
 
 
 def test_validate_silver_index_accepts_current_build(tmp_path: Path) -> None:

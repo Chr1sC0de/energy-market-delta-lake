@@ -134,7 +134,7 @@ def test_archive_prefix_audit_reports_extra_manifest_rows(
     )
 
 
-def test_archive_prefix_audit_reports_duplicate_objects_and_hashes(
+def test_archive_prefix_audit_tracks_duplicate_objects_and_hashes_as_warnings(
     tmp_path: Path,
 ) -> None:
     manifest_path = tmp_path / "source_manifest.jsonl"
@@ -158,6 +158,9 @@ def test_archive_prefix_audit_reports_duplicate_objects_and_hashes(
 
     assert result.missing_archive_uris == ()
     assert result.extra_manifest_rows == ()
+    assert result.problem_count == 0
+    assert result.problem_lines() == ()
+    assert result.warning_count == 2
     assert result.manifest_row_count == 3
     assert result.manifest_object_count == 2
     assert result.manifest_hash_count == 1
@@ -165,10 +168,44 @@ def test_archive_prefix_audit_reports_duplicate_objects_and_hashes(
     assert result.duplicate_archive_uris[0].line_numbers == (1, 2)
     assert result.duplicate_content_hashes[0].value == duplicate_hash
     assert result.duplicate_content_hashes[0].line_numbers == (1, 2, 3)
-    assert result.problem_lines() == (
+    assert result.warning_lines() == (
         f"duplicate archive_uri: {ARCHIVE_A} (manifest rows 1, 2)",
         f"duplicate content_sha256: {duplicate_hash} (manifest rows 1, 2, 3)",
     )
+
+
+def test_audit_archive_prefix_command_warns_for_duplicate_manifest_rows(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "source_manifest.jsonl"
+    listing_path = tmp_path / "archive-listing.jsonl"
+    duplicate_hash = "d" * 64
+    _write_manifest(
+        manifest_path,
+        [
+            _manifest_row(archive_uri=ARCHIVE_A, content_sha256=duplicate_hash),
+            _manifest_row(archive_uri=ARCHIVE_A, content_sha256=duplicate_hash),
+        ],
+    )
+    listing_path.write_text(f"{json.dumps(ARCHIVE_A)}\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "audit-archive-prefix",
+            "--archive-prefix",
+            ARCHIVE_PREFIX,
+            "--listing-path",
+            str(listing_path),
+            "--manifest-path",
+            str(manifest_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert f"Warning: duplicate archive_uri: {ARCHIVE_A}" in result.output
+    assert f"Warning: duplicate content_sha256: {duplicate_hash}" in result.output
+    assert "duplicate_archive_uris=1 duplicate_content_hashes=1" in result.output
 
 
 def test_audit_archive_prefix_command_uses_fixture_listing(tmp_path: Path) -> None:

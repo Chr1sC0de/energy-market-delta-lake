@@ -1,0 +1,249 @@
+---
+{
+  "chunk_id": "chunk-f1b58e44dc7c027c16e6d7b6",
+  "chunk_ordinal": 100,
+  "chunk_text_sha256": "b2b3f778dea24db49932ab13f5745e778da4c082d0b8b6fa657a576a2afa78f4",
+  "chunking_settings": {
+    "chunker": "HybridChunker",
+    "merge_peers": true,
+    "omit_header_on_overflow": false,
+    "repeat_table_header": true,
+    "schema_version": 1,
+    "tool": "docling-hybrid"
+  },
+  "chunking_settings_sha256": "a57e8b8018c83b551505462598681565b8effa3456c2824e782e833a2ef673eb",
+  "chunking_tool": "docling-hybrid",
+  "citations": {
+    "doc_items": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/54"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 333.5587829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 497.3311200000004,
+              "t": 355.5408629101563
+            },
+            "charspan": [
+              0,
+              166
+            ],
+            "page_no": 30
+          }
+        ],
+        "self_ref": "#/texts/611"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/54"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 300.9187829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 62.4,
+              "r": 530.4780000000006,
+              "t": 322.9008629101563
+            },
+            "charspan": [
+              0,
+              168
+            ],
+            "page_no": 30
+          }
+        ],
+        "self_ref": "#/texts/612"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/54"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 281.7187829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 334.95904,
+              "t": 290.38086291015634
+            },
+            "charspan": [
+              0,
+              46
+            ],
+            "page_no": 30
+          }
+        ],
+        "self_ref": "#/texts/613"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/54"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 249.0787829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 491.38736000000057,
+              "t": 271.0608629101563
+            },
+            "charspan": [
+              0,
+              93
+            ],
+            "page_no": 30
+          }
+        ],
+        "self_ref": "#/texts/614"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/54"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 203.11878291015626,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 533.3687600000003,
+              "t": 238.4208629101563
+            },
+            "charspan": [
+              0,
+              182
+            ],
+            "page_no": 30
+          }
+        ],
+        "self_ref": "#/texts/615"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/54"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 143.92878291015631,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 531.4166000000006,
+              "t": 192.58086291015627
+            },
+            "charspan": [
+              0,
+              334
+            ],
+            "page_no": 30
+          }
+        ],
+        "self_ref": "#/texts/616"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/54"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 124.60878291015626,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 365.91904,
+              "t": 133.27086291015632
+            },
+            "charspan": [
+              0,
+              48
+            ],
+            "page_no": 30
+          }
+        ],
+        "self_ref": "#/texts/617"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "list_item",
+        "parent": {
+          "$ref": "#/groups/54"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 92.0927829101563,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 126.26,
+              "r": 499.74904,
+              "t": 114.07086291015628
+            },
+            "charspan": [
+              0,
+              105
+            ],
+            "page_no": 30
+          }
+        ],
+        "self_ref": "#/texts/618"
+      }
+    ],
+    "source_document_markdown_path": "generated/silver/documents/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md",
+    "source_manifest_line_number": 16,
+    "source_manifest_path": "generated/bronze/source_manifest.jsonl",
+    "source_page_url": "https://www.aemo.com.au/energy-systems/gas/gas-supply-hub-gsh/exchange-agreement-and-guides",
+    "source_url": "https://www.aemo.com.au/-/media/files/gas/gas_supply_hubs/market_operations/gsh-exchange-agreement.pdf?rev=94860e2e688b4adcbb0b9d3593846af6&sc_lang=en"
+  },
+  "content_sha256": "5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "corpus": "gsh",
+  "document_family": "gsh__gas-supply-hub-exchange-agreement-v-17",
+  "document_family_id": "gsh__gas-supply-hub-exchange-agreement-v-17",
+  "document_identity": "gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb",
+  "document_title": "##### Gas Supply Hub exchange agreement v.17",
+  "extraction_settings_sha256": "224426f0963c23223372ca358828992878fbbee913345ed77f33e315ca4cee8a",
+  "generated_path": "generated/silver/chunks/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-f1b58e44dc7c027c16e6d7b6.md",
+  "heading_path": [
+    "6.5. Broker Participants"
+  ],
+  "path": "generated/silver/chunks/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb/chunk-f1b58e44dc7c027c16e6d7b6.md",
+  "schema_version": 1,
+  "source_document_markdown_path": "generated/silver/documents/gsh/gsh-gas-supply-hub-exchange-agreement-v-17/sha256-5f9ba94c753367e647f04d396eadd5018071df415cd902c9ff64ab71f5b46beb.md"
+}
+---
+
+- (b) A Broker Participant is not permitted to trade in Products or view information produced by the Operator about Product trading that is not made publicly available.
+- (c) The Operator must register a Member as a Broker Participant if that Member has applied to become a Broker Participant and the Operator is satisfied that the Member:
+- (i) has met the requirements in clause 6.1(b);
+- (ii) has an active Austraclear account and has given its account information to the Operator;
+- (iii) is registered for GST purposes and has executed and delivered to the Operator a recipient created tax invoice agreement in the form specified by the Operator from time to time;
+- (iv) holds an Australian financial services licence (as defined in the Corporations Act) that permits dealing in a financial product by applying for, acquiring, varying or disposing of a financial products on behalf of another person in respect of products that would enable the Member to submit and confirm Broker Pre-matched Trades;
+- (v) is not an Agent Member or Appointing Member;
+- (vi) is not registered as a Trading Participant, a Viewing Participant or a Reallocation Participant; and
