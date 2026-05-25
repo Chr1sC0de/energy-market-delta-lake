@@ -59,11 +59,14 @@ PROMOTED_DASHBOARD_ROUTES_C47C461: tuple[str, ...] = (
     "/marimo/gas_sttm_capacity_settlement/",
 )
 
+PROMOTED_DASHBOARD_ROUTES_2DDAC3F: tuple[str, ...] = ("/marimo/capacity_transactions/",)
+
 PROMOTED_DASHBOARD_ROUTES: tuple[str, ...] = (
     *PROMOTED_DASHBOARD_ROUTES_248,
     *PROMOTED_DASHBOARD_ROUTES_256,
     *PROMOTED_DASHBOARD_ROUTES_258,
     *PROMOTED_DASHBOARD_ROUTES_C47C461,
+    *PROMOTED_DASHBOARD_ROUTES_2DDAC3F,
 )
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
@@ -1009,6 +1012,43 @@ REVIEW_SPECS: tuple[DashboardReviewSpec, ...] = (
             ),
             ControlProbe(description="hub dropdown", text="All hubs"),
             ControlProbe(description="facility dropdown", text="All facilities"),
+        ),
+    ),
+    DashboardReviewSpec(
+        route="/marimo/capacity_transactions/",
+        required_texts=(
+            "Capacity Transactions",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Data Health",
+            "Capacity transaction read diagnostics",
+            "Filters",
+            "Capacity Transaction Summary",
+            "Source Coverage",
+            "Recent Loaded Capacity Transaction Preview",
+        ),
+        control_probes=(
+            ControlProbe(description="refresh data run button", text="Refresh data"),
+            ControlProbe(
+                description="transaction-type dropdown",
+                text="All transaction types",
+            ),
+            ControlProbe(
+                description="transaction-date dropdown",
+                text="All transaction dates",
+            ),
+            ControlProbe(
+                description="source-location dropdown",
+                text="All source locations",
+            ),
+            ControlProbe(
+                description="source-facility dropdown",
+                text="All source facilities",
+            ),
+            ControlProbe(
+                description="source-system dropdown",
+                text="All source systems",
+            ),
         ),
     ),
 )
