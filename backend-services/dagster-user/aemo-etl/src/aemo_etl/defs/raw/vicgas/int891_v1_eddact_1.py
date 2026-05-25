@@ -59,6 +59,5 @@ defs = df_from_s3_keys_definitions_factory(
         is always published (at least) 1 day in arrears.
     """).strip("\n"),
     surrogate_key_sources=["edd_update", "edd_date", "edd_type"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

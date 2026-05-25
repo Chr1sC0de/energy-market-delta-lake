@@ -4,6 +4,7 @@ from typing import cast
 import polars as pl
 from dagster import AssetKey, AssetsDefinition, Definitions, MaterializeResult
 
+from aemo_etl.asset_organization import gas_model_group_name
 from aemo_etl.defs.gas_model.silver_gas_dim_location import (
     SOURCE_TABLES,
     defs,
@@ -113,7 +114,9 @@ def test_defs_returns_asset_and_checks() -> None:
     assert len(asset_checks) == 4
 
     asset_def = cast(AssetsDefinition, assets[0])
-    assert asset_def.group_names_by_key[asset_key] == "gas_model"
+    assert asset_def.group_names_by_key[asset_key] == gas_model_group_name(
+        asset_key.path[-1]
+    )
     assert asset_def.metadata_by_key[asset_key]["dagster/table_name"] == (
         "silver.gas_model.silver_gas_dim_location"
     )

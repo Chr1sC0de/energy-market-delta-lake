@@ -38,6 +38,5 @@ defs = df_from_s3_keys_definitions_factory(
         decommissioned and AEMO does not produce data for it.
     """).strip("\n"),
     surrogate_key_sources=["linepack_zone_id"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

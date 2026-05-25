@@ -12,6 +12,14 @@ from dagster._core.definitions.assets.definition.asset_dep import CoercibleToAss
 from polars import LazyFrame
 from polars._typing import PolarsDataType
 
+from aemo_etl.asset_organization import (
+    LAYER_BRONZE,
+    LAYER_SOURCE_SILVER,
+    SourceReportFamily,
+    source_table_asset_tags,
+    source_table_group_name,
+    source_table_report_family,
+)
 from aemo_etl.configs import AEMO_BUCKET
 from aemo_etl.defs.resources import SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY
 from aemo_etl.factories.checks import (
@@ -47,11 +55,21 @@ def df_from_s3_keys_definitions_factory(
     deps: Iterable[CoercibleToAssetDep] | None = None,
     description: str | None = None,
     job_tags: Mapping[str, object] | None = None,
+    report_family: SourceReportFamily | None = None,
 ) -> Definitions:
     """Create paired bronze and silver definitions for an S3-key source table."""
     schema = with_source_content_hash_schema(schema)
     schema_descriptions = with_source_content_hash_descriptions(schema_descriptions)
     content_hash_columns = source_content_hash_columns(schema)
+    resolved_report_family = report_family or source_table_report_family(
+        domain=domain,
+        name_suffix=name_suffix,
+    )
+    resolved_group_name = (
+        f"gas_{domain}_{resolved_report_family}"
+        if report_family is not None
+        else source_table_group_name(domain=domain, name_suffix=name_suffix)
+    )
 
     bronze_key_prefix = ["bronze", domain]
     bronze_table_name = f"bronze_{name_suffix}"
@@ -66,6 +84,7 @@ def df_from_s3_keys_definitions_factory(
             surrogate_key_sources=tuple(surrogate_key_sources),
             postprocess_object_hooks=tuple(bronze_postprocess_object_hooks or ()),
             postprocess_lazyframe_hooks=tuple(bronze_postprocess_lazyframe_hooks or ()),
+            report_family=resolved_report_family,
         )
     )
 
@@ -77,7 +96,13 @@ def df_from_s3_keys_definitions_factory(
         postprocess_lazyframe_hooks=bronze_postprocess_lazyframe_hooks,
         key_prefix=bronze_key_prefix,
         name=bronze_table_name,
-        group_name=group_name,
+        group_name=resolved_group_name,
+        tags=source_table_asset_tags(
+            domain=domain,
+            name_suffix=name_suffix,
+            layer=LAYER_BRONZE,
+            report_family=resolved_report_family,
+        ),
         io_manager_key=SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY,
         deps=deps,
         description=f"Bronze dataset, contains current un-cleansed source state.\n\n{description}",
@@ -111,7 +136,13 @@ def df_from_s3_keys_definitions_factory(
     silver_asset = silver_df_from_s3_keys_asset_factory(
         key_prefix=silver_key_prefix,
         name=silver_table_name,
-        group_name=f"{group_name}_cleansed",
+        group_name=resolved_group_name,
+        tags=source_table_asset_tags(
+            domain=domain,
+            name_suffix=name_suffix,
+            layer=LAYER_SOURCE_SILVER,
+            report_family=resolved_report_family,
+        ),
         io_manager_key="aemo_parquet_overwrite_io_manager",
         ins={"df": AssetIn(bronze_asset.key)},
         description=f"Silver dataset, contains source-file deduplicated current rows.\n\n{description}",

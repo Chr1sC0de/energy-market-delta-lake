@@ -69,6 +69,5 @@ defs = df_from_s3_keys_definitions_factory(
         for the previous gas days 5 intraday schedules.
     """).strip("\n"),
     surrogate_key_sources=["schedule_interval", "transmission_id", "mirn"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

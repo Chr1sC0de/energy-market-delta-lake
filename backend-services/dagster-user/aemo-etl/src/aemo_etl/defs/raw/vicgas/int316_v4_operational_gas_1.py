@@ -53,6 +53,5 @@ defs = df_from_s3_keys_definitions_factory(
         and the gas date prior to the current gas date.
     """).strip("\n"),
     surrogate_key_sources=["gas_date", "hv_zone"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

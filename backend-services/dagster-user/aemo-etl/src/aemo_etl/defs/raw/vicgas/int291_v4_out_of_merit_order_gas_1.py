@@ -49,6 +49,5 @@ defs = df_from_s3_keys_definitions_factory(
         settlement (M+7, M+18 and M+118).
     """).strip("\n"),
     surrogate_key_sources=["gas_date", "statement_version_id"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

@@ -75,6 +75,5 @@ defs = df_from_s3_keys_definitions_factory(
         VICGAS, VICGASW.
     """).strip("\n"),
     surrogate_key_sources=["company_id", "market_code"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

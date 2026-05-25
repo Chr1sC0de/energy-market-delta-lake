@@ -12,6 +12,11 @@ from typing import Final, Literal, cast
 from dagster import AssetKey, AssetSelection, Definitions
 from types_boto3_s3 import S3Client
 
+from aemo_etl.asset_organization import (
+    AEMO_ETL_LAYER_TAG,
+    GAS_MODEL_TARGET_SELECTOR,
+    LAYER_GAS_MODEL,
+)
 from aemo_etl.factories.df_from_s3_keys.source_tables import (
     DFFromS3KeysSourceTableSpec,
     load_source_table_specs,
@@ -37,7 +42,7 @@ SEED_CACHE_DIR_NAME: Final = "archive-seed"
 SEED_OBJECTS_DIR_NAME: Final = "objects"
 SEED_SPEC_FILE_NAME: Final = "seed-spec.json"
 SEED_RUN_MANIFEST_FILE_NAME: Final = "seed-run-manifest.json"
-GAS_MODEL_TARGET: Final = "gas_model"
+GAS_MODEL_TARGET: Final = GAS_MODEL_TARGET_SELECTOR
 ZIP_GLOB_PATTERN: Final = "*.zip"
 SeedRunOperation = Literal["refresh", "load-localstack"]
 SeedRunStatus = Literal["success", "failed"]
@@ -273,7 +278,9 @@ def build_gas_model_archive_seed_spec(definitions: Definitions) -> ArchiveSeedSp
     repository_def = definitions.get_repository_def()
     assets_defs = repository_def.assets_defs_by_key.values()
     selected_keys = (
-        AssetSelection.groups(GAS_MODEL_TARGET).upstream().resolve(assets_defs)
+        AssetSelection.tag(AEMO_ETL_LAYER_TAG, LAYER_GAS_MODEL)
+        .upstream()
+        .resolve(assets_defs)
     )
 
     source_tables: list[SourceTableSeedSpec] = []

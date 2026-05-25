@@ -40,6 +40,5 @@ defs = df_from_s3_keys_definitions_factory(
         This report will be regenerated when CC zone data is updated.
     """).strip("\n"),
     surrogate_key_sources=["zone_id"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

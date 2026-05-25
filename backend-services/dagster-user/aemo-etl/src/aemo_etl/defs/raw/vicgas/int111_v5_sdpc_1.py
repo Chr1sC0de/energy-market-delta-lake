@@ -75,6 +75,5 @@ defs = df_from_s3_keys_definitions_factory(
         This report will contain 24 rows for each SDPC for each gas day reported.
     """).strip("\n"),
     surrogate_key_sources=["gas_date", "ti", "sdpc_id"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

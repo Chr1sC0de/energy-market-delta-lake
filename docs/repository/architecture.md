@@ -161,12 +161,14 @@ stack.
 e2e stack with generated Dagster config, Postgres, LocalStack, AEMO ETL user
 code, one webserver, and the daemon. Once the stack is ready, it keeps
 local-only schedules and alerting stopped, drives the selected Dagster dataflow
-through GraphQL, and monitors the full `gas_model` dataflow plus a direct
-Dagster event-log storage read for final asset-check status. Direct-launch
-scenarios also collect current-source `source_definitions` with
-`uv run dg list defs --assets "group:gas_model" --json` before stack startup.
+through GraphQL, and monitors the full curated `gas_model` dataflow selected by
+`tag:aemo_etl_layer=gas_model` plus a direct Dagster event-log storage read for
+final asset-check status. Direct-launch scenarios also collect current-source
+`source_definitions` with
+`uv run dg list defs --assets "tag:aemo_etl_layer=gas_model" --json` before
+stack startup.
 The `full-gas-model` scenario launches explicit Dagster asset-run batches by
-dependency wave for every materializable `gas_model` asset plus its
+dependency wave for every materializable curated `gas_model` asset plus its
 materializable upstream closure; it defaults to host webserver port `3001`, a 90
 minute timeout, Dagster `max_concurrent_runs` `6`, 1 cached raw object per
 required source table, and 1 cached zip object per required domain. Ralph
@@ -191,7 +193,7 @@ manifest records gate timing, final dataflow telemetry, direct-launch scenario
 evidence, cleanup duration, and non-benign cleanup evidence so Promotion review
 can distinguish dataflow success from cleanup residue without changing the
 dataflow gate decision. The direct-launch evidence records the scenario, launch
-mode, target group, target asset count, target asset-check count, target keys,
+mode, target selector, target asset count, target asset-check count, target keys,
 STTM target keys, selected upstream closure count, skipped live source asset
 keys, dependency-wave count, run-batch count, and asset batch size; the
 manifest also records top-level source-definition evidence with the current
@@ -263,6 +265,7 @@ Gas market knowledge base responsibility:
   - `infrastructure/aws-pulumi/code_locations.py`
   - `backend-services/compose.yaml`
   - `backend-services/scripts/aemo-etl-e2e`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/asset_organization.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/caddy/Caddyfile`

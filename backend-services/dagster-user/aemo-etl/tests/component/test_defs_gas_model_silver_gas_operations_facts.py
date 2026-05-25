@@ -12,6 +12,7 @@ from dagster import (
 from pytest import MonkeyPatch, raises
 
 import aemo_etl.defs.gas_model.silver_gas_dim_date as date_module
+from aemo_etl.asset_organization import gas_model_group_name
 from aemo_etl.configs import DEFAULT_SCHEDULE_STATUS
 from aemo_etl.defs.gas_model.silver_gas_dim_date import (
     defs as date_defs,
@@ -450,7 +451,9 @@ def test_new_operations_defs_return_asset_and_checks() -> None:
     assert len(date_assets) == 1
     assert len(date_asset_checks) == 4
     assert len(date_schedules) == 1
-    assert date_asset_def.group_names_by_key[date_asset_key] == "gas_model"
+    assert date_asset_def.group_names_by_key[date_asset_key] == gas_model_group_name(
+        date_asset_key.path[-1]
+    )
     assert date_metadata["dagster/table_name"] == ".".join(date_asset_key.path)
     assert date_metadata["calendar_start_date"] == "1900-01-01"
     assert date_metadata["schedule_cron"] == date_module.SCHEDULE_CRON
@@ -466,41 +469,35 @@ def test_new_operations_defs_return_asset_and_checks() -> None:
             operational_point_defs(),
             AssetKey(["silver", "gas_model", "silver_gas_dim_operational_point"]),
             OPERATIONAL_POINT_SOURCE_TABLES,
-            "gas_model",
         ),
         (
             connection_point_flow_defs(),
             AssetKey(["silver", "gas_model", "silver_gas_fact_connection_point_flow"]),
             CONNECTION_POINT_FLOW_SOURCE_TABLES,
-            "gas_model",
         ),
         (
             facility_flow_storage_defs(),
             AssetKey(["silver", "gas_model", "silver_gas_fact_facility_flow_storage"]),
             FACILITY_FLOW_STORAGE_SOURCE_TABLES,
-            "gas_model",
         ),
         (
             nomination_forecast_defs(),
             AssetKey(["silver", "gas_model", "silver_gas_fact_nomination_forecast"]),
             NOMINATION_FORECAST_SOURCE_TABLES,
-            "gas_model",
         ),
         (
             linepack_defs(),
             AssetKey(["silver", "gas_model", "silver_gas_fact_linepack"]),
             LINEPACK_SOURCE_TABLES,
-            "gas_model",
         ),
         (
             operational_meter_flow_defs(),
             AssetKey(["silver", "gas_model", "silver_gas_fact_operational_meter_flow"]),
             OPERATIONAL_METER_FLOW_SOURCE_TABLES,
-            "gas_model",
         ),
     ]
 
-    for result, asset_key, source_tables, group_name in definitions_by_table:
+    for result, asset_key, source_tables in definitions_by_table:
         assets = list(result.assets or [])
         asset_checks = list(result.asset_checks or [])
         asset_def = cast(AssetsDefinition, assets[0])
@@ -508,7 +505,9 @@ def test_new_operations_defs_return_asset_and_checks() -> None:
         assert isinstance(result, Definitions)
         assert len(assets) == 1
         assert len(asset_checks) == 4
-        assert asset_def.group_names_by_key[asset_key] == group_name
+        assert asset_def.group_names_by_key[asset_key] == gas_model_group_name(
+            asset_key.path[-1]
+        )
         assert asset_def.metadata_by_key[asset_key]["dagster/table_name"] == (
             ".".join(asset_key.path)
         )

@@ -17,6 +17,7 @@ from dagster import (
 )
 from polars import LazyFrame
 
+from aemo_etl.asset_organization import gas_model_group_name
 from aemo_etl.defs.gas_model._asset_shell import (
     GasModelAssetSpec,
     build_gas_model_asset_definitions,
@@ -26,7 +27,7 @@ from aemo_etl.utils import get_surrogate_key
 DOMAIN = "gas_model"
 TABLE_NAME = "silver_gas_dim_location"
 KEY_PREFIX = ["silver", DOMAIN]
-GROUP_NAME = "gas_model"
+GROUP_NAME = gas_model_group_name(TABLE_NAME)
 GRAIN = "one current row per source-qualified gas location"
 SURROGATE_KEY_SOURCES = ["source_system", "source_location_id"]
 SOURCE_TABLES = ["silver.gbb.silver_gasbb_locations_list"]

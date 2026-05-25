@@ -137,6 +137,14 @@ The source-table modules under `src/aemo_etl/defs/raw/gbb`,
 `src/aemo_etl/defs/raw/sttm`, and `src/aemo_etl/defs/raw/vicgas` are generated
 from `factories/df_from_s3_keys/definitions.py`.
 
+`src/aemo_etl/asset_organization.py` owns the Dagster visual lineage groups and
+durable tag contract. GBB, STTM, and VICGAS source-table bronze/source-silver
+pairs use **Source report family** groups named `gas_<domain>_<family>` and tags
+for `aemo_etl_layer`, `aemo_etl_domain`, `aemo_etl_role`, and
+`aemo_etl_report_family`. The Source report family values are `market`,
+`operations`, `settlement_retail`, `capacity`, `quality`, `reference`, and
+`notices`.
+
 For each source table the factory creates:
 
 - one bronze asset under `bronze/<domain>/...`
@@ -208,11 +216,12 @@ first non-empty batch as an overwrite, then applies the same current-state merge
 predicate used by normal source-table bronze ingestion.
 
 `aemo-e2e-archive-seed` is the local **End-to-end test** seed path. It imports
-`defs()`, derives the full `gas_model` source-table and zip-domain seed spec
-from the Dagster asset graph, refreshes a configurable latest slice from the
-live Archive bucket into `backend-services/.e2e/aemo-etl`, and lets later
-LocalStack runs load that cache before Dagster starts. The default slice is 10
-raw objects per required source table and 3 zip objects per required domain.
+`defs()`, selects the full curated `gas_model` target through
+`tag:aemo_etl_layer=gas_model`, derives the required source-table and zip-domain
+seed spec from the Dagster asset graph, refreshes a configurable latest slice
+from the live Archive bucket into `backend-services/.e2e/aemo-etl`, and lets
+later LocalStack runs load that cache before Dagster starts. The default slice is
+10 raw objects per required source table and 3 zip objects per required domain.
 
 The corresponding silver asset:
 
@@ -235,7 +244,12 @@ Manifest-backed STTM coverage follows ADR
 existing `gas_model` facts and dimensions receive STTM rows where report grains
 match, and new `gas_model` facts are added where a report has a real grain that
 does not fit current assets.
-Gas-model silver assets retry failed materializations up to three times with a 60-second exponential backoff and plus/minus jitter.
+Gas-model silver assets use mart-specific visual groups
+(`gas_model_dimensions`, `gas_model_operations`, `gas_model_market`,
+`gas_model_capacity_settlement`, and `gas_model_quality_status`) while durable
+selectors use `aemo_etl_layer=gas_model`. They also carry `aemo_etl_mart` tags
+and retry failed materializations up to three times with a 60-second exponential
+backoff and plus/minus jitter.
 
 ### Delta maintenance
 
@@ -353,6 +367,7 @@ flowchart TD
 
 - `sync.owner`: `docs`
 - `sync.sources`:
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/asset_organization.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`

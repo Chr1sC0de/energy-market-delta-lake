@@ -67,6 +67,7 @@ def _spec(
         glob_pattern=glob_pattern,
         schema=_SCHEMA,
         surrogate_key_sources=("col1",),
+        report_family="reference",
     )
 
 

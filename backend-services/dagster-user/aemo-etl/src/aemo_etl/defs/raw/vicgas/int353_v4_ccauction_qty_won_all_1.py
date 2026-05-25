@@ -58,6 +58,5 @@ defs = df_from_s3_keys_definitions_factory(
         calendar months for the years within auction period range.
     """).strip("\n"),
     surrogate_key_sources=["zone_id", "cc_period"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

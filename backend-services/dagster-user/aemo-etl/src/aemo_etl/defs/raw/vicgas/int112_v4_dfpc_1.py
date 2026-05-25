@@ -65,6 +65,5 @@ defs = df_from_s3_keys_definitions_factory(
         each DFPC for each gas day reported.
     """).strip("\n"),
     surrogate_key_sources=["dfpc_id", "ti", "commencement_date", "termination_date"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

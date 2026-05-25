@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 from pytest_mock import MockerFixture
 
+from aemo_etl.asset_organization import GAS_MODEL_TARGET_SELECTOR
 from aemo_etl.maintenance.e2e_archive_seed import (
     DEFAULT_RAW_LATEST_COUNT,
     DEFAULT_ZIP_LATEST_COUNT,
@@ -31,7 +32,7 @@ from aemo_etl.maintenance.e2e_archive_seed import (
 
 def _seed_spec() -> ArchiveSeedSpec:
     return ArchiveSeedSpec(
-        target="gas_model",
+        target=GAS_MODEL_TARGET_SELECTOR,
         source_tables=(
             SourceTableSeedSpec(
                 table_id="gbb.bronze_table",
@@ -271,7 +272,10 @@ def test_refresh_archive_seed_downloads_latest_slice_and_manifest(
         == "bronze/gbb/table_20240103.csv"
     )
     assert not stale_path.exists()
-    assert json.loads(seed_spec_path(tmp_path).read_text())["target"] == "gas_model"
+    assert (
+        json.loads(seed_spec_path(tmp_path).read_text())["target"]
+        == GAS_MODEL_TARGET_SELECTOR
+    )
     assert (
         json.loads(seed_run_manifest_path(tmp_path).read_text())["status"] == "success"
     )
