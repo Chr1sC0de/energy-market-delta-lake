@@ -61,6 +61,5 @@ defs = df_from_s3_keys_definitions_factory(
         previous_day_min, max, overnight_min, average_wind_speed, sunshine.
     """).strip("\n"),
     surrogate_key_sources=["dfs_version", "gas_date"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

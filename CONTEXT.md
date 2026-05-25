@@ -212,6 +212,13 @@ model as curated coverage because the repository lacks a usable source
 definition for its fields, grain, and meaning.
 _Avoid_: Implemented gap, ignored report
 
+**Source report family**:
+The AEMO ETL Dagster asset-organization taxonomy that groups each GBB, STTM, and
+VICGAS source-table bronze/source-silver pair by report purpose for lineage UI
+readability. Current family values are `market`, `operations`,
+`settlement_retail`, `capacity`, `quality`, `reference`, and `notices`.
+_Avoid_: Source Subproject, report Subproject
+
 **Gas market knowledge base**:
 The repo-level **Subproject** at `tools/gas-market-knowledge-base` for turning
 gas-market source documents into reviewable text artifacts for agents and
@@ -302,6 +309,9 @@ _Avoid_: Dashboard type, user persona
   `$shape-issues` workflow. Replacing the earlier draft coverage mechanism does
   not require an ADR because it does not establish a durable repo architecture
   decision.
+- A **Source report family** is asset lineage organization inside the AEMO ETL
+  **Subproject**. GBB, STTM, and VICGAS are source-table domains, not
+  **Subprojects**.
 - A **Delivery mode** selects an **Integration target**.
 - **Gitflow delivery** uses `dev` as the default **Integration target**.
 - **Trunk delivery** uses `main` as the default **Integration target**.

@@ -53,6 +53,5 @@ defs = df_from_s3_keys_definitions_factory(
         of data per report for the previous 7 days.
     """).strip("\n"),
     surrogate_key_sources=["node_name", "ti", "transmission_id"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

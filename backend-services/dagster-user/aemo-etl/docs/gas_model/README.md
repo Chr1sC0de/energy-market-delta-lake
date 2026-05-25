@@ -5,6 +5,7 @@ Index for the implemented `silver.gas_model` documentation in `aemo-etl`.
 ## Table of contents
 
 - [STTM modeling policy](#sttm-modeling-policy)
+- [Lineage and selection contract](#lineage-and-selection-contract)
 - [ERD pages](#erd-pages)
 - [Related docs](#related-docs)
 
@@ -19,6 +20,19 @@ does not fit current assets.
 
 `INT685` and `INT685B` remain **Source-spec gaps** until AEMO document discovery
 provides usable source definitions.
+
+## Lineage and selection contract
+
+Curated `silver/gas_model/*` assets are visually grouped by mart:
+`gas_model_dimensions`, `gas_model_operations`, `gas_model_market`,
+`gas_model_capacity_settlement`, or `gas_model_quality_status`. Durable
+automation does not target those visual groups directly. Local **End-to-end
+test** seed generation and Promotion evidence use
+`tag:aemo_etl_layer=gas_model`, and each curated asset also carries
+`aemo_etl_mart` for mart-level inspection.
+
+`silver/metadata/silver_table_metadata` is metadata, not a curated gas-model
+mart asset, so it stays outside the `tag:aemo_etl_layer=gas_model` target.
 
 ## ERD pages
 
@@ -41,9 +55,11 @@ provides usable source definitions.
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `CONTEXT.md`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/asset_organization.py`
   - `docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/source_tables.json`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/__init__.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/_asset_shell.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

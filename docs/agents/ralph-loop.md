@@ -1271,16 +1271,18 @@ instead of an empty ignored cache under the worktree, and rebuilds all local e2e
 image tags from that source worktree before startup. Promotion keeps this gate
 at the command default run queue concurrency and narrows the raw and zip seed
 horizon to 1 object. Before startup, the scenario records current source
-definitions from `uv run dg list defs --assets "group:gas_model" --json` as
-`source_definitions`, including executable target count, asset-check count,
-full target keys, and STTM target keys. The `promotion-gas-model` scenario keeps
+definitions from
+`uv run dg list defs --assets "tag:aemo_etl_layer=gas_model" --json` as
+`source_definitions`, including executable target count, asset-check count, full
+target keys, and STTM target keys. The `promotion-gas-model` scenario keeps
 Dagster automation stopped and launches explicit asset-run batches by dependency
-wave for every materializable `gas_model` asset plus its materializable upstream
-closure, while skipping live `bronze_nemweb_public_files_*` discovery/listing
-assets so the gate starts from seeded LocalStack objects. The runtime GraphQL
+wave for every materializable curated `gas_model` asset plus its materializable
+upstream closure, while skipping live `bronze_nemweb_public_files_*`
+discovery/listing assets so the gate starts from seeded LocalStack objects. The
+runtime GraphQL
 `dataflow.scenario_evidence.target_asset_count` must match
 `source_definitions.executable_asset_count`; a stale 29-asset runtime graph
-therefore fails against current 37-asset source definitions before Promotion
+therefore fails against current 36-asset source definitions before Promotion
 launches asset batches. Each batch runs in-process inside its Podman run-worker
 container, reducing LocalStack and Delta Lake DynamoDB lock-table contention.
 The generated stack uses fixed service IPs for Postgres, LocalStack, and the
@@ -1288,11 +1290,11 @@ AEMO ETL code server so run-worker containers do not depend on Podman DNS during
 high-concurrency gates. This preserves final target progress and final
 asset-check status without creating one sensor-triggered run per upstream
 source table. The e2e `run-manifest.json` dataflow section records structured
-direct-launch scenario evidence: selected scenario, launch mode, target group,
-current GraphQL-derived target asset count, target asset-check count, target
-keys, STTM target keys, selected upstream closure count, skipped live source
-asset keys, dependency-wave count, run-batch count, asset batch size, and nested
-source-definition evidence when available.
+direct-launch scenario evidence: selected scenario, launch mode, target
+selector, current GraphQL-derived target asset count, target asset-check count,
+target keys, STTM target keys, selected upstream closure count, skipped live
+source asset keys, dependency-wave count, run-batch count, asset batch size, and
+nested source-definition evidence when available.
 The gate protects the approved #77 coverage invariants: every materializable
 `gas_model` asset, final asset-check status for that target, Dagster,
 LocalStack/S3, Podman run-worker containers, and the Dagster GraphQL monitor.
@@ -1866,6 +1868,7 @@ ordinary issue failure or retryable QA failure.
   - `docs/agents/issue-tracker.md`
   - `docs/agents/triage-labels.md`
   - `docs/repository/documentation-sync.md`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/asset_organization.py`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`

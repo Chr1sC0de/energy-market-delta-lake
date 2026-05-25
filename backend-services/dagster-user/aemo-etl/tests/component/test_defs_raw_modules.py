@@ -21,6 +21,11 @@ from dagster._core.definitions.unresolved_asset_job_definition import (
 import polars as pl
 from polars import String
 
+from aemo_etl.asset_organization import (
+    SOURCE_REPORT_FAMILIES,
+    SOURCE_TABLE_REPORT_FAMILY_BY_DOMAIN,
+    source_table_group_name,
+)
 from aemo_etl.defs.raw.gbb._ecs import (
     oom_recovery_spot_ecs_tags,
     pipeline_connection_flow_v2_hotfix_ecs_tags,
@@ -240,6 +245,34 @@ def test_sttm_core_source_table_specs_registered_for_archive_replay() -> None:
         "facility_identifier",
         "ctp_identifier",
     )
+
+
+def test_source_table_specs_have_complete_source_report_family_assignments() -> None:
+    from aemo_etl.factories.df_from_s3_keys.source_tables import (
+        load_source_table_specs,
+    )
+
+    specs_by_id = {
+        (spec.domain, spec.name_suffix): spec
+        for spec in load_source_table_specs()
+        if spec.domain in SOURCE_TABLE_REPORT_FAMILY_BY_DOMAIN
+    }
+    expected_ids = {
+        (domain, name_suffix)
+        for domain, source_tables in SOURCE_TABLE_REPORT_FAMILY_BY_DOMAIN.items()
+        for name_suffix in source_tables
+    }
+
+    assert set(specs_by_id) == expected_ids
+    for spec in specs_by_id.values():
+        assert spec.report_family in SOURCE_REPORT_FAMILIES
+        assert (
+            source_table_group_name(
+                domain=spec.domain,
+                name_suffix=spec.name_suffix,
+            )
+            == f"gas_{spec.domain}_{spec.report_family}"
+        )
 
 
 def test_sttm_event_driven_selection_includes_core_market_bronze_assets() -> None:

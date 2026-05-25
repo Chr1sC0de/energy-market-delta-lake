@@ -50,6 +50,5 @@ defs = df_from_s3_keys_definitions_factory(
         payment - linepack account balance - date and time when the report was produced.
     """).strip("\n"),
     surrogate_key_sources=["gas_date"],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

@@ -23,6 +23,7 @@ from polars import Datetime, Int64, LazyFrame, Schema, String
 from requests import RequestException, Response
 from types_boto3_s3 import S3Client
 
+from aemo_etl.asset_organization import GAS_AEMO_GAS_DOCUMENTS_GROUP
 from aemo_etl.configs import AEMO_BUCKET, ARCHIVE_BUCKET, DAGSTER_URI, LANDING_BUCKET
 from aemo_etl.defs.resources import SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY
 from aemo_etl.factories.aemo_gas_documents.models import (
@@ -693,7 +694,7 @@ def aemo_gas_document_sources_asset_factory(
     )
     asset_kwargs.setdefault("key_prefix", ["bronze", AEMO_GAS_DOCUMENTS_DOMAIN])
     asset_kwargs.setdefault("name", BRONZE_AEMO_GAS_DOCUMENT_SOURCES_TABLE_NAME)
-    asset_kwargs.setdefault("group_name", "gas_raw")
+    asset_kwargs.setdefault("group_name", GAS_AEMO_GAS_DOCUMENTS_GROUP)
     asset_kwargs.setdefault("io_manager_key", SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY)
     asset_kwargs.setdefault("kinds", {"source", "table", "deltalake"})
     asset_kwargs.setdefault(

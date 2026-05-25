@@ -39,9 +39,9 @@ The project materializes Dagster assets defined under `src/aemo_etl/defs` to bui
 - Unzipper assets expand zipped source payloads in landing storage and archive the original zip files after successful extraction.
 - Event-driven source-table bronze assets read matching landing files, parse headered CSVs or schema-ordered headerless CSVs, drop NUL-contaminated physical CSV lines, reject conflicting latest-source rows for a `surrogate_key`, collapse each micro-batch to the latest `source_file` row per key, explicitly merge current-state Delta rows by `surrogate_key`, archive processed files after a table write or when a zero-row processed batch requires no table change, delete zero-byte landing objects, and warn on skipped selected keys.
 - Silver assets overwrite source-specific parquet snapshots from the current bronze state.
-- `gas_model` assets combine GBB and VICGAS silver tables into shared dimensions and marts.
+- `gas_model` assets combine GBB, VICGAS, and fitted STTM silver tables into shared dimensions and marts.
 - `delta_table_vacuum_schedule` runs `delta_table_vacuum_job` daily at 02:00 Australia/Melbourne to compact and vacuum Delta-backed assets.
-- `aemo-e2e-archive-seed` derives the full `gas_model` local **End-to-end test** seed spec from Dagster definitions and manages the ignored cached Archive seed under `backend-services/.e2e/aemo-etl`.
+- `aemo-e2e-archive-seed` derives the full curated `gas_model` local **End-to-end test** seed spec from Dagster definitions selected by the stable `aemo_etl_layer=gas_model` tag and manages the ignored cached Archive seed under `backend-services/.e2e/aemo-etl`.
 
 ## High-level architecture
 
@@ -181,12 +181,34 @@ Detailed sequence diagrams for GBB, VICGAS, STTM, and raw-to-silver behavior liv
   bootstrap writes bundles under `bronze/sttm/<filename>` for the STTM unzipper
   path; `CURRENTDAY.*` aliases stay out of the bootstrap/backfill path.
 - `gas_model`: shared dimensions and marts that reconcile gas source data into
-  reporting-friendly tables. GBB and VICGAS are the current implemented
-  sources. Manifest-backed STTM coverage follows ADR
+  reporting-friendly tables. GBB, VICGAS, and manifest-backed STTM inputs are
+  implemented where their grains fit the model. Manifest-backed STTM coverage
+  follows ADR
   [0006](../../../docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md):
   existing `gas_model` assets receive STTM rows where report grains match, and
   new `gas_model` facts are added where a report has a real grain that does not
   fit current assets.
+
+### Asset organization contract
+
+Dagster `group_name` is the visual lineage UI slice. Durable automation uses
+structured asset tags instead. Source-table bronze/source-silver pairs for GBB,
+STTM, and VICGAS stay together in a **Source report family** group named
+`gas_<domain>_<family>` and carry `aemo_etl_layer`, `aemo_etl_domain`,
+`aemo_etl_role`, and `aemo_etl_report_family` tags. The current Source report
+family values are `market`, `operations`, `settlement_retail`, `capacity`,
+`quality`, `reference`, and `notices`.
+
+Ingestion helper assets have their own visual groups:
+`gas_ingestion_discovery`, `gas_ingestion_unzip`, `gas_aemo_gas_documents`, and
+`gas_metadata`. Curated `silver/gas_model/*` assets use mart-specific visual
+groups such as `gas_model_dimensions`, `gas_model_operations`,
+`gas_model_market`, `gas_model_capacity_settlement`, and
+`gas_model_quality_status`, and carry `aemo_etl_layer=gas_model` plus an
+`aemo_etl_mart` tag. Local **End-to-end test** seed and Promotion evidence
+selection use `tag:aemo_etl_layer=gas_model`; metadata assets such as
+`silver/metadata/silver_table_metadata` are intentionally outside that durable
+target.
 
 Detailed gas-model ERDs remain under `docs/gas_model/`:
 
@@ -359,6 +381,7 @@ aemo-etl/
 
 - `sync.owner`: `docs`
 - `sync.sources`:
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/asset_organization.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/alerts.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`

@@ -63,6 +63,5 @@ defs = df_from_s3_keys_definitions_factory(
         "last_name",
         "contact_email",
     ],
-    group_name="gas_raw",
     deps=[AssetSpec(["bronze", "vicgas", "bronze_nemweb_public_files_vicgas"])],
 )

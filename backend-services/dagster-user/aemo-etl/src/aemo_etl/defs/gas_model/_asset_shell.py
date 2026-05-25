@@ -20,6 +20,7 @@ from dagster import (
 from polars import LazyFrame
 from polars._typing import PolarsDataType
 
+from aemo_etl.asset_organization import gas_model_asset_tags, gas_model_group_name
 from aemo_etl.configs import AEMO_BUCKET, DEFAULT_SENSOR_STATUS
 from aemo_etl.factories.checks import (
     duplicate_row_check_factory,
@@ -30,7 +31,6 @@ from aemo_etl.utils import get_metadata_schema
 
 DOMAIN = "gas_model"
 KEY_PREFIX = ["silver", DOMAIN]
-GROUP_NAME = "gas_model"
 IO_MANAGER_KEY = "aemo_parquet_overwrite_io_manager"
 KINDS = {"table", "parquet"}
 
@@ -60,7 +60,8 @@ def build_gas_model_asset_definitions(spec: GasModelAssetSpec) -> Definitions:
     assets_definition = asset(
         name=spec.name,
         key_prefix=KEY_PREFIX,
-        group_name=GROUP_NAME,
+        group_name=gas_model_group_name(spec.name),
+        tags=gas_model_asset_tags(spec.name),
         description=spec.description,
         ins=dict(spec.ins),
         io_manager_key=IO_MANAGER_KEY,

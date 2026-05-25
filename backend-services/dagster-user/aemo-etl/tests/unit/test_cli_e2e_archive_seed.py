@@ -10,6 +10,7 @@ import boto3
 import pytest
 from pytest_mock import MockerFixture
 
+from aemo_etl.asset_organization import GAS_MODEL_TARGET_SELECTOR
 from aemo_etl.cli import e2e_archive_seed as cli
 from aemo_etl.maintenance.e2e_archive_seed import (
     DEFAULT_ARCHIVE_SEED_BUCKET,
@@ -23,7 +24,11 @@ from aemo_etl.maintenance.e2e_archive_seed import (
 
 
 def _seed_spec() -> ArchiveSeedSpec:
-    return ArchiveSeedSpec(target="gas_model", source_tables=(), zip_domains=())
+    return ArchiveSeedSpec(
+        target=GAS_MODEL_TARGET_SELECTOR,
+        source_tables=(),
+        zip_domains=(),
+    )
 
 
 def _manifest(tmp_path: Path, *, status: SeedRunStatus = "success") -> SeedRunManifest:
@@ -75,7 +80,7 @@ def test_spec_command_emits_seed_spec_json(
     assert cli.main(["spec"]) == 0
 
     assert json.loads(capsys.readouterr().out) == {
-        "target": "gas_model",
+        "target": GAS_MODEL_TARGET_SELECTOR,
         "source_tables": [],
         "zip_domains": [],
     }

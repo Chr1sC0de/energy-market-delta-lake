@@ -18,6 +18,7 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
+from aemo_etl.asset_organization import GAS_INGESTION_DISCOVERY_GROUP
 from aemo_etl.configs import AEMO_BUCKET, LANDING_BUCKET
 from aemo_etl.factories.checks import duplicate_row_check_factory
 from aemo_etl.factories.nemweb_public_files.assets import (
@@ -176,7 +177,7 @@ def nemweb_public_files_definitions_factory(
     max_retry_time: int = 100,
     folder_filter: TagFilter = default_folder_filter,
     file_filter: TagFilter = default_file_filter,
-    group_name: str = "gas_raw",
+    group_name: str = GAS_INGESTION_DISCOVERY_GROUP,
     tags: Mapping[str, str] | None = None,
     default_status: DefaultScheduleStatus = DefaultScheduleStatus.STOPPED,
     table_bucket: str = AEMO_BUCKET,
