@@ -813,6 +813,47 @@ def test_dashboard_registry_resolves_legacy_source_chunk_references() -> None:
     assert unknown == SourceChunkReference(chunk_id="chunk-unknown")
 
 
+def test_dashboard_registry_repo_root_finds_checkout_root(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    index_path = (
+        repo_root
+        / "tools/gas-market-knowledge-base/generated/silver/index/chunks.jsonl"
+    )
+    index_path.parent.mkdir(parents=True)
+    index_path.write_text("", encoding="utf-8")
+    module_path = (
+        repo_root / "backend-services/marimo/src/marimoserver/dashboard_registry.py"
+    )
+
+    assert registry_module._repo_root_for_module(module_path) == repo_root
+
+
+def test_dashboard_registry_repo_root_falls_back_for_packaged_image_path(
+    tmp_path: Path,
+) -> None:
+    module_path = tmp_path / "opt/marimo/marimoserver/dashboard_registry.py"
+
+    assert registry_module._repo_root_for_module(module_path) == (
+        tmp_path / "opt/marimo"
+    )
+
+
+def test_dashboard_registry_repo_root_preserves_source_checkout_depth(
+    tmp_path: Path,
+) -> None:
+    repo_root = tmp_path / "repo"
+    module_path = (
+        repo_root / "backend-services/marimo/src/marimoserver/dashboard_registry.py"
+    )
+
+    assert registry_module._repo_root_for_module(module_path) == repo_root
+
+
+def test_dashboard_registry_repo_root_handles_shallow_module_paths() -> None:
+    assert registry_module._repo_root_for_module(Path("/opt/module.py")) == Path("/")
+    assert registry_module._repo_root_for_module(Path("/module.py")) == Path("/")
+
+
 def test_dashboard_registry_reads_generated_chunk_index_defensively(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
