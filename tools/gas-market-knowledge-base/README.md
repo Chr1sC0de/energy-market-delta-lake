@@ -6,7 +6,8 @@ archive-prefix completeness audit, archive PDF cache fetcher,
 Docling-based silver document extraction,
 Docling Hybrid silver chunk generation, retrieval index validation,
 gold **Market context** citation validation, generated-artifact policy, seed
-gold glossary artifacts, and **Unit test** lane.
+gold glossary Markdown rendering helpers, seed gold glossary artifacts, and
+**Unit test** lane.
 
 The CLI is available inside this Subproject with `uv run`:
 
@@ -140,9 +141,10 @@ uv run gas-market-kb validate
 Validation fails on missing silver document targets, missing chunk targets,
 duplicate chunk IDs, malformed frontmatter, missing citations metadata, body
 hash mismatches, chunk files not referenced by the index, stale index rows,
-uncited gold glossary definition claims, broken gold chunk links, missing source
-hashes, or stale glossary index references. The command does not create
-embeddings or vector storage.
+uncited gold glossary definition claims, indented gold Markdown headings or
+normal body lines, malformed gold citation lists, broken gold chunk or source
+document links, missing source hashes, or stale glossary index references. The
+command does not create embeddings or vector storage.
 
 ## Local QA
 
@@ -208,7 +210,8 @@ artifact output rather than maintained router documentation.
 - `src/gas_market_knowledge_base/docling_adapter.py`: Docling PDF-to-Markdown
   and Hybrid chunking adapters with OCR disabled for v1 extraction.
 - `src/gas_market_knowledge_base/gold_context.py`: gold **Market context**
-  citation and glossary-index validation.
+  Markdown rendering helpers, citation validation, and glossary-index
+  validation.
 - `src/gas_market_knowledge_base/pdf_cache.py`: archive PDF cache fetcher.
 - `src/gas_market_knowledge_base/silver_chunks.py`: silver chunk Markdown,
   retrieval index, and validation behavior.
