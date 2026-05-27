@@ -1,6 +1,5 @@
 """Bronze source manifest builder for AEMO gas document metadata rows."""
 
-import hashlib
 import json
 import re
 from collections.abc import Iterable, Mapping, Sequence
@@ -10,6 +9,15 @@ from typing import cast
 
 import polars as pl
 
+from gas_market_knowledge_base.corpus_core.manifest import (
+    MANIFEST_SCHEMA_VERSION,
+    ManifestJsonValue,
+    SourceManifestRow,
+    dump_source_manifest_jsonl,
+)
+from gas_market_knowledge_base.corpus_core.manifest import (
+    document_identity as _document_identity,
+)
 from gas_market_knowledge_base.corpus_paths import (
     SOURCE_MANIFEST_RELATIVE_PATH as SOURCE_MANIFEST_RELATIVE_PATH,
 )
@@ -25,9 +33,6 @@ AEMO_GAS_DOCUMENTS_PREFIX = "bronze/aemo_gas_documents"
 BRONZE_AEMO_GAS_DOCUMENT_SOURCES_TABLE_NAME = "bronze_aemo_gas_document_sources"
 DEFAULT_ENVIRONMENT = "dev"
 DEFAULT_NAME_PREFIX = "energy-market"
-MANIFEST_SCHEMA_VERSION = 1
-MAX_DOCUMENT_IDENTITY_PART_CHARS = 96
-DOCUMENT_IDENTITY_HASH_CHARS = 12
 
 REQUIRED_METADATA_FIELDS = frozenset(
     {
@@ -63,7 +68,6 @@ SELECTED_REQUIRED_STRING_FIELDS = (
 )
 
 type MetadataRow = Mapping[str, object]
-type ManifestJsonValue = str | int | None | dict[str, str]
 
 
 class ManifestInputError(ValueError):
@@ -262,14 +266,6 @@ def build_source_manifest_rows(
     )
 
 
-def dump_source_manifest_jsonl(rows: Sequence[Mapping[str, object]]) -> str:
-    """Serialize manifest rows as deterministic JSONL."""
-    if not rows:
-        return ""
-    lines = [json.dumps(row, sort_keys=True, separators=(",", ":")) for row in rows]
-    return f"{'\n'.join(lines)}\n"
-
-
 def _manifest_row(
     row: MetadataRow,
     *,
@@ -291,59 +287,34 @@ def _manifest_row(
     if target_s3_key is None:
         target_s3_key = _target_s3_key_from_archive_uri(archive_uri)
 
-    return {
-        "schema_version": MANIFEST_SCHEMA_VERSION,
-        "document_identity": document_identity,
-        "content_sha256": content_sha256,
-        "corpus_source": corpus_source,
-        "document_family_id": document_family_id,
-        "document_title": _required_text(row, "document_title", index=index),
-        "document_kind": _optional_text(row, "document_kind", index=index),
-        "document_version": _optional_text(row, "document_version", index=index),
-        "document_version_id": _optional_text(row, "document_version_id", index=index),
-        "published_date": _optional_text(row, "published_date", index=index),
-        "effective_date": _optional_text(row, "effective_date", index=index),
-        "media_revision": _optional_text(row, "media_revision", index=index),
-        "source_url": _required_text(row, "source_url", index=index),
-        "resolved_url": _optional_text(row, "resolved_url", index=index),
-        "source_page_url": _optional_text(row, "source_page_url", index=index),
-        "source_page_title": _optional_text(row, "source_page_title", index=index),
-        "source_link_text": _optional_text(row, "source_link_text", index=index),
-        "archive_uri": archive_uri,
-        "storage_uri": _optional_text(row, "storage_uri", index=index),
-        "target_s3_key": target_s3_key,
-        "content_length": _optional_int(row, "content_length", index=index),
-        "generated_paths": _generated_paths(document_identity),
-    }
+    return SourceManifestRow(
+        schema_version=MANIFEST_SCHEMA_VERSION,
+        document_identity=document_identity,
+        content_sha256=content_sha256,
+        corpus_source=corpus_source,
+        document_family_id=document_family_id,
+        document_title=_required_text(row, "document_title", index=index),
+        document_kind=_optional_text(row, "document_kind", index=index),
+        document_version=_optional_text(row, "document_version", index=index),
+        document_version_id=_optional_text(row, "document_version_id", index=index),
+        published_date=_optional_text(row, "published_date", index=index),
+        effective_date=_optional_text(row, "effective_date", index=index),
+        media_revision=_optional_text(row, "media_revision", index=index),
+        source_url=_required_text(row, "source_url", index=index),
+        resolved_url=_optional_text(row, "resolved_url", index=index),
+        source_page_url=_optional_text(row, "source_page_url", index=index),
+        source_page_title=_optional_text(row, "source_page_title", index=index),
+        source_link_text=_optional_text(row, "source_link_text", index=index),
+        archive_uri=archive_uri,
+        storage_uri=_optional_text(row, "storage_uri", index=index),
+        target_s3_key=target_s3_key,
+        content_length=_optional_int(row, "content_length", index=index),
+        generated_paths=_generated_paths(document_identity),
+    ).as_dict()
 
 
 def _generated_paths(document_identity: str) -> dict[str, str]:
     return default_generated_paths(document_identity)
-
-
-def _document_identity(
-    *,
-    corpus_source: str,
-    document_family_id: str,
-    content_sha256: str,
-) -> str:
-    return (
-        f"{_path_part(corpus_source)}/"
-        f"{_path_part(document_family_id)}/"
-        f"sha256-{content_sha256}"
-    )
-
-
-def _path_part(value: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
-    if not slug:
-        return "unknown"
-    if len(slug) <= MAX_DOCUMENT_IDENTITY_PART_CHARS:
-        return slug
-    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
-    prefix_length = MAX_DOCUMENT_IDENTITY_PART_CHARS - DOCUMENT_IDENTITY_HASH_CHARS - 1
-    prefix = slug[:prefix_length].rstrip("-")
-    return f"{prefix}-{digest[:DOCUMENT_IDENTITY_HASH_CHARS]}"
 
 
 def _archive_uri(

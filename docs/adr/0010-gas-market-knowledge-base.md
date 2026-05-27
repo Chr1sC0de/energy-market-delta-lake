@@ -61,6 +61,13 @@ authored from retrieved and inspected source text, with citations back to the
 extracted artifacts. Agents may draft those pages, but the architecture treats
 them as cited review artifacts rather than fully automated truth.
 
+Reusable corpus mechanics belong in a shared core inside the Subproject rather
+than in Gas-market-only modules. The shared core owns artifact-root layout,
+source manifest row shape, document identity and output path planning, silver
+document and chunk rendering, retrieval index validation, and gold Markdown
+citation validation. Gas-specific filtering, AEMO gas metadata table defaults,
+bucket naming, and CLI terminology remain outside that core.
+
 ## Considered Options
 
 - Keep all work inside AEMO ETL: rejected because PDF extraction, corpus review,
@@ -86,6 +93,10 @@ The Subproject owns its local cache rules, external generated corpus layout,
 command surface, dependency files, and maintained README. Future implementation
 issues should add the PDF extraction, chunking, citation, and review workflows
 without moving those side effects into AEMO ETL.
+
+Future corpus tools, including an AEMO major publications corpus, should reuse
+the shared core with their own layout and source metadata policy instead of
+copying the Gas market corpus wrappers.
 
 AEMO ETL must not grow Docling dependencies or extraction side effects under
 this decision. `bronze_aemo_gas_document_sources` remains the boundary for
@@ -121,6 +132,12 @@ its own ADR.
   - `docs/repository/workflow.md`
   - `tools/gas-market-knowledge-base/.pre-commit-config.yaml`
   - `tools/gas-market-knowledge-base/README.md`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/__init__.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/gold_context.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/manifest.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/paths.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/silver_chunks.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/silver_documents.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_paths.py`
   - `docs/repository/documentation-sync.md`
   - `backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md`
