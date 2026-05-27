@@ -355,6 +355,33 @@ class TestWebpageAccessibility:
             f"Expected 200, 302, or 307 from {url}, got {response.status_code}"
         )
 
+    def test_caddy_guest_ui_canonical_route_serves_html(
+        self, deployed_enabled: None, route53_client: object, base_url: str
+    ) -> None:
+        """The canonical Dagster guest UI route must serve the HTML shell."""
+        try:
+            import requests  # noqa: F401
+        except ImportError:
+            pytest.skip("requests not installed")
+
+        url = f"{base_url}/dagster-webserver/guest/"
+        response = _eventually_get_with_route53_dns_fallback(
+            route53_client,
+            url,
+            timeout=30,
+            allow_redirects=False,
+            expected_statuses={200},
+        )
+        assert response.status_code == 200, (
+            f"Expected 200 from {url}, got {response.status_code}"
+        )
+
+        content_type = response.headers.get("content-type", "")
+        assert "text/html" in content_type.lower(), (
+            f"Expected HTML response from {url}, got {content_type!r}"
+        )
+        assert response.text.strip(), f"Expected non-empty HTML from {url}"
+
     def test_caddy_root_reachable(
         self, deployed_enabled: None, route53_client: object, base_url: str
     ) -> None:

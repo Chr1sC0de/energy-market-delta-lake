@@ -17,6 +17,7 @@ ALLOW_DEV_STRING_POSTGRES_PASSWORD_PARAMETER_CONFIG_KEY = (
 DEV_STRING_POSTGRES_PASSWORD_PARAMETER_RESOURCE_NAME = "dev-energy-market"
 POSTGRES_PASSWORD_PARAMETER_TYPE_SECURE_STRING = "SecureString"
 POSTGRES_PASSWORD_PARAMETER_TYPE_STRING = "String"
+POSTGRES_ROOT_VOLUME_GIB = 32
 
 
 def _postgres_password_parameter_type(name: str) -> str:
@@ -266,7 +267,11 @@ class PostgresComponentResource(pulumi.ComponentResource):
                 http_endpoint="enabled",
                 http_tokens="required",
             ),
-            root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(encrypted=True),
+            root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(
+                encrypted=True,
+                volume_size=POSTGRES_ROOT_VOLUME_GIB,
+                volume_type="gp3",
+            ),
             user_data=self.user_data,
             user_data_replace_on_change=True,
             tags={"dagster/service": "postgres", "Name": f"{self.name}-postgres"},

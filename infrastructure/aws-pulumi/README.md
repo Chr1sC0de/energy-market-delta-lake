@@ -201,6 +201,9 @@ Key deployed behaviors visible in the infrastructure code:
   - `marimo-dashboard.dagster:2718`
   - the FastAPI auth service
 - Dagster services run as ECS Fargate services in private subnets
+- Postgres runs on a private `t4g.nano` EC2 instance with an encrypted 32 GiB
+  `gp3` root volume and stores Dagster metadata for the webserver and daemon
+  services
 - the curated Marimo dashboard runs on a private `t3.small` EC2 instance with
   an encrypted 30 GiB `gp3` root volume, uses its instance profile for S3
   reads, exposes `/marimo/health` and Marimo packaged asset routes through

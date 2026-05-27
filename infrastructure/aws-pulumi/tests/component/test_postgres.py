@@ -9,6 +9,7 @@ from components.postgres import (
     ALLOW_DEV_STRING_POSTGRES_PASSWORD_PARAMETER_CONFIG_KEY,
     POSTGRES_PASSWORD_PARAMETER_TYPE_SECURE_STRING,
     POSTGRES_PASSWORD_PARAMETER_TYPE_STRING,
+    POSTGRES_ROOT_VOLUME_GIB,
     PostgresComponentResource,
 )
 from components.security_groups import SecurityGroupsComponentResource
@@ -133,6 +134,8 @@ class TestPostgresComponent:
 
         def check(root_block_device: dict) -> None:
             assert root_block_device.get("encrypted") is True
+            assert root_block_device.get("volume_size") == POSTGRES_ROOT_VOLUME_GIB
+            assert root_block_device.get("volume_type") == "gp3"
 
         return pg.instance.root_block_device.apply(check)
 
