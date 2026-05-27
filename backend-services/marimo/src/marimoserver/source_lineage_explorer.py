@@ -39,7 +39,7 @@ _SOURCE_LINEAGE_NO_EXTRA_FIELDS = "(no additional source lineage fields)"
 _SOURCE_LINEAGE_NO_POPULATED_VALUES = "(no populated source lineage values)"
 _SOURCE_LINEAGE_NO_CONCEPT_CARD = "(no mapped concept card)"
 _SOURCE_LINEAGE_NO_DASHBOARD_ROUTE = "(no mapped dashboard route)"
-_SOURCE_LINEAGE_NO_MARKET_CONTEXT_PATH = "(no generated Market context path mapped)"
+_SOURCE_LINEAGE_NO_MARKET_CONTEXT_ID = "(no Market context ID mapped)"
 _SOURCE_LINEAGE_NO_SOURCE_CHUNKS = "(no source chunk IDs mapped)"
 
 _SOURCE_LINEAGE_CORE_COLUMNS = frozenset(
@@ -61,7 +61,7 @@ _SOURCE_LINEAGE_SCHEMA = {
     "lineage examples": pl.String,
     "concept cards": pl.String,
     "dashboard routes": pl.String,
-    "Market context paths": pl.String,
+    "Market context IDs": pl.String,
     "source chunk ids": pl.String,
     "table explorer": pl.String,
     "asset metadata": pl.String,
@@ -80,7 +80,7 @@ _SOURCE_LINEAGE_HTML_COLUMNS = (
     "lineage examples",
     "concept cards",
     "dashboard routes",
-    "Market context paths",
+    "Market context IDs",
     "table explorer",
     "asset metadata",
     "detail",
@@ -103,7 +103,7 @@ class _TableExplorerContext:
 class _RegistryLineageLinks:
     concept_cards: tuple[str, ...]
     dashboard_routes: tuple[str, ...]
-    market_context_paths: tuple[str, ...]
+    market_context_ids: tuple[str, ...]
     source_chunk_ids: tuple[str, ...]
 
 
@@ -450,9 +450,9 @@ def _source_lineage_row(
             registry_links.dashboard_routes,
             _SOURCE_LINEAGE_NO_DASHBOARD_ROUTE,
         ),
-        "Market context paths": _join_or_gap(
-            registry_links.market_context_paths,
-            _SOURCE_LINEAGE_NO_MARKET_CONTEXT_PATH,
+        "Market context IDs": _join_or_gap(
+            registry_links.market_context_ids,
+            _SOURCE_LINEAGE_NO_MARKET_CONTEXT_ID,
         ),
         "source chunk ids": _join_or_gap(
             registry_links.source_chunk_ids,
@@ -620,8 +620,10 @@ def _registry_links_for_asset(
             for entry in matched_entries
             if entry.notebook_route is not None
         ),
-        market_context_paths=_unique_values(
-            path for entry in matched_entries for path in entry.generated_gold_paths
+        market_context_ids=_unique_values(
+            context_id
+            for entry in matched_entries
+            for context_id in entry.market_context_ids
         ),
         source_chunk_ids=_unique_values(
             chunk_id for entry in matched_entries for chunk_id in entry.source_chunk_ids
@@ -823,7 +825,7 @@ def _render_source_lineage_cell(row: Mapping[str, object], column: str) -> str:
             target="asset-metadata",
             asset=row.get("asset"),
         )
-    if column == "Market context paths":
+    if column == "Market context IDs":
         return _render_market_context_cell(row.get(column))
 
     text = _source_lineage_text(row.get(column))
@@ -874,20 +876,20 @@ def _render_route_cell(
 
 
 def _render_market_context_cell(value: object) -> str:
-    paths = _plain_list_items(value)
-    if len(paths) == 0:
+    context_ids = _plain_list_items(value)
+    if len(context_ids) == 0:
         text = _source_lineage_text(value)
         return f'<td class="source-lineage-explorer__muted">{escape(text)}</td>'
 
-    rendered_paths = "\n".join(
+    rendered_context_ids = "\n".join(
         (
             '<code class="source-lineage-explorer__path" '
-            f'data-market-context-path="{escape(path, quote=True)}">'
-            f"{escape(path)}</code>"
+            f'data-market-context-id="{escape(context_id, quote=True)}">'
+            f"{escape(context_id)}</code>"
         )
-        for path in paths
+        for context_id in context_ids
     )
-    return f"<td>{rendered_paths}</td>"
+    return f"<td>{rendered_context_ids}</td>"
 
 
 def _route_link_items(value: object) -> tuple[tuple[str, str], ...]:

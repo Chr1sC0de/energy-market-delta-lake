@@ -7,11 +7,14 @@ from html import escape
 from marimoserver.dashboard_registry import (
     DashboardRegistryEntry,
     DashboardStatus,
+    MARKET_CONTEXT_GLOSSARY_INDEX_ID,
+    MARKET_CONTEXT_GLOSSARY_PREFIX,
     dashboard_registry,
+    market_context_id_from_artifact_ref,
 )
 
-GLOSSARY_GOLD_PREFIX = "tools/gas-market-knowledge-base/generated/gold/glossary/"
-GLOSSARY_INDEX_PATH = f"{GLOSSARY_GOLD_PREFIX}README.md"
+GLOSSARY_MARKET_CONTEXT_PREFIX = MARKET_CONTEXT_GLOSSARY_PREFIX
+GLOSSARY_INDEX_ID = MARKET_CONTEXT_GLOSSARY_INDEX_ID
 GLOSSARY_CONTEXT_SUFFIX = "-context"
 DEFAULT_RELATED_CONCEPT_LIMIT = 6
 
@@ -32,17 +35,17 @@ class RelatedGlossaryConcept:
 
     concept_id: str
     title: str
-    generated_gold_path: str | None
+    market_context_id: str | None
 
 
 @dataclass(frozen=True)
 class GlossaryConcept:
-    """One generated glossary concept derived from registry metadata."""
+    """One glossary concept derived from registry metadata."""
 
     concept_id: str
     title: str
     description: str
-    generated_gold_path: str | None
+    market_context_id: str | None
     source_chunk_ids: tuple[str, ...]
     dashboard_references: tuple[GlossaryDashboardReference, ...]
     related_concepts: tuple[RelatedGlossaryConcept, ...]
@@ -57,14 +60,14 @@ class GlossaryExplorer:
     concepts: tuple[GlossaryConcept, ...]
     source_label: str = "Marimo dashboard registry"
     freshness_label: str = "Code-local registry snapshot"
-    scope_label: str = "Generated gold metadata paths only"
+    scope_label: str = "Registry Market context IDs only"
 
 
 @dataclass(frozen=True)
 class _GlossarySeed:
     key: str
     entry: DashboardRegistryEntry
-    generated_gold_path: str | None
+    market_context_id: str | None
 
 
 def build_glossary_explorer(
@@ -150,15 +153,26 @@ def render_glossary_explorer_html(
 </section>"""
 
 
+def glossary_concept_by_market_context_id(
+    explorer: GlossaryExplorer,
+    market_context_id: str,
+) -> GlossaryConcept | None:
+    """Return one glossary concept by Market context ID."""
+    for concept in explorer.concepts:
+        if concept.market_context_id == market_context_id:
+            return concept
+    return None
+
+
 def glossary_concept_by_generated_gold_path(
     explorer: GlossaryExplorer,
     generated_gold_path: str,
 ) -> GlossaryConcept | None:
-    """Return one glossary concept by generated-gold path."""
-    for concept in explorer.concepts:
-        if concept.generated_gold_path == generated_gold_path:
-            return concept
-    return None
+    """Return one glossary concept by legacy generated-gold path."""
+    market_context_id = market_context_id_from_artifact_ref(generated_gold_path)
+    if market_context_id is None:
+        return None
+    return glossary_concept_by_market_context_id(explorer, market_context_id)
 
 
 def _glossary_seeds(
@@ -167,33 +181,37 @@ def _glossary_seeds(
     seeds_by_key: dict[str, _GlossarySeed] = {}
 
     for entry in entries:
-        glossary_paths = _glossary_page_paths(entry)
+        glossary_context_ids = _glossary_market_context_ids(entry)
         if _is_seed_glossary_entry(entry):
-            if len(glossary_paths) == 0:
+            if len(glossary_context_ids) == 0:
                 key = f"entry:{entry.concept_id}"
                 seeds_by_key.setdefault(
                     key,
                     _GlossarySeed(
                         key=key,
                         entry=entry,
-                        generated_gold_path=None,
+                        market_context_id=None,
                     ),
                 )
-            for path in glossary_paths:
+            for market_context_id in glossary_context_ids:
                 seeds_by_key.setdefault(
-                    path,
+                    market_context_id,
                     _GlossarySeed(
-                        key=path,
+                        key=market_context_id,
                         entry=entry,
-                        generated_gold_path=path,
+                        market_context_id=market_context_id,
                     ),
                 )
 
     for entry in entries:
-        for path in _glossary_page_paths(entry):
+        for market_context_id in _glossary_market_context_ids(entry):
             seeds_by_key.setdefault(
-                path,
-                _GlossarySeed(key=path, entry=entry, generated_gold_path=path),
+                market_context_id,
+                _GlossarySeed(
+                    key=market_context_id,
+                    entry=entry,
+                    market_context_id=market_context_id,
+                ),
             )
 
     return tuple(
@@ -210,13 +228,13 @@ def _glossary_concept_from_seed(
 ) -> GlossaryConcept:
     source_chunk_ids = seed.entry.source_chunk_ids
     dashboard_references = _dashboard_references_for_seed(seed, entries)
-    metadata_gaps = _metadata_gaps(seed.generated_gold_path, source_chunk_ids)
+    metadata_gaps = _metadata_gaps(seed.market_context_id, source_chunk_ids)
 
     return GlossaryConcept(
         concept_id=seed.entry.concept_id,
         title=_title_from_seed(seed),
         description=seed.entry.description,
-        generated_gold_path=seed.generated_gold_path,
+        market_context_id=seed.market_context_id,
         source_chunk_ids=source_chunk_ids,
         dashboard_references=dashboard_references,
         related_concepts=(),
@@ -229,13 +247,13 @@ def _dashboard_references_for_seed(
     seed: _GlossarySeed,
     entries: Sequence[DashboardRegistryEntry],
 ) -> tuple[GlossaryDashboardReference, ...]:
-    if seed.generated_gold_path is None:
+    if seed.market_context_id is None:
         linked_entries = (seed.entry,)
     else:
         linked_entries = tuple(
             entry
             for entry in entries
-            if seed.generated_gold_path in entry.generated_gold_paths
+            if seed.market_context_id in entry.market_context_ids
         )
 
     references = tuple(
@@ -292,7 +310,7 @@ def _related_glossary_concepts(
         RelatedGlossaryConcept(
             concept_id=candidate.concept_id,
             title=candidate.title,
-            generated_gold_path=candidate.generated_gold_path,
+            market_context_id=candidate.market_context_id,
         )
         for _, _, candidate in sorted(
             scored_concepts,
@@ -302,24 +320,23 @@ def _related_glossary_concepts(
 
 
 def _metadata_gaps(
-    generated_gold_path: str | None,
+    market_context_id: str | None,
     source_chunk_ids: Sequence[str],
 ) -> tuple[str, ...]:
     gaps: list[str] = []
-    if generated_gold_path is None:
-        gaps.append("No generated-gold path recorded in the Marimo registry.")
+    if market_context_id is None:
+        gaps.append("No Market context ID recorded in the Marimo registry.")
     if len(source_chunk_ids) == 0:
         gaps.append("No source chunk IDs recorded in the Marimo registry.")
     return tuple(gaps)
 
 
-def _glossary_page_paths(entry: DashboardRegistryEntry) -> tuple[str, ...]:
+def _glossary_market_context_ids(entry: DashboardRegistryEntry) -> tuple[str, ...]:
     return tuple(
-        path
-        for path in entry.generated_gold_paths
-        if path.startswith(GLOSSARY_GOLD_PREFIX)
-        and path.endswith(".md")
-        and path != GLOSSARY_INDEX_PATH
+        market_context_id
+        for market_context_id in entry.market_context_ids
+        if market_context_id.startswith(GLOSSARY_MARKET_CONTEXT_PREFIX)
+        and market_context_id != GLOSSARY_INDEX_ID
     )
 
 
@@ -328,8 +345,8 @@ def _is_seed_glossary_entry(entry: DashboardRegistryEntry) -> bool:
 
 
 def _title_from_seed(seed: _GlossarySeed) -> str:
-    if seed.generated_gold_path is not None:
-        return _title_from_glossary_path(seed.generated_gold_path)
+    if seed.market_context_id is not None:
+        return _title_from_market_context_id(seed.market_context_id)
 
     title = seed.entry.title
     if title.endswith(" Context"):
@@ -337,8 +354,8 @@ def _title_from_seed(seed: _GlossarySeed) -> str:
     return title
 
 
-def _title_from_glossary_path(generated_gold_path: str) -> str:
-    slug = generated_gold_path.removeprefix(GLOSSARY_GOLD_PREFIX).removesuffix(".md")
+def _title_from_market_context_id(market_context_id: str) -> str:
+    slug = market_context_id.removeprefix(GLOSSARY_MARKET_CONTEXT_PREFIX)
     special_titles = {
         "bid-offer": "Bid / Offer",
         "hub-zone": "Hub / Zone",
@@ -358,14 +375,14 @@ def _render_concept_link(concept: GlossaryConcept) -> str:
 
 def _render_concept_card(concept: GlossaryConcept) -> str:
     validation_gap = "true" if concept.metadata_gaps else "false"
-    generated_path = concept.generated_gold_path or ""
+    market_context_id = concept.market_context_id or ""
 
     return f"""\
         <article
             class="glossary-card"
             id="glossary-{escape(concept.concept_id, quote=True)}"
             data-concept-id="{escape(concept.concept_id, quote=True)}"
-            data-glossary-path="{escape(generated_path, quote=True)}"
+            data-market-context-id="{escape(market_context_id, quote=True)}"
             data-validation-gap="{validation_gap}"
         >
             <div class="glossary-card__header">
@@ -377,7 +394,7 @@ def _render_concept_card(concept: GlossaryConcept) -> str:
             </div>
             <p class="glossary-card__description">{escape(concept.description)}</p>
             {_render_gap_section(concept)}
-            {_render_generated_path(concept)}
+            {_render_market_context_id(concept)}
             {_render_code_list("source chunk IDs", concept.source_chunk_ids)}
             {_render_related_concepts(concept.related_concepts)}
             {_render_dashboard_references(concept.dashboard_references)}
@@ -406,19 +423,19 @@ def _render_gap_section(concept: GlossaryConcept) -> str:
             </section>"""
 
 
-def _render_generated_path(concept: GlossaryConcept) -> str:
-    if concept.generated_gold_path is None:
+def _render_market_context_id(concept: GlossaryConcept) -> str:
+    if concept.market_context_id is None:
         body = (
             '<p class="glossary-empty">'
-            "No generated-gold path recorded in the Marimo registry."
+            "No Market context ID recorded in the Marimo registry."
             "</p>"
         )
     else:
-        body = f"<code>{escape(concept.generated_gold_path)}</code>"
+        body = f"<code>{escape(concept.market_context_id)}</code>"
 
     return f"""\
             <section class="glossary-card__section">
-                <h4>generated-gold path</h4>
+                <h4>Market context ID</h4>
                 {body}
             </section>"""
 

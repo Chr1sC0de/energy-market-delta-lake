@@ -35,9 +35,9 @@ methodology lower in the notebook or behind an accordion.
 When a curated dashboard has a Marimo dashboard registry concept, render the
 shared context panel near the top of the notebook. The panel should show the
 registry concept summary, dashboard usage metadata, related concepts,
-generated-gold paths, source chunk IDs, silver chunk paths, source hashes, and
-backing `silver.gas_model` assets without reading generated gold Markdown at
-runtime.
+Market context IDs, source chunk IDs, silver chunk paths, source hashes, and
+backing `silver.gas_model` assets without reading generated Market context
+artifacts at runtime.
 
 ## Dashboard intents
 

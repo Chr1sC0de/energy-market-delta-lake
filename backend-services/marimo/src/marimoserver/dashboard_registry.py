@@ -1,11 +1,9 @@
 """Code-local registry for curated and planned Marimo gas dashboards."""
 
-import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from functools import cache
-from pathlib import Path
 
 
 class DashboardRegistryError(ValueError):
@@ -50,31 +48,11 @@ _REGISTRY_BACKED_CONCEPT_IDS = frozenset(
         "schema-data-dictionary-explorer",
     }
 )
-_GAS_MARKET_KB_PREFIX = "tools/gas-market-knowledge-base"
-_SILVER_CHUNK_INDEX_PATH = (
-    f"{_GAS_MARKET_KB_PREFIX}/generated/silver/index/chunks.jsonl"
-)
-
-
-def _repo_root_for_module(module_path: Path) -> Path:
-    resolved = module_path.resolve()
-    for parent in resolved.parents:
-        if (parent / _SILVER_CHUNK_INDEX_PATH).is_file():
-            return parent
-    if (
-        len(resolved.parents) > 1
-        and resolved.parents[0].name == "marimoserver"
-        and resolved.parents[1].name == "marimo"
-    ):
-        return resolved.parents[1]
-    if len(resolved.parents) > 4:
-        return resolved.parents[4]
-    if len(resolved.parents) > 1:
-        return resolved.parents[1]
-    return resolved.parent
-
-
-_REPO_ROOT = _repo_root_for_module(Path(__file__))
+MARKET_CONTEXT_INDEX_ID = "market-context:index"
+MARKET_CONTEXT_GLOSSARY_INDEX_ID = "glossary:index"
+MARKET_CONTEXT_GLOSSARY_PREFIX = "glossary:"
+_GENERATED_GOLD_PREFIX = "tools/gas-market-knowledge-base/generated/gold/"
+_GENERATED_GOLD_GLOSSARY_PREFIX = f"{_GENERATED_GOLD_PREFIX}glossary/"
 
 
 @dataclass(frozen=True)
@@ -113,6 +91,33 @@ def _source_chunk_reference(
         ),
         source_hash=source_hash,
     )
+
+
+def _market_context_ids_from_artifact_refs(
+    artifact_refs: Sequence[str],
+) -> tuple[str, ...]:
+    """Return stable Market context IDs for legacy generated artifact refs."""
+    context_ids: list[str] = []
+    for artifact_ref in artifact_refs:
+        context_id = market_context_id_from_artifact_ref(artifact_ref)
+        if context_id is None or context_id in context_ids:
+            continue
+        context_ids.append(context_id)
+    return tuple(context_ids)
+
+
+def market_context_id_from_artifact_ref(artifact_ref: str) -> str | None:
+    """Return a stable Market context ID for a generated artifact ref."""
+    if artifact_ref == f"{_GENERATED_GOLD_PREFIX}README.md":
+        return MARKET_CONTEXT_INDEX_ID
+    if artifact_ref == f"{_GENERATED_GOLD_GLOSSARY_PREFIX}README.md":
+        return MARKET_CONTEXT_GLOSSARY_INDEX_ID
+    if artifact_ref.startswith(
+        _GENERATED_GOLD_GLOSSARY_PREFIX
+    ) and artifact_ref.endswith(".md"):
+        slug = artifact_ref.removeprefix(_GENERATED_GOLD_GLOSSARY_PREFIX)
+        return f"{MARKET_CONTEXT_GLOSSARY_PREFIX}{slug.removesuffix('.md')}"
+    return None
 
 
 SOURCE_CHUNK_REFERENCES: tuple[SourceChunkReference, ...] = (
@@ -305,7 +310,7 @@ SOURCE_CHUNK_REFERENCES: tuple[SourceChunkReference, ...] = (
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class DashboardRegistryEntry:
     """One planned or available dashboard concept exposed to Marimo."""
 
@@ -316,8 +321,59 @@ class DashboardRegistryEntry:
     status: DashboardStatus
     notebook_name: str | None
     backing_assets: tuple[str, ...]
-    generated_gold_paths: tuple[str, ...]
+    market_context_ids: tuple[str, ...]
     source_chunks: tuple[SourceChunkReference, ...]
+    external_artifact_refs: tuple[str, ...]
+
+    def __init__(
+        self,
+        *,
+        concept_id: str,
+        title: str,
+        description: str,
+        audiences: tuple[DashboardAudience, ...],
+        status: DashboardStatus,
+        notebook_name: str | None,
+        backing_assets: tuple[str, ...],
+        market_context_ids: tuple[str, ...] = (),
+        source_chunks: tuple[SourceChunkReference, ...] = (),
+        external_artifact_refs: tuple[str, ...] = (),
+        generated_gold_paths: tuple[str, ...] = (),
+    ) -> None:
+        """Create an entry, accepting the legacy path field for test fixtures."""
+        resolved_market_context_ids = market_context_ids
+        if len(resolved_market_context_ids) == 0 and len(generated_gold_paths) > 0:
+            resolved_market_context_ids = _market_context_ids_from_artifact_refs(
+                generated_gold_paths
+            )
+
+        resolved_external_artifact_refs = external_artifact_refs
+        if len(resolved_external_artifact_refs) == 0 and len(generated_gold_paths) > 0:
+            resolved_external_artifact_refs = generated_gold_paths
+
+        object.__setattr__(self, "concept_id", concept_id)
+        object.__setattr__(self, "title", title)
+        object.__setattr__(self, "description", description)
+        object.__setattr__(self, "audiences", audiences)
+        object.__setattr__(self, "status", status)
+        object.__setattr__(self, "notebook_name", notebook_name)
+        object.__setattr__(self, "backing_assets", backing_assets)
+        object.__setattr__(
+            self,
+            "market_context_ids",
+            resolved_market_context_ids,
+        )
+        object.__setattr__(self, "source_chunks", source_chunks)
+        object.__setattr__(
+            self,
+            "external_artifact_refs",
+            resolved_external_artifact_refs,
+        )
+
+    @property
+    def generated_gold_paths(self) -> tuple[str, ...]:
+        """Return legacy generated-gold artifact references."""
+        return self.external_artifact_refs
 
     @property
     def notebook_route(self) -> str | None:
@@ -360,11 +416,12 @@ class DashboardRegistryEntry:
             "notebook_name": self.notebook_name,
             "notebook_route": self.notebook_route,
             "backing_assets": list(self.backing_assets),
-            "generated_gold_paths": list(self.generated_gold_paths),
+            "market_context_ids": list(self.market_context_ids),
             "source_chunks": [chunk.to_dict() for chunk in self.source_chunks],
             "source_chunk_ids": list(self.source_chunk_ids),
             "silver_chunk_paths": list(self.silver_chunk_paths),
             "source_hashes": list(self.source_hashes),
+            "external_artifact_refs": list(self.external_artifact_refs),
         }
 
 
@@ -389,12 +446,12 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_capacity_outlook",
             "silver.gas_model.silver_gas_fact_capacity_auction",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+        "market_context_ids": (
+            "glossary:index",
+            "glossary:gas-day",
+            "glossary:schedule",
+            "glossary:flow",
+            "glossary:capacity",
         ),
         "source_chunk_ids": (
             "chunk-gbb-guide-gas-day",
@@ -456,9 +513,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_gas_quality",
             "silver.gas_model.silver_gas_fact_customer_transfer",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/README.md",
-        ),
+        "market_context_ids": ("market-context:index",),
         "source_chunk_ids": (),
     },
     {
@@ -467,7 +522,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "description": (
             "Available analytical dashboard for moving from curated "
             "silver.gas_model assets to source systems, source tables, source "
-            "lineage fields, concept cards, generated Market context paths, "
+            "lineage fields, concept cards, Market context IDs, "
             "and table explorer metadata links."
         ),
         "audiences": ("operator", "analyst", "data-engineer"),
@@ -508,9 +563,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_gas_quality",
             "silver.gas_model.silver_gas_fact_customer_transfer",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/README.md",
-        ),
+        "market_context_ids": ("market-context:index",),
         "source_chunk_ids": (),
     },
     {
@@ -526,9 +579,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "gas_market_prices",
         "backing_assets": ("silver.gas_model.silver_gas_fact_market_price",),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
-        ),
+        "market_context_ids": ("glossary:schedule",),
         "source_chunk_ids": (
             "chunk-sttm-procedures-spa-requirements",
             "chunk-sttm-procedures-spa-outputs",
@@ -547,10 +598,10 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "gas_schedule_runs",
         "backing_assets": ("silver.gas_model.silver_gas_fact_schedule_run",),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md",
+        "market_context_ids": (
+            "glossary:schedule",
+            "glossary:gas-day",
+            "glossary:settlement",
         ),
         "source_chunk_ids": (
             "chunk-gbb-guide-gas-day",
@@ -573,10 +624,10 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "gas_scheduled_quantities",
         "backing_assets": ("silver.gas_model.silver_gas_fact_scheduled_quantity",),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
+        "market_context_ids": (
+            "glossary:schedule",
+            "glossary:gas-day",
+            "glossary:flow",
         ),
         "source_chunk_ids": (
             "chunk-gbb-guide-gas-day",
@@ -604,12 +655,12 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_nomination_forecast",
             "silver.gas_model.silver_gas_fact_capacity_outlook",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/linepack.md",
+        "market_context_ids": (
+            "glossary:facility",
+            "glossary:connection-point",
+            "glossary:flow",
+            "glossary:capacity",
+            "glossary:linepack",
         ),
         "source_chunk_ids": (
             "chunk-gbb-guide-nodes-facilities",
@@ -637,10 +688,10 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "facility_flow_storage",
         "backing_assets": ("silver.gas_model.silver_gas_fact_facility_flow_storage",),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+        "market_context_ids": (
+            "glossary:facility",
+            "glossary:flow",
+            "glossary:capacity",
         ),
         "source_chunk_ids": (
             "chunk-gbb-guide-nodes-facilities",
@@ -661,10 +712,10 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "nomination_demand_forecast",
         "backing_assets": ("silver.gas_model.silver_gas_fact_nomination_forecast",),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
+        "market_context_ids": (
+            "glossary:flow",
+            "glossary:facility",
+            "glossary:gas-day",
         ),
         "source_chunk_ids": (
             "chunk-gbb-guide-flow-report",
@@ -689,10 +740,10 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_nomination_forecast",
             "silver.gas_model.silver_gas_fact_facility_flow_storage",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
+        "market_context_ids": (
+            "glossary:flow",
+            "glossary:facility",
+            "glossary:gas-day",
         ),
         "source_chunk_ids": (
             "chunk-gbb-guide-flow-report",
@@ -720,9 +771,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_connection_point_flow",
             "silver.gas_model.silver_gas_fact_capacity_outlook",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/README.md",
-        ),
+        "market_context_ids": ("market-context:index",),
         "source_chunk_ids": (),
     },
     {
@@ -745,7 +794,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_connection_point_flow",
             "silver.gas_model.silver_gas_fact_capacity_outlook",
         ),
-        "generated_gold_paths": (),
+        "market_context_ids": (),
         "source_chunk_ids": (),
     },
     {
@@ -760,7 +809,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "aws_bounded_read_diagnostics",
         "backing_assets": (),
-        "generated_gold_paths": (),
+        "market_context_ids": (),
         "source_chunk_ids": (),
     },
     {
@@ -783,7 +832,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_connection_point_flow",
             "silver.gas_model.silver_gas_fact_capacity_outlook",
         ),
-        "generated_gold_paths": (),
+        "market_context_ids": (),
         "source_chunk_ids": (),
     },
     {
@@ -806,7 +855,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_connection_point_flow",
             "silver.gas_model.silver_gas_fact_capacity_outlook",
         ),
-        "generated_gold_paths": (),
+        "market_context_ids": (),
         "source_chunk_ids": (),
     },
     {
@@ -821,7 +870,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "s3_bucket_health",
         "backing_assets": (),
-        "generated_gold_paths": (),
+        "market_context_ids": (),
         "source_chunk_ids": (),
     },
     {
@@ -836,9 +885,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "glossary_explorer",
         "backing_assets": (),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
-        ),
+        "market_context_ids": ("glossary:index",),
         "source_chunk_ids": (),
     },
     {
@@ -853,9 +900,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "concept_to_asset_explorer",
         "backing_assets": (),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
-        ),
+        "market_context_ids": ("glossary:index",),
         "source_chunk_ids": (),
     },
     {
@@ -870,9 +915,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "schema_data_dictionary_explorer",
         "backing_assets": (),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/README.md",
-        ),
+        "market_context_ids": ("glossary:index",),
         "source_chunk_ids": (),
     },
     {
@@ -880,16 +923,14 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "title": "Citation-Chain Explorer",
         "description": (
             "Available analytical dashboard for auditing registry citation "
-            "metadata from dashboard concepts to generated-gold paths, source "
+            "metadata from dashboard concepts to Market context IDs, source "
             "chunk IDs, silver chunk paths, and source hashes."
         ),
         "audiences": ("analyst", "data-engineer", "operator"),
         "status": "available",
         "notebook_name": "citation_chain_explorer",
         "backing_assets": (),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/README.md",
-        ),
+        "market_context_ids": ("market-context:index",),
         "source_chunk_ids": (),
     },
     {
@@ -904,7 +945,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "system_notices",
         "backing_assets": ("silver.gas_model.silver_gas_fact_system_notice",),
-        "generated_gold_paths": (),
+        "market_context_ids": (),
         "source_chunk_ids": (),
     },
     {
@@ -919,7 +960,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "gas_quality_composition",
         "backing_assets": ("silver.gas_model.silver_gas_fact_gas_quality",),
-        "generated_gold_paths": (),
+        "market_context_ids": (),
         "source_chunk_ids": (),
     },
     {
@@ -938,7 +979,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_heating_value",
             "silver.gas_model.silver_gas_fact_scada_pressure",
         ),
-        "generated_gold_paths": (),
+        "market_context_ids": (),
         "source_chunk_ids": (),
     },
     {
@@ -954,7 +995,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "gas_customer_transfer_activity",
         "backing_assets": ("silver.gas_model.silver_gas_fact_customer_transfer",),
-        "generated_gold_paths": (),
+        "market_context_ids": (),
         "source_chunk_ids": (),
     },
     {
@@ -982,9 +1023,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_customer_transfer",
             "silver.gas_model.silver_gas_fact_gas_quality",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
-        ),
+        "market_context_ids": ("glossary:gas-day",),
         "source_chunk_ids": ("chunk-gbb-guide-gas-day",),
     },
     {
@@ -1005,9 +1044,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_bid_stack",
             "silver.gas_model.silver_gas_fact_settlement_activity",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/participant.md",
-        ),
+        "market_context_ids": ("glossary:participant",),
         "source_chunk_ids": (
             "chunk-gbb-guide-participants-report",
             "chunk-gbb-procedures-registration",
@@ -1031,9 +1068,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_facility_flow_storage",
             "silver.gas_model.silver_gas_fact_capacity_outlook",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
-        ),
+        "market_context_ids": ("glossary:facility",),
         "source_chunk_ids": (
             "chunk-gbb-guide-nodes-facilities",
             "chunk-gbb-procedures-facility-nameplate",
@@ -1056,9 +1091,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_capacity_auction",
             "silver.gas_model.silver_gas_fact_sttm_market_parameter",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md",
-        ),
+        "market_context_ids": ("glossary:hub-zone",),
         "source_chunk_ids": (
             "chunk-sttm-procedures-definitions",
             "chunk-sttm-procedures-settlement-terms",
@@ -1086,9 +1119,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_connection_point_flow",
             "silver.gas_model.silver_gas_fact_capacity_outlook",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md",
-        ),
+        "market_context_ids": ("glossary:connection-point",),
         "source_chunk_ids": (
             "chunk-gbb-guide-connection-point-identifiers",
             "chunk-gbb-guide-flow-report",
@@ -1115,11 +1146,11 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_operational_meter_flow",
             "silver.gas_model.silver_gas_fact_capacity_outlook",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+        "market_context_ids": (
+            "glossary:connection-point",
+            "glossary:facility",
+            "glossary:flow",
+            "glossary:capacity",
         ),
         "source_chunk_ids": (
             "chunk-gbb-guide-connection-point-identifiers",
@@ -1147,9 +1178,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_dim_zone",
             "silver.gas_model.silver_gas_dim_pipeline_segment",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
-        ),
+        "market_context_ids": ("glossary:flow",),
         "source_chunk_ids": (
             "chunk-gbb-guide-flow-report",
             "chunk-gbb-procedures-scheduled-flow",
@@ -1170,9 +1199,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_scheduled_quantity",
             "silver.gas_model.silver_gas_fact_bid_stack",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
-        ),
+        "market_context_ids": ("glossary:schedule",),
         "source_chunk_ids": (
             "chunk-sttm-procedures-spa-requirements",
             "chunk-sttm-procedures-spa-outputs",
@@ -1192,9 +1219,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "gas_bid_offer_stack",
         "backing_assets": ("silver.gas_model.silver_gas_fact_bid_stack",),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/bid-offer.md",
-        ),
+        "market_context_ids": ("glossary:bid-offer",),
         "source_chunk_ids": (
             "chunk-sttm-procedures-bid-offer-price-steps",
             "chunk-sttm-procedures-contingency-gas-bids",
@@ -1216,9 +1241,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "backing_assets": (
             "silver.gas_model.silver_gas_fact_sttm_contingency_gas_call",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/bid-offer.md",
-        ),
+        "market_context_ids": ("glossary:bid-offer",),
         "source_chunk_ids": ("chunk-sttm-procedures-contingency-gas-bids",),
     },
     {
@@ -1235,9 +1258,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_sttm_allocation_limit",
             "silver.gas_model.silver_gas_fact_sttm_default_allocation_notice",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/allocation.md",
-        ),
+        "market_context_ids": ("glossary:allocation",),
         "source_chunk_ids": (
             "chunk-dwgm-settlement-pricing-schedule-allocation",
             "chunk-dwgm-settlement-withdrawal-allocation",
@@ -1257,9 +1278,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "gas_settlement_activity",
         "backing_assets": ("silver.gas_model.silver_gas_fact_settlement_activity",),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md",
-        ),
+        "market_context_ids": ("glossary:settlement",),
         "source_chunk_ids": (
             "chunk-sttm-procedures-settlement-terms",
             "chunk-sttm-procedures-settlement-amounts",
@@ -1281,12 +1300,12 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "gas_sttm_market_settlement",
         "backing_assets": ("silver.gas_model.silver_gas_fact_sttm_market_settlement",),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/allocation.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
+        "market_context_ids": (
+            "glossary:settlement",
+            "glossary:allocation",
+            "glossary:hub-zone",
+            "glossary:facility",
+            "glossary:gas-day",
         ),
         "source_chunk_ids": (
             "chunk-gbb-guide-gas-day",
@@ -1313,14 +1332,14 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "backing_assets": (
             "silver.gas_model.silver_gas_fact_sttm_capacity_settlement",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/mos.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/allocation.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
+        "market_context_ids": (
+            "glossary:capacity",
+            "glossary:settlement",
+            "glossary:mos",
+            "glossary:allocation",
+            "glossary:hub-zone",
+            "glossary:facility",
+            "glossary:gas-day",
         ),
         "source_chunk_ids": (
             "chunk-gbb-guide-gas-day",
@@ -1351,14 +1370,14 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_sttm_allocation_limit",
             "silver.gas_model.silver_gas_fact_sttm_default_allocation_notice",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/mos.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/allocation.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/settlement.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
+        "market_context_ids": (
+            "glossary:mos",
+            "glossary:allocation",
+            "glossary:settlement",
+            "glossary:capacity",
+            "glossary:facility",
+            "glossary:hub-zone",
+            "glossary:gas-day",
         ),
         "source_chunk_ids": (
             "chunk-gbb-guide-gas-day",
@@ -1384,9 +1403,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "capacity_outlook",
         "backing_assets": ("silver.gas_model.silver_gas_fact_capacity_outlook",),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
-        ),
+        "market_context_ids": ("glossary:capacity",),
         "source_chunk_ids": (
             "chunk-gbb-procedures-capacity-outlooks",
             "chunk-gbb-guide-nameplate-capacity",
@@ -1407,9 +1424,9 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "capacity_auction",
         "backing_assets": ("silver.gas_model.silver_gas_fact_capacity_auction",),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
-            "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md",
+        "market_context_ids": (
+            "glossary:capacity",
+            "glossary:hub-zone",
         ),
         "source_chunk_ids": (
             "chunk-sttm-procedures-definitions",
@@ -1431,9 +1448,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         "status": "available",
         "notebook_name": "capacity_transactions",
         "backing_assets": ("silver.gas_model.silver_gas_fact_capacity_transaction",),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
-        ),
+        "market_context_ids": ("glossary:capacity",),
         "source_chunk_ids": (
             "chunk-gbb-procedures-capacity-outlooks",
             "chunk-gbb-guide-nameplate-capacity",
@@ -1452,9 +1467,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_sttm_mos_stack",
             "silver.gas_model.silver_gas_fact_sttm_capacity_settlement",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/mos.md",
-        ),
+        "market_context_ids": ("glossary:mos",),
         "source_chunk_ids": (
             "chunk-sttm-procedures-mos-estimates",
             "chunk-sttm-procedures-mos-settlement",
@@ -1476,9 +1489,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_linepack",
             "silver.gas_model.silver_gas_fact_linepack_balance",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/linepack.md",
-        ),
+        "market_context_ids": ("glossary:linepack",),
         "source_chunk_ids": (
             "chunk-sttm-procedures-definitions",
             "chunk-gbb-procedures-linepack-capacity-adequacy",
@@ -1500,9 +1511,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
             "silver.gas_model.silver_gas_fact_nomination_forecast",
             "silver.gas_model.silver_gas_fact_operational_meter_flow",
         ),
-        "generated_gold_paths": (
-            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
-        ),
+        "market_context_ids": ("glossary:flow",),
         "source_chunk_ids": (
             "chunk-gbb-guide-flow-report",
             "chunk-gbb-procedures-scheduled-flow",
@@ -1564,8 +1573,16 @@ def _entry_from_record(
     )
     notebook_name = _optional_str(record, "notebook_name", index)
     backing_assets = _str_tuple(record, "backing_assets", index)
-    generated_gold_paths = _str_tuple(record, "generated_gold_paths", index)
-    source_chunks = _source_chunks_from_record(record, generated_gold_paths, index)
+    legacy_generated_gold_paths = _str_tuple(record, "generated_gold_paths", index)
+    market_context_ids = _str_tuple(record, "market_context_ids", index)
+    if len(market_context_ids) == 0 and len(legacy_generated_gold_paths) > 0:
+        market_context_ids = _market_context_ids_from_artifact_refs(
+            legacy_generated_gold_paths
+        )
+    external_artifact_refs = _str_tuple(record, "external_artifact_refs", index)
+    if len(external_artifact_refs) == 0 and len(legacy_generated_gold_paths) > 0:
+        external_artifact_refs = legacy_generated_gold_paths
+    source_chunks = _source_chunks_from_record(record, index)
 
     if status is DashboardStatus.AVAILABLE and notebook_name is None:
         raise DashboardRegistryError(
@@ -1580,24 +1597,18 @@ def _entry_from_record(
         status=status,
         notebook_name=notebook_name,
         backing_assets=backing_assets,
-        generated_gold_paths=generated_gold_paths,
+        market_context_ids=market_context_ids,
         source_chunks=source_chunks,
+        external_artifact_refs=external_artifact_refs,
     )
 
 
 def _source_chunks_from_record(
     record: DashboardRegistryRecord,
-    generated_gold_paths: Sequence[str],
     index: int,
 ) -> tuple[SourceChunkReference, ...]:
     raw_source_chunks = record.get("source_chunks", _MISSING)
     if raw_source_chunks is _MISSING:
-        generated_source_chunks = _source_chunks_from_generated_gold_paths(
-            generated_gold_paths,
-            index,
-        )
-        if generated_source_chunks:
-            return generated_source_chunks
         return tuple(
             _source_chunk_reference_by_id(chunk_id)
             for chunk_id in _str_tuple(record, "source_chunk_ids", index)
@@ -1622,106 +1633,6 @@ def _source_chunks_from_record(
 def _source_chunk_reference_by_id(chunk_id: str) -> SourceChunkReference:
     source_chunks_by_id = {chunk.chunk_id: chunk for chunk in SOURCE_CHUNK_REFERENCES}
     return source_chunks_by_id.get(chunk_id, SourceChunkReference(chunk_id=chunk_id))
-
-
-@cache
-def _generated_source_chunk_references_by_id() -> dict[str, SourceChunkReference]:
-    index_path = _REPO_ROOT / _SILVER_CHUNK_INDEX_PATH
-    if not index_path.is_file():
-        return {}
-
-    source_chunks: dict[str, SourceChunkReference] = {}
-    for line_number, line in enumerate(
-        index_path.read_text(encoding="utf-8").splitlines(),
-        start=1,
-    ):
-        if line.strip() == "":
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError as error:
-            raise DashboardRegistryError(
-                f"generated silver chunk index line {line_number} is not valid JSON"
-            ) from error
-        if not isinstance(row, Mapping):
-            continue
-
-        chunk_id = row.get("chunk_id")
-        chunk_path = row.get("path")
-        source_hash = row.get("content_sha256")
-        if (
-            not isinstance(chunk_id, str)
-            or not isinstance(chunk_path, str)
-            or not isinstance(source_hash, str)
-        ):
-            continue
-
-        source_chunks[chunk_id] = SourceChunkReference(
-            chunk_id=chunk_id,
-            silver_chunk_path=f"{_GAS_MARKET_KB_PREFIX}/{chunk_path}",
-            source_hash=source_hash,
-        )
-
-    return source_chunks
-
-
-def _source_chunks_from_generated_gold_paths(
-    paths: Sequence[str],
-    index: int,
-) -> tuple[SourceChunkReference, ...]:
-    source_chunks_by_id = _generated_source_chunk_references_by_id()
-    if not source_chunks_by_id:
-        return ()
-
-    source_chunks: list[SourceChunkReference] = []
-    seen_chunk_ids: set[str] = set()
-    for path in paths:
-        metadata = _generated_gold_metadata(path)
-        raw_chunk_ids = metadata.get("source_chunk_ids", [])
-        if not isinstance(raw_chunk_ids, list):
-            raise DashboardRegistryError(
-                f"dashboard registry record {index} generated gold path {path} "
-                "source_chunk_ids must be a list"
-            )
-        for chunk_id in raw_chunk_ids:
-            if not isinstance(chunk_id, str):
-                raise DashboardRegistryError(
-                    f"dashboard registry record {index} generated gold path {path} "
-                    "source_chunk_ids must contain strings"
-                )
-            if chunk_id in seen_chunk_ids:
-                continue
-            seen_chunk_ids.add(chunk_id)
-            source_chunks.append(
-                source_chunks_by_id.get(
-                    chunk_id,
-                    SourceChunkReference(chunk_id=chunk_id),
-                )
-            )
-
-    return tuple(source_chunks)
-
-
-def _generated_gold_metadata(path: str) -> Mapping[str, object]:
-    gold_path = _REPO_ROOT / path
-    if not gold_path.is_file():
-        return {}
-
-    text = gold_path.read_text(encoding="utf-8")
-    if not text.startswith("---\n"):
-        return {}
-    try:
-        _, raw_frontmatter, _ = text.split("---", maxsplit=2)
-    except ValueError:
-        return {}
-
-    if raw_frontmatter.strip() == "":
-        return {}
-
-    metadata = json.loads(raw_frontmatter)
-    if not isinstance(metadata, Mapping):
-        return {}
-    return metadata
 
 
 def _source_chunk_from_mapping(
@@ -1792,15 +1703,12 @@ def _validate_entry(entry: DashboardRegistryEntry) -> None:
                 f"{entry.concept_id} backing asset is outside silver.gas_model: {asset}"
             )
 
-    if entry.generated_gold_paths and not entry.source_chunks:
-        if not _generated_gold_paths_are_indexes(entry.generated_gold_paths):
+    for market_context_id in entry.market_context_ids:
+        if ":" not in market_context_id:
             raise DashboardRegistryError(
-                f"{entry.concept_id} has generated gold paths without source chunks"
+                f"{entry.concept_id} Market context ID is not namespace-qualified: "
+                f"{market_context_id}"
             )
-
-
-def _generated_gold_paths_are_indexes(paths: Sequence[str]) -> bool:
-    return all(path.endswith("/README.md") for path in paths)
 
 
 def _status_from_value(value: str, index: int) -> DashboardStatus:

@@ -5,7 +5,11 @@ from collections.abc import Mapping
 import polars as pl
 import pytest
 
-from marimoserver.dashboard_registry import DashboardStatus
+from marimoserver.dashboard_registry import (
+    DASHBOARD_REGISTRY_RECORDS,
+    DashboardStatus,
+    load_dashboard_registry,
+)
 from marimoserver.data_readiness import (
     ReadinessState,
     build_data_readiness_overview,
@@ -124,6 +128,22 @@ def test_available_dashboard_context_panels_render_stable_html(
     assert f'data-notebook-name="{target.notebook_name}"' in html
     assert f'data-notebook-route="{target.route}"' in html
     assert "backing assets" in html
+
+
+def test_registry_backed_dashboard_smoke_renders_without_generated_files() -> None:
+    entries = load_dashboard_registry(
+        [dict(record) for record in DASHBOARD_REGISTRY_RECORDS]
+    )
+    context_html = render_dashboard_context_panel(
+        "gas-market-overview", entries=entries
+    )
+    glossary_html = render_glossary_explorer_html(build_glossary_explorer(entries))
+
+    assert "Market context IDs" in context_html
+    assert "glossary:gas-day" in context_html
+    assert 'data-market-context-id="glossary:capacity"' in glossary_html
+    assert "tools/gas-market-knowledge-base/generated/gold" not in context_html
+    assert "tools/gas-market-knowledge-base/generated/gold" not in glossary_html
 
 
 def test_glossary_explorer_smoke_renders_planned_dashboard_states() -> None:

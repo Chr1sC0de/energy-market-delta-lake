@@ -54,7 +54,7 @@ def _(GAS_DAY_CONTEXT_ID, mo, render_dashboard_context_panel):
             cited Gas Day Market context metadata, locate date and gas-date
             fields across current registry-backed `silver.gas_model` assets,
             and review bounded examples from loaded curated rows. Data scope is
-            the Marimo dashboard registry, generated-gold path and source chunk
+            the Marimo dashboard registry, Market context ID and source chunk
             metadata copied into that registry, plus read-only bounded Parquet
             samples under `silver/gas_model`. Freshness, row coverage, cache
             status, load timing, and missing-source behavior come from the
@@ -150,7 +150,7 @@ def _(config, gas_day_kpis, gas_day_specs, mo, pl):
                 "AEMO bucket",
                 "Parquet root",
                 "Registry-backed assets",
-                "Generated-gold path",
+                "Market context ID",
                 "Source chunk ID",
                 "AWS endpoint",
                 "AWS region",
@@ -160,7 +160,7 @@ def _(config, gas_day_kpis, gas_day_specs, mo, pl):
                 config.aemo_bucket,
                 f"s3://{config.aemo_bucket}/silver/gas_model",
                 str(len(gas_day_specs)),
-                "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md",
+                "glossary:gas-day",
                 "chunk-gbb-guide-gas-day",
                 config.aws_endpoint_url or "(default AWS)",
                 config.aws_region,

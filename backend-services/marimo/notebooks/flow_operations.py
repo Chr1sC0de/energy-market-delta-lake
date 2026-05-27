@@ -55,8 +55,8 @@ def _(mo):
             analysts, and stakeholders use this dashboard to inspect current
             bounded Flow readiness across actual connection point flow,
             facility flow/storage, nomination forecasts, and operational meter
-            flow. Data scope is the Marimo dashboard registry, generated-gold
-            path and source chunk metadata copied into that registry, plus
+            flow. Data scope is the Marimo dashboard registry, Market context
+            IDs and source chunk metadata recorded in that registry, plus
             read-only bounded Parquet samples from
             `silver_gas_fact_connection_point_flow`,
             `silver_gas_fact_facility_flow_storage`,
@@ -158,7 +158,7 @@ def _(config, flow_specs, mo, pl):
                 "AEMO bucket",
                 "Parquet root",
                 "Flow-oriented assets",
-                "Generated-gold path",
+                "Market context ID",
                 "Source chunk IDs",
                 "AWS endpoint",
                 "AWS region",
@@ -168,7 +168,7 @@ def _(config, flow_specs, mo, pl):
                 config.aemo_bucket,
                 f"s3://{config.aemo_bucket}/silver/gas_model",
                 str(len(flow_specs)),
-                "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
+                "glossary:flow",
                 (
                     "chunk-gbb-guide-flow-report, "
                     "chunk-gbb-procedures-scheduled-flow, "

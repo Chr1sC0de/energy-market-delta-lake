@@ -57,7 +57,7 @@ class ConceptAssetMapping:
     concept_id: str
     title: str
     description: str
-    generated_gold_path: str | None
+    market_context_id: str | None
     source_chunk_ids: tuple[str, ...]
     assets: tuple[ConceptAssetLink, ...]
     available_dashboards: tuple[ConceptDashboardLink, ...]
@@ -78,7 +78,7 @@ class ConceptAssetExplorer:
     unmapped_assets: tuple[ConceptAssetLink, ...]
     source_label: str = "Marimo dashboard registry"
     freshness_label: str = "Code-local registry snapshot"
-    scope_label: str = "Generated-gold glossary concepts and silver.gas_model assets"
+    scope_label: str = "Market context IDs and silver.gas_model assets"
 
     @property
     def unmapped_concepts(self) -> tuple[ConceptAssetMapping, ...]:
@@ -241,7 +241,7 @@ def _concept_asset_mapping(
         concept_id=concept.concept_id,
         title=concept.title,
         description=concept.description,
-        generated_gold_path=concept.generated_gold_path,
+        market_context_id=concept.market_context_id,
         source_chunk_ids=concept.source_chunk_ids,
         assets=assets,
         available_dashboards=available_dashboards,
@@ -312,14 +312,14 @@ def _render_concept_index_link(mapping: ConceptAssetMapping) -> str:
 
 
 def _render_concept_mapping_card(mapping: ConceptAssetMapping) -> str:
-    generated_gold_path = mapping.generated_gold_path or ""
+    market_context_id = mapping.market_context_id or ""
     coverage_state = "mapped" if mapping.mapped else "unmapped-concept"
     return f"""\
         <article
             class="concept-asset-card"
             id="concept-asset-{escape(mapping.concept_id, quote=True)}"
             data-concept-id="{escape(mapping.concept_id, quote=True)}"
-            data-generated-gold-path="{escape(generated_gold_path, quote=True)}"
+            data-market-context-id="{escape(market_context_id, quote=True)}"
             data-coverage-state="{coverage_state}"
         >
             <div class="concept-asset-card__header">
@@ -334,7 +334,7 @@ def _render_concept_mapping_card(mapping: ConceptAssetMapping) -> str:
             {_render_asset_list("Backing assets", mapping.assets)}
             {_render_dashboard_links("Available dashboards", mapping.available_dashboards)}
             {_render_dashboard_links("Planned dashboards", mapping.planned_dashboards)}
-            {_render_code_list("Generated-gold path", _single_value_tuple(mapping.generated_gold_path))}
+            {_render_code_list("Market context ID", _single_value_tuple(mapping.market_context_id))}
             {_render_code_list("Source chunk IDs", mapping.source_chunk_ids)}
         </article>"""
 

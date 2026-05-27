@@ -280,7 +280,7 @@ def _(NOMINATION_FORECAST_TABLE_NAME, config, forecast_reference_date, mo, pl):
                 "AEMO bucket",
                 "Parquet table",
                 "Forecast reference date",
-                "Generated-gold paths",
+                "Market context IDs",
                 "Source chunk IDs",
                 "AWS endpoint",
                 "AWS region",
@@ -290,10 +290,7 @@ def _(NOMINATION_FORECAST_TABLE_NAME, config, forecast_reference_date, mo, pl):
                 config.aemo_bucket,
                 f"silver/gas_model/{NOMINATION_FORECAST_TABLE_NAME}",
                 str(forecast_reference_date),
-                (
-                    "flow.md, facility.md, gas-day.md under "
-                    "tools/gas-market-knowledge-base/generated/gold/glossary"
-                ),
+                ("glossary:flow, glossary:facility, glossary:gas-day"),
                 (
                     "chunk-gbb-guide-flow-report, "
                     "chunk-gbb-procedures-scheduled-flow, "

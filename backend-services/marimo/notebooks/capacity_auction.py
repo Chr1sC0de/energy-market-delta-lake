@@ -164,7 +164,7 @@ def _(CAPACITY_AUCTION_TABLE_NAME, config, mo, pl):
             "setting": [
                 "AEMO bucket",
                 "Parquet table",
-                "Generated-gold paths",
+                "Market context IDs",
                 "Source chunk IDs",
                 "AWS endpoint",
                 "AWS region",
@@ -173,10 +173,7 @@ def _(CAPACITY_AUCTION_TABLE_NAME, config, mo, pl):
             "value": [
                 config.aemo_bucket,
                 f"silver/gas_model/{CAPACITY_AUCTION_TABLE_NAME}",
-                (
-                    "capacity.md and hub-zone.md under "
-                    "tools/gas-market-knowledge-base/generated/gold/glossary"
-                ),
+                ("glossary:capacity, glossary:hub-zone"),
                 (
                     "chunk-sttm-procedures-definitions, "
                     "chunk-sttm-procedures-capacity-settlement, "

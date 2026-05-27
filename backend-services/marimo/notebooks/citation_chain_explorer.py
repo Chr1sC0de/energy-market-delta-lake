@@ -31,7 +31,7 @@ def _(mo, render_dashboard_context_panel):
 
             **Dashboard brief**: **Dashboard intent**: Analytical. Analysts,
             data engineers, and operators audit the Marimo-local citation chain
-            from dashboard concepts to generated-gold paths, source chunk IDs,
+            from dashboard concepts to Market context IDs, source chunk IDs,
             silver chunk paths, and source hashes. Data scope is the Marimo
             dashboard registry in code; generated artifacts remain read-only
             citation anchors and are not opened at runtime. Freshness is the

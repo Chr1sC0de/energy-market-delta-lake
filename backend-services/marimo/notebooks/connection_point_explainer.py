@@ -63,7 +63,7 @@ def _(mo):
             `silver.gas_model.silver_gas_dim_connection_point`, and trace
             available relationships to Facility, Location, Hub / Zone, flow
             direction, actual flow, and capacity context. Data scope is the
-            Marimo dashboard registry, generated-gold path and source chunk
+            Marimo dashboard registry, Market context ID and source chunk
             metadata copied into that registry, plus read-only bounded Parquet
             samples from `silver_gas_dim_connection_point`,
             `silver_gas_dim_facility`, `silver_gas_dim_location`,
@@ -184,7 +184,7 @@ def _(config, connection_point_coverage, connection_point_specs, mo, pl):
                 "AEMO bucket",
                 "Parquet root",
                 "Connection Point-oriented assets",
-                "Generated-gold path",
+                "Market context ID",
                 "Source chunk IDs",
                 "AWS endpoint",
                 "AWS region",
@@ -194,10 +194,7 @@ def _(config, connection_point_coverage, connection_point_specs, mo, pl):
                 config.aemo_bucket,
                 f"s3://{config.aemo_bucket}/silver/gas_model",
                 str(len(connection_point_specs)),
-                (
-                    "tools/gas-market-knowledge-base/generated/gold/glossary/"
-                    "connection-point.md"
-                ),
+                ("glossary:connection-point"),
                 (
                     "chunk-gbb-guide-connection-point-identifiers, "
                     "chunk-gbb-guide-flow-report"

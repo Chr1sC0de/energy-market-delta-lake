@@ -8,12 +8,13 @@ from marimoserver.dashboard_registry import (
     registry_entry_by_concept_id,
 )
 from marimoserver.glossary_explorer import (
-    GLOSSARY_GOLD_PREFIX,
+    GLOSSARY_MARKET_CONTEXT_PREFIX,
     GlossaryConcept,
     GlossaryDashboardReference,
     GlossaryExplorer,
     build_glossary_explorer,
     glossary_concept_by_generated_gold_path,
+    glossary_concept_by_market_context_id,
     render_glossary_explorer_html,
 )
 
@@ -21,21 +22,21 @@ from marimoserver.glossary_explorer import (
 def test_glossary_explorer_lists_seeded_glossary_concepts_from_registry() -> None:
     entries = dashboard_registry()
     explorer = build_glossary_explorer(entries)
-    expected_paths = {
-        path
+    expected_ids = {
+        market_context_id
         for entry in entries
         if entry.concept_id.endswith("-context")
-        for path in entry.generated_gold_paths
-        if path.startswith(GLOSSARY_GOLD_PREFIX)
+        for market_context_id in entry.market_context_ids
+        if market_context_id.startswith(GLOSSARY_MARKET_CONTEXT_PREFIX)
     }
-    concept_paths = {
-        concept.generated_gold_path
+    concept_ids = {
+        concept.market_context_id
         for concept in explorer.concepts
-        if concept.generated_gold_path is not None
+        if concept.market_context_id is not None
     }
 
     assert len(explorer.concepts) == 13
-    assert concept_paths == expected_paths
+    assert concept_ids == expected_ids
     assert {concept.title for concept in explorer.concepts} >= {
         "Bid / Offer",
         "Capacity",
@@ -47,13 +48,13 @@ def test_glossary_explorer_lists_seeded_glossary_concepts_from_registry() -> Non
 
 def test_glossary_explorer_builds_concept_details_and_dashboard_references() -> None:
     explorer = build_glossary_explorer()
-    capacity = glossary_concept_by_generated_gold_path(
+    capacity = glossary_concept_by_market_context_id(
         explorer,
-        "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+        "glossary:capacity",
     )
 
     assert capacity is not None
-    assert glossary_concept_by_generated_gold_path(explorer, "missing.md") is None
+    assert glossary_concept_by_market_context_id(explorer, "glossary:missing") is None
     assert capacity.title == "Capacity"
     capacity_entry = registry_entry_by_concept_id("capacity-context")
     assert capacity_entry is not None
@@ -75,15 +76,24 @@ def test_glossary_explorer_builds_concept_details_and_dashboard_references() -> 
     )
 
 
+def test_glossary_explorer_supports_legacy_generated_path_lookup() -> None:
+    explorer = build_glossary_explorer()
+    capacity = glossary_concept_by_generated_gold_path(
+        explorer,
+        "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
+    )
+
+    assert capacity is not None
+    assert capacity.market_context_id == "glossary:capacity"
+    assert glossary_concept_by_generated_gold_path(explorer, "missing.md") is None
+
+
 def test_glossary_explorer_html_renders_concept_details() -> None:
     html = render_glossary_explorer_html(build_glossary_explorer())
 
     assert 'data-concept-count="13"' in html
-    assert (
-        'data-glossary-path="tools/gas-market-knowledge-base/generated/gold/'
-        'glossary/capacity.md"'
-    ) in html
-    assert "generated-gold path" in html
+    assert 'data-market-context-id="glossary:capacity"' in html
+    assert "Market context ID" in html
     assert "source chunk IDs" in html
     assert "related concepts" in html
     assert "dashboard links/statuses" in html
@@ -119,7 +129,7 @@ def test_glossary_explorer_html_marks_missing_metadata_as_validation_gap() -> No
         status=DashboardStatus.PLANNED,
         notebook_name=None,
         backing_assets=("silver.gas_model.sparse_table",),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
 
@@ -128,12 +138,12 @@ def test_glossary_explorer_html_marks_missing_metadata_as_validation_gap() -> No
 
     assert len(explorer.concepts) == 1
     assert explorer.concepts[0].metadata_gaps == (
-        "No generated-gold path recorded in the Marimo registry.",
+        "No Market context ID recorded in the Marimo registry.",
         "No source chunk IDs recorded in the Marimo registry.",
     )
     assert 'data-validation-gap="true"' in html
     assert "validation-visible gaps" in html
-    assert "No generated-gold path recorded in the Marimo registry." in html
+    assert "No Market context ID recorded in the Marimo registry." in html
     assert "No source chunk IDs recorded in the Marimo registry." in html
 
 
@@ -146,7 +156,7 @@ def test_glossary_explorer_strips_context_suffix_for_missing_path_seed() -> None
         status=DashboardStatus.PLANNED,
         notebook_name=None,
         backing_assets=("silver.gas_model.suffix_table",),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
 
@@ -161,7 +171,7 @@ def test_glossary_explorer_html_renders_empty_and_unmounted_dashboard_states() -
             concept_id="empty-context",
             title="Empty",
             description="Concept with no dashboard references.",
-            generated_gold_path="tools/gas-market-knowledge-base/generated/gold/glossary/empty.md",
+            market_context_id="glossary:empty",
             source_chunk_ids=("chunk-empty",),
             dashboard_references=(),
             related_concepts=(),
@@ -172,7 +182,7 @@ def test_glossary_explorer_html_renders_empty_and_unmounted_dashboard_states() -
             concept_id="unmounted-context",
             title="Unmounted",
             description="Concept with an available registry entry but no route.",
-            generated_gold_path="tools/gas-market-knowledge-base/generated/gold/glossary/unmounted.md",
+            market_context_id="glossary:unmounted",
             source_chunk_ids=("chunk-unmounted",),
             dashboard_references=(
                 GlossaryDashboardReference(

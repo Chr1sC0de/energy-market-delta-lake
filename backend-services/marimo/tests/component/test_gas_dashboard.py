@@ -854,7 +854,7 @@ def test_dashboard_read_behavior_frame_handles_unknown_available_dashboard() -> 
         status=DashboardStatus.AVAILABLE,
         notebook_name="custom_dashboard",
         backing_assets=(),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
 
@@ -887,9 +887,7 @@ def test_citation_chain_explorer_renders_complete_records() -> None:
         status=DashboardStatus.AVAILABLE,
         notebook_name="complete_citation_context",
         backing_assets=("silver.gas_model.silver_gas_fact_market_price",),
-        generated_gold_paths=(
-            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
-        ),
+        market_context_ids=("glossary:schedule",),
         source_chunks=(
             SourceChunkReference(
                 chunk_id="chunk-complete",
@@ -938,12 +936,12 @@ def test_citation_chain_explorer_renders_incomplete_records_as_coverage_gaps() -
     incomplete_entry = DashboardRegistryEntry(
         concept_id="incomplete-citation-context",
         title="Incomplete Citation Context",
-        description="Concept missing generated-gold and source hash metadata.",
+        description="Concept missing Market context ID and source hash metadata.",
         audiences=(DashboardAudience.ANALYST,),
         status=DashboardStatus.PLANNED,
         notebook_name=None,
         backing_assets=("silver.gas_model.silver_gas_fact_market_price",),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(SourceChunkReference(chunk_id="chunk-incomplete"),),
     )
 
@@ -953,7 +951,7 @@ def test_citation_chain_explorer_renders_incomplete_records_as_coverage_gaps() -
     assert explorer.complete_concepts == ()
     assert explorer.coverage_gap_count == 3
     assert 'data-coverage-state="gap"' in html
-    assert "No generated-gold path recorded in the Marimo registry." in html
+    assert "No Market context ID recorded in the Marimo registry." in html
     assert "No silver chunk path recorded for `chunk-incomplete`." in html
     assert "No source hash recorded for `chunk-incomplete`." in html
     assert "No silver chunk path recorded" in html
@@ -1015,9 +1013,7 @@ def test_concept_asset_explorer_marks_unmapped_concepts_as_coverage_gaps() -> No
         status=DashboardStatus.PLANNED,
         notebook_name=None,
         backing_assets=(),
-        generated_gold_paths=(
-            "tools/gas-market-knowledge-base/generated/gold/glossary/empty.md",
-        ),
+        market_context_ids=("glossary:empty",),
         source_chunks=(SourceChunkReference("chunk-empty"),),
     )
 
@@ -1042,9 +1038,7 @@ def test_concept_asset_explorer_marks_unmapped_assets_as_coverage_gaps() -> None
         status=DashboardStatus.PLANNED,
         notebook_name=None,
         backing_assets=("silver.gas_model.silver_gas_fact_connection_point_flow",),
-        generated_gold_paths=(
-            "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
-        ),
+        market_context_ids=("glossary:flow",),
         source_chunks=(),
     )
     unmapped_entry = DashboardRegistryEntry(
@@ -1055,7 +1049,7 @@ def test_concept_asset_explorer_marks_unmapped_assets_as_coverage_gaps() -> None
         status=DashboardStatus.AVAILABLE,
         notebook_name="gas_quality_composition",
         backing_assets=("silver.gas_model.silver_gas_fact_gas_quality",),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
 
@@ -1088,7 +1082,7 @@ def test_concept_asset_explorer_renders_missing_path_and_link_fallbacks() -> Non
         status=DashboardStatus.PLANNED,
         notebook_name=None,
         backing_assets=("silver.gas_model.",),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
 
@@ -1102,7 +1096,7 @@ def test_concept_asset_explorer_renders_missing_path_and_link_fallbacks() -> Non
     assert 'data-unmapped-concept-count="0"' in html
     assert 'data-unmapped-asset-count="0"' in html
     assert "No table explorer link" in html
-    assert "No generated-gold path recorded in the registry." in html
+    assert "No market context id recorded in the registry." in html
 
 
 def test_concept_asset_explorer_renders_unmapped_asset_without_table_link() -> None:
@@ -1114,7 +1108,7 @@ def test_concept_asset_explorer_renders_unmapped_asset_without_table_link() -> N
         status=DashboardStatus.AVAILABLE,
         notebook_name="unsupported_dashboard",
         backing_assets=("silver.gas_model.invalid/path",),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
 
@@ -1647,7 +1641,7 @@ def test_market_price_helpers_cover_missing_data_and_filter_empty_state() -> Non
         status=DashboardStatus.AVAILABLE,
         notebook_name=None,
         backing_assets=("silver.gas_model.silver_gas_fact_market_price",),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
     unmounted_context_links = render_market_price_context_links(
@@ -1990,7 +1984,7 @@ def test_schedule_run_helpers_cover_missing_data_and_filter_empty_state() -> Non
         status=DashboardStatus.AVAILABLE,
         notebook_name=None,
         backing_assets=("silver.gas_model.silver_gas_fact_schedule_run",),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
     unmounted_context_links = render_schedule_run_context_links(
@@ -2374,7 +2368,7 @@ def test_scheduled_quantity_helpers_cover_missing_data_and_filter_empty_state() 
         status=DashboardStatus.AVAILABLE,
         notebook_name=None,
         backing_assets=("silver.gas_model.silver_gas_fact_scheduled_quantity",),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
     unmounted_context_links = render_scheduled_quantity_context_links(
@@ -2737,7 +2731,7 @@ def test_settlement_activity_helpers_cover_missing_data_and_filter_empty_state()
         status=DashboardStatus.AVAILABLE,
         notebook_name=None,
         backing_assets=("silver.gas_model.silver_gas_fact_settlement_activity",),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
     unmounted_context_links = render_settlement_activity_context_links(
@@ -3195,7 +3189,7 @@ def test_sttm_market_settlement_helpers_cover_missing_data_and_filter_empty_stat
         status=DashboardStatus.AVAILABLE,
         notebook_name=None,
         backing_assets=("silver.gas_model.silver_gas_fact_sttm_market_settlement",),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
     unmounted_context_links = render_sttm_market_settlement_context_links(
@@ -3660,7 +3654,7 @@ def test_sttm_capacity_settlement_helpers_cover_missing_data_and_filter_empty_st
         status=DashboardStatus.AVAILABLE,
         notebook_name=None,
         backing_assets=("silver.gas_model.silver_gas_fact_sttm_capacity_settlement",),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
     unmounted_context_links = render_sttm_capacity_settlement_context_links(
@@ -4164,7 +4158,7 @@ def test_sttm_mos_allocation_helpers_cover_missing_data_and_filter_empty_state()
         status=DashboardStatus.AVAILABLE,
         notebook_name=None,
         backing_assets=("silver.gas_model.silver_gas_fact_sttm_mos_stack",),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
     unmounted_context_links = render_sttm_mos_allocation_context_links(
@@ -4503,7 +4497,7 @@ def test_customer_transfer_helpers_cover_missing_data_and_filter_empty_state() -
         status=DashboardStatus.AVAILABLE,
         notebook_name=None,
         backing_assets=("silver.gas_model.silver_gas_fact_customer_transfer",),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
     unmounted_context_links = render_customer_transfer_context_links(
@@ -4553,10 +4547,7 @@ def test_facility_flow_storage_metadata_and_loader_use_recent_bounded_rows() -> 
     assert entry.backing_assets == (
         "silver.gas_model.silver_gas_fact_facility_flow_storage",
     )
-    assert (
-        "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md"
-        in entry.generated_gold_paths
-    )
+    assert "glossary:facility" in entry.market_context_ids
     _assert_context_panel_renders_source_chunks(entry, html)
     assert "Facility Flow And Storage" in html
     assert 'href="/marimo/facility_flow_storage/"' in context_links
@@ -4888,10 +4879,7 @@ def test_linepack_metadata_and_loader_use_recent_bounded_rows() -> None:
     assert entry.notebook_name == "linepack_adequacy"
     assert entry.notebook_route == "/marimo/linepack_adequacy/"
     assert "silver.gas_model.silver_gas_fact_linepack" in entry.backing_assets
-    assert (
-        "tools/gas-market-knowledge-base/generated/gold/glossary/linepack.md"
-        in entry.generated_gold_paths
-    )
+    assert "glossary:linepack" in entry.market_context_ids
     _assert_context_panel_renders_source_chunks(entry, html)
     assert "Linepack Context" in html
     assert 'href="/marimo/linepack_adequacy/"' in context_links
@@ -4978,10 +4966,7 @@ def test_capacity_outlook_metadata_and_loader_use_recent_bounded_rows() -> None:
     assert entry.backing_assets == (
         "silver.gas_model.silver_gas_fact_capacity_outlook",
     )
-    assert (
-        "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md"
-        in entry.generated_gold_paths
-    )
+    assert "glossary:capacity" in entry.market_context_ids
     _assert_context_panel_renders_source_chunks(entry, html)
     assert "Capacity Context" in html
     assert 'data-status="available"' in html
@@ -5325,9 +5310,7 @@ def test_context_links_render_planned_entries_without_routes() -> None:
         status=DashboardStatus.PLANNED,
         notebook_name=None,
         backing_assets=("silver.gas_model.silver_gas_fact_capacity_outlook",),
-        generated_gold_paths=(
-            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
-        ),
+        market_context_ids=("glossary:capacity",),
         source_chunks=(),
     )
 
@@ -5378,14 +5361,8 @@ def test_capacity_auction_metadata_and_loader_use_recent_bounded_rows() -> None:
     assert entry.backing_assets == (
         "silver.gas_model.silver_gas_fact_capacity_auction",
     )
-    assert (
-        "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md"
-        in entry.generated_gold_paths
-    )
-    assert (
-        "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md"
-        in entry.generated_gold_paths
-    )
+    assert "glossary:capacity" in entry.market_context_ids
+    assert "glossary:hub-zone" in entry.market_context_ids
     _assert_context_panel_renders_source_chunks(entry, html)
     assert "Capacity Auctions" in html
     assert 'data-status="available"' in html
@@ -5611,9 +5588,7 @@ def test_capacity_auction_helpers_cover_missing_data_and_empty_states() -> None:
         status=DashboardStatus.PLANNED,
         notebook_name=None,
         backing_assets=("silver.gas_model.silver_gas_fact_capacity_auction",),
-        generated_gold_paths=(
-            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
-        ),
+        market_context_ids=("glossary:capacity",),
         source_chunks=(),
     )
 
@@ -5693,10 +5668,7 @@ def test_capacity_transaction_metadata_and_loader_use_recent_bounded_rows() -> N
     assert entry.backing_assets == (
         "silver.gas_model.silver_gas_fact_capacity_transaction",
     )
-    assert (
-        "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md"
-        in entry.generated_gold_paths
-    )
+    assert "glossary:capacity" in entry.market_context_ids
     assert "Capacity Transactions" in html
     assert 'data-status="available"' in html
     assert 'href="/marimo/capacity_transactions/"' in context_links
@@ -5924,9 +5896,7 @@ def test_capacity_transaction_helpers_cover_missing_data_and_empty_states() -> N
         status=DashboardStatus.PLANNED,
         notebook_name=None,
         backing_assets=("silver.gas_model.silver_gas_fact_capacity_transaction",),
-        generated_gold_paths=(
-            "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
-        ),
+        market_context_ids=("glossary:capacity",),
         source_chunks=(),
     )
 
@@ -6257,10 +6227,7 @@ def test_nomination_forecast_metadata_and_loader_use_recent_bounded_rows() -> No
     assert entry.backing_assets == (
         "silver.gas_model.silver_gas_fact_nomination_forecast",
     )
-    assert (
-        "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md"
-        in entry.generated_gold_paths
-    )
+    assert "glossary:flow" in entry.market_context_ids
     _assert_context_panel_renders_source_chunks(entry, html)
     assert "Nomination And Demand Forecast" in html
     assert 'href="/marimo/nomination_demand_forecast/"' in context_links
@@ -7341,7 +7308,7 @@ def test_bid_stack_helpers_cover_missing_data_and_filter_empty_state() -> None:
         status=DashboardStatus.AVAILABLE,
         notebook_name=None,
         backing_assets=("silver.gas_model.silver_gas_fact_bid_stack",),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
     unmounted_context_links = render_bid_stack_context_links(entries=(unmounted_entry,))
@@ -7792,7 +7759,7 @@ def test_sttm_contingency_gas_helpers_cover_missing_data_and_filter_empty_state(
         status=DashboardStatus.AVAILABLE,
         notebook_name=None,
         backing_assets=("silver.gas_model.silver_gas_fact_sttm_contingency_gas_call",),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
     unmounted_context_links = render_sttm_contingency_gas_context_links(
@@ -8454,7 +8421,7 @@ def test_heating_value_pressure_helpers_cover_missing_data_and_empty_states() ->
         status=DashboardStatus.AVAILABLE,
         notebook_name=None,
         backing_assets=("silver.gas_model.silver_gas_fact_heating_value",),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
     unmounted_context_links = render_heating_value_pressure_context_links(
@@ -9070,10 +9037,7 @@ def test_participant_context_metadata_is_available_dashboard() -> None:
     assert entry.status is DashboardStatus.AVAILABLE
     assert entry.notebook_name == "participant_explainer"
     assert entry.notebook_route == "/marimo/participant_explainer/"
-    assert (
-        "tools/gas-market-knowledge-base/generated/gold/glossary/participant.md"
-        in entry.generated_gold_paths
-    )
+    assert "glossary:participant" in entry.market_context_ids
     _assert_context_panel_renders_source_chunks(entry, html)
     assert "silver.gas_model.silver_gas_dim_participant" in entry.backing_assets
     assert (
@@ -9400,7 +9364,7 @@ def test_participant_helpers_cover_empty_state_behavior() -> None:
         status=DashboardStatus.PLANNED,
         notebook_name=None,
         backing_assets=(),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
 
@@ -9453,10 +9417,7 @@ def test_facility_context_metadata_is_available_dashboard() -> None:
     assert entry.status is DashboardStatus.AVAILABLE
     assert entry.notebook_name == "facility_explainer"
     assert entry.notebook_route == "/marimo/facility_explainer/"
-    assert (
-        "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md"
-        in entry.generated_gold_paths
-    )
+    assert "glossary:facility" in entry.market_context_ids
     _assert_context_panel_renders_source_chunks(entry, html)
     assert "silver.gas_model.silver_gas_dim_facility" in entry.backing_assets
     assert "Facility Context" in html
@@ -9728,9 +9689,7 @@ def test_connection_point_context_metadata_is_available_dashboard() -> None:
     assert entry.status is DashboardStatus.AVAILABLE
     assert entry.notebook_name == "connection_point_explainer"
     assert entry.notebook_route == "/marimo/connection_point_explainer/"
-    assert (
-        "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md"
-    ) in entry.generated_gold_paths
+    assert ("glossary:connection-point") in entry.market_context_ids
     _assert_context_panel_renders_source_chunks(entry, html)
     assert "silver.gas_model.silver_gas_dim_connection_point" in entry.backing_assets
     assert "silver.gas_model.silver_gas_dim_facility" in entry.backing_assets
@@ -9740,9 +9699,7 @@ def test_connection_point_context_metadata_is_available_dashboard() -> None:
         entry.backing_assets
     )
     assert "Connection Point Context" in html
-    assert (
-        "tools/gas-market-knowledge-base/generated/gold/glossary/connection-point.md"
-    ) in html
+    assert ("glossary:connection-point") in html
     assert 'data-status="available"' in html
     assert 'href="/marimo/connection_point_explainer/"' in context_links
     assert "Facility Context" in context_links
@@ -10189,10 +10146,7 @@ def test_flow_context_metadata_is_available_dashboard() -> None:
     assert entry.status is DashboardStatus.AVAILABLE
     assert entry.notebook_name == "flow_operations"
     assert entry.notebook_route == "/marimo/flow_operations/"
-    assert (
-        "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md"
-        in entry.generated_gold_paths
-    )
+    assert "glossary:flow" in entry.market_context_ids
     _assert_context_panel_renders_source_chunks(entry, html)
     assert "silver.gas_model.silver_gas_fact_connection_point_flow" in (
         entry.backing_assets
@@ -11613,14 +11567,11 @@ def test_hub_zone_context_metadata_is_available_dashboard() -> None:
     assert entry.status is DashboardStatus.AVAILABLE
     assert entry.notebook_name == "hub_zone_explainer"
     assert entry.notebook_route == "/marimo/hub_zone_explainer/"
-    assert (
-        "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md"
-        in entry.generated_gold_paths
-    )
+    assert "glossary:hub-zone" in entry.market_context_ids
     _assert_context_panel_renders_source_chunks(entry, html)
     assert "silver.gas_model.silver_gas_dim_zone" in entry.backing_assets
     assert "Hub / Zone Context" in html
-    assert "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md" in html
+    assert "glossary:hub-zone" in html
     assert 'data-status="available"' in html
     assert 'href="/marimo/hub_zone_explainer/"' in context_links
     assert "Source Coverage Matrix" in context_links
@@ -11869,13 +11820,10 @@ def test_gas_day_context_metadata_is_available_dashboard() -> None:
     assert entry.status is DashboardStatus.AVAILABLE
     assert entry.notebook_name == "gas_day_explainer"
     assert entry.notebook_route == "/marimo/gas_day_explainer/"
-    assert (
-        "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md"
-        in entry.generated_gold_paths
-    )
+    assert "glossary:gas-day" in entry.market_context_ids
     _assert_context_panel_renders_source_chunks(entry, html)
     assert "Gas Day Context" in html
-    assert "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md" in html
+    assert "glossary:gas-day" in html
     assert 'data-status="available"' in html
 
 
@@ -12483,7 +12431,7 @@ def test_source_coverage_table_specs_skip_non_gas_model_and_label_sections() -> 
             "silver.gas_model.silver_gas_participant_market_membership",
             "silver.gas_model.silver_gas_dim_date",
         ),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
 
@@ -13170,9 +13118,7 @@ def test_source_lineage_explorer_extracts_lineage_fields_and_registry_links() ->
         status=DashboardStatus.AVAILABLE,
         notebook_name="custom_lineage",
         backing_assets=(f"silver.gas_model.{table_name}",),
-        generated_gold_paths=(
-            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
-        ),
+        market_context_ids=("glossary:schedule",),
         source_chunks=(SourceChunkReference("chunk-custom-lineage"),),
     )
 
@@ -13196,9 +13142,7 @@ def test_source_lineage_explorer_extracts_lineage_fields_and_registry_links() ->
         "Custom Lineage -> /marimo#concept-custom-lineage-context"
     )
     assert sttm_row["dashboard routes"] == ("Custom Lineage -> /marimo/custom_lineage/")
-    assert sttm_row["Market context paths"] == (
-        "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md"
-    )
+    assert sttm_row["Market context IDs"] == ("glossary:schedule")
     assert sttm_row["source chunk ids"] == "chunk-custom-lineage"
     assert values["Source systems"] == "2"
     assert values["Source tables"] == "2"
@@ -13325,9 +13269,7 @@ def test_render_source_lineage_explorer_html_links_and_escapes_values() -> None:
         status=DashboardStatus.AVAILABLE,
         notebook_name="custom_lineage",
         backing_assets=(f"silver.gas_model.{table_name}",),
-        generated_gold_paths=(
-            "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
-        ),
+        market_context_ids=("glossary:schedule",),
         source_chunks=(SourceChunkReference("chunk-custom-lineage"),),
     )
 
@@ -13350,7 +13292,7 @@ def test_render_source_lineage_explorer_html_links_and_escapes_values() -> None:
                     "lineage examples": "source_file: 1 < 2.csv",
                     "concept cards": "Unsafe -> javascript:alert(1)",
                     "dashboard routes": "Unsafe -> javascript:alert(1)",
-                    "Market context paths": "tools/<unsafe>.md",
+                    "Market context IDs": "glossary:<unsafe>",
                     "source chunk ids": "chunk-unsafe",
                     "table explorer": "javascript:alert(1)",
                     "asset metadata": "",
@@ -13366,10 +13308,7 @@ def test_render_source_lineage_explorer_html_links_and_escapes_values() -> None:
     assert 'data-link-target="dashboard-route"' in html
     assert 'href="/marimo/custom_lineage/"' in html
     assert 'data-link-target="table-explorer"' in html
-    assert (
-        'data-market-context-path="tools/gas-market-knowledge-base/generated/gold/'
-        'glossary/schedule.md"'
-    ) in html
+    assert ('data-market-context-id="glossary:schedule"') in html
     assert "<button" not in html.lower()
     assert "&lt;unsafe&gt;" in unsafe_html
     assert "1 &lt; 2" in unsafe_html
@@ -13398,7 +13337,7 @@ def test_source_lineage_explorer_empty_and_overflow_states() -> None:
                     "lineage examples": "source_file: first.csv",
                     "concept cards": "/marimo#concept-first",
                     "dashboard routes": "/marimo/first/",
-                    "Market context paths": None,
+                    "Market context IDs": None,
                     "source chunk ids": "chunk-first",
                     "table explorer": None,
                     "asset metadata": None,
@@ -13419,7 +13358,7 @@ def test_source_lineage_explorer_empty_and_overflow_states() -> None:
                     "lineage examples": "source_file: second.csv",
                     "concept cards": "/marimo#concept-second",
                     "dashboard routes": "/marimo/second/",
-                    "Market context paths": "tools/gold.md",
+                    "Market context IDs": "glossary:gold",
                     "source chunk ids": "chunk-second",
                     "table explorer": "/marimo/table_explorer/?search=second",
                     "asset metadata": "",
@@ -13621,16 +13560,16 @@ def test_render_dashboard_context_panel_covers_complete_concept() -> None:
 
     assert overview is not None
     assert "Gas Market Overview" in html
-    assert "generated-gold paths" in html
+    assert "Market context IDs" in html
     assert "source chunk IDs" in html
     assert "silver chunk paths" in html
     assert "source hashes" in html
     assert "backing assets" in html
-    assert "tools/gas-market-knowledge-base/generated/gold/glossary/gas-day.md" in html
+    assert "glossary:gas-day" in html
     _assert_context_panel_renders_source_chunks(overview, html)
     assert "silver.gas_model.silver_gas_fact_market_price" in html
     assert "Gas Day Context" in html
-    assert "No related concepts share generated-gold paths" in no_related_html
+    assert "No related concepts share Market context IDs" in no_related_html
 
 
 def test_render_dashboard_context_panel_handles_missing_optional_fields() -> None:
@@ -13642,14 +13581,14 @@ def test_render_dashboard_context_panel_handles_missing_optional_fields() -> Non
         status=DashboardStatus.PLANNED,
         notebook_name=None,
         backing_assets=("silver.gas_model.minimal_table",),
-        generated_gold_paths=(),
+        market_context_ids=(),
         source_chunks=(),
     )
 
     html = render_dashboard_context_panel("minimal-context", entries=(entry,))
 
     assert "Minimal Context" in html
-    assert "No generated-gold paths recorded in the Marimo registry." in html
+    assert "No Market context IDs recorded in the Marimo registry." in html
     assert "No source chunk IDs recorded in the Marimo registry." in html
     assert "No silver chunk paths recorded in the Marimo registry." in html
     assert "No source hashes recorded in the Marimo registry." in html

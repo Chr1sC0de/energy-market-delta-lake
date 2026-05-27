@@ -296,7 +296,7 @@ def _(CAPACITY_OUTLOOK_TABLE_NAME, config, mo, pl):
             "setting": [
                 "AEMO bucket",
                 "Parquet table",
-                "Generated-gold paths",
+                "Market context IDs",
                 "Source chunk IDs",
                 "AWS endpoint",
                 "AWS region",
@@ -306,9 +306,8 @@ def _(CAPACITY_OUTLOOK_TABLE_NAME, config, mo, pl):
                 config.aemo_bucket,
                 f"silver/gas_model/{CAPACITY_OUTLOOK_TABLE_NAME}",
                 (
-                    "capacity.md, facility.md, flow.md, connection-point.md, "
-                    "gas-day.md under "
-                    "tools/gas-market-knowledge-base/generated/gold/glossary"
+                    "glossary:capacity, glossary:facility, glossary:flow, "
+                    "glossary:connection-point, glossary:gas-day"
                 ),
                 (
                     "chunk-gbb-procedures-capacity-outlooks, "

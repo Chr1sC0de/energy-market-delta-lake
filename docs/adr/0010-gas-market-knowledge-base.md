@@ -97,9 +97,12 @@ context** pages can be tracked artifacts under `generated/gold` only when an
 issue intentionally targets reviewable artifact diffs, but router docs and
 Subproject docs still need normal **Documentation sync** metadata outside that
 generated corpus.
-Runtime dashboards may copy generated-gold paths and source chunk IDs into
-their own registries as citation metadata, but generated gold Markdown remains
-read-only corpus output rather than a dashboard runtime dependency.
+Runtime dashboards may carry registry-only Market context IDs, source chunk
+IDs, source hashes, and optional external artifact references as citation
+metadata. These identifiers are metadata only: dashboards must not require
+generated gold or silver Markdown artifacts to exist on disk at runtime.
+Generated gold Markdown remains read-only corpus output rather than a dashboard
+runtime dependency.
 
 Embeddings or vector storage can be added later only after the extracted text
 and Docling Hybrid chunks exist. A future irreversible storage choice should get

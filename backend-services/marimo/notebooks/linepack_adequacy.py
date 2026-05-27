@@ -271,7 +271,7 @@ def _(LINEPACK_TABLE_NAME, config, mo, pl):
             "setting": [
                 "AEMO bucket",
                 "Parquet table",
-                "Generated-gold paths",
+                "Market context IDs",
                 "Source chunk IDs",
                 "AWS endpoint",
                 "AWS region",
@@ -280,10 +280,7 @@ def _(LINEPACK_TABLE_NAME, config, mo, pl):
             "value": [
                 config.aemo_bucket,
                 f"silver/gas_model/{LINEPACK_TABLE_NAME}",
-                (
-                    "linepack.md, flow.md, capacity.md, mos.md under "
-                    "tools/gas-market-knowledge-base/generated/gold/glossary"
-                ),
+                ("glossary:linepack, glossary:flow, glossary:capacity, glossary:mos"),
                 (
                     "chunk-sttm-procedures-definitions, "
                     "chunk-gbb-procedures-linepack-capacity-adequacy, "

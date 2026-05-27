@@ -123,12 +123,12 @@ Local workflow notes:
   curated dashboard image is deployed by Pulumi behind the AWS Caddy route. The
   data readiness overview is the platform operations first-stop dashboard over
   configured S3 and Dagster GraphQL readiness. The glossary explorer is the
-  registry-only Market context browser over generated-gold metadata paths,
+  registry-only Market context browser over Market context IDs,
   source chunk IDs, related concepts, and dashboard states. The
   concept-to-asset explorer is the registry-only map from Market context
   glossary concepts to backing `silver.gas_model` assets, dashboard routes,
   planned dashboard cards, and table explorer deep links. The citation-chain
-  explorer audits generated-gold paths, source chunk IDs, silver chunk paths,
+  explorer audits Market context IDs, source chunk IDs, silver chunk paths,
   and source hashes from the packaged registry without opening generated corpus
   files. The Gas Day explainer uses registry context metadata and bounded
   gas-model samples to show date-field coverage across curated assets. The

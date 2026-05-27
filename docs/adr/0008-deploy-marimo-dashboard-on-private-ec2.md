@@ -26,11 +26,9 @@ runtime sets `DEVELOPMENT_LOCATION=aws`,
 
 The dashboard service also exposes `/marimo/dashboard-registry.json` from
 Marimo-local code constants. The registry carries planned and available
-dashboard metadata, including generated-gold paths, source chunk IDs, silver
-chunk paths, and source hashes. When packaged generated corpus files are
-present, the registry resolves current source chunk metadata from generated
-gold frontmatter and the silver chunk index; dashboards consume the parsed
-registry rather than opening generated Markdown directly.
+dashboard metadata, including Market context IDs, source chunk IDs, silver
+chunk paths, and source hashes. Dashboards consume that parsed registry rather
+than opening generated Market context artifacts or silver chunk files directly.
 
 The curated image includes an S3 Bucket Health dashboard for configured
 S3-compatible bucket reachability, object scans, truncation, bucket errors, and
@@ -238,19 +236,19 @@ source ingestion, asset schemas, or AWS infrastructure.
 The source table lineage explorer stays inside the same boundary. It reuses
 bounded source metadata reads and the table catalogue overlay to connect
 curated `silver.gas_model` assets to source systems, source tables, extra
-`source_*` lineage fields, registry concept cards, generated Market context
-paths, table explorer links, and asset metadata links without changing ETL
-lineage fields, generated gold Markdown, asset schemas, or AWS infrastructure.
+`source_*` lineage fields, registry concept cards, Market context IDs, table
+explorer links, and asset metadata links without changing ETL lineage fields,
+generated Market context artifacts, asset schemas, or AWS infrastructure.
 
 The Gas Day explainer dashboard stays inside the same boundary. It renders the
-registry-backed Gas Day context panel from copied generated-gold path and
+registry-backed Gas Day context panel from copied Market context ID and
 source chunk metadata, then reads bounded samples from registry-backed
 `silver.gas_model` assets to show date-field coverage and examples without
 changing ETL date modeling, generated glossary files, asset schemas, or AWS
 infrastructure.
 
 The Facility explainer dashboard stays inside the same boundary. It renders
-the registry-backed Facility context panel from copied generated-gold path and
+the registry-backed Facility context panel from copied Market context ID and
 source chunk metadata, then reads bounded samples from
 `silver_gas_dim_facility`, `silver_gas_fact_facility_flow_storage`, and
 `silver_gas_fact_capacity_outlook` to show facility standing-data coverage and
@@ -259,7 +257,7 @@ changing ETL facility modeling, generated glossary files, asset schemas, or AWS
 infrastructure.
 
 The Flow operations dashboard stays inside the same boundary. It renders the
-registry-backed Flow context panel from copied generated-gold path and source
+registry-backed Flow context panel from copied Market context ID and source
 chunk metadata, then reads bounded recent samples from
 `silver_gas_fact_connection_point_flow`,
 `silver_gas_fact_facility_flow_storage`,
@@ -270,7 +268,7 @@ glossary files, asset schemas, or AWS infrastructure.
 
 The Operational Meter Flow dashboard stays inside the same boundary. It renders
 the registry-backed Operational Meter Flow context panel from copied
-generated-gold path and source chunk metadata, then reads bounded recent samples
+Market context ID and source chunk metadata, then reads bounded recent samples
 from `silver_gas_fact_operational_meter_flow`,
 `silver_gas_dim_operational_point`, `silver_gas_dim_zone`, and
 `silver_gas_dim_pipeline_segment` to show VICGAS meter-flow quantity, gas
