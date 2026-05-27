@@ -16,7 +16,7 @@ from aemo_etl.factories.aemo_gas_documents.scraper import (
     clean_document_title,
     document_family_id,
     infer_document_kind,
-    is_pdf_url,
+    is_downloadable_media_url,
     normalize_source_url,
     parse_document_version,
     parse_effective_date,
@@ -371,7 +371,7 @@ def _should_download(
 ) -> bool:
     value = entry.get("should_download")
     if value is None:
-        return include_decision == "include" and is_pdf_url(source_url)
+        return include_decision == "include" and is_downloadable_media_url(source_url)
     if not isinstance(value, bool):
         raise ValueError("manifest field 'should_download' must be a boolean")
     return value

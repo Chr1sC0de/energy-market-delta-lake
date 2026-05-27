@@ -210,10 +210,10 @@ sequenceDiagram
     Docs->>Manifest: Load source-page and media-link observations
     Docs->>AEMO: Download media rows with browser-compatible headers
     Docs->>Docs: Classify include, exclude, and needs_human_review observations
-    Docs->>Docs: Record runtime download failures without PDF bytes
-    Docs->>Landing: Write included PDF bytes by content_sha256
+    Docs->>Docs: Record runtime download failures without media bytes
+    Docs->>Landing: Write included media bytes by content_sha256 and safe suffix
     Docs->>DeltaDocs: Merge bronze_aemo_gas_document_sources metadata rows
-    Docs->>Archive: Copy landed PDFs after metadata write, then delete from landing
+    Docs->>Archive: Copy landed media after metadata write, then delete from landing
 ```
 
 Trigger and output notes:
@@ -223,7 +223,8 @@ Trigger and output notes:
 - Daily materialization reads the checked-in media manifest from the package and
   does not fetch AEMO source-page HTML. The manifest is expected to contain
   direct `https://www.aemo.com.au/-/media/...` media-link observations, so the
-  default asset path can download included PDFs without revisiting source pages.
+  default asset path can download included media without revisiting source
+  pages.
   The manual `aemo-refresh-gas-document-media-manifest` CLI performs source-page
   discovery with Playwright, validates direct media URLs with the same
   browser-compatible request headers as the daily asset, records validation
@@ -233,13 +234,14 @@ Trigger and output notes:
   page is blocked or unreadable. Observation-only configured source pages,
   including the AEMO energy-systems major publications hub, keep hub and public
   media-link coverage as `needs_human_review` metadata until a later approved
-  slice enables publication byte landing.
-- Included PDF links produce content-addressed PDF objects and metadata rows
-  with source URL, resolved URL, source page, include decision,
-  `content_sha256`, document family/version fields, and archive `storage_uri`.
+  scope marks publication observations downloadable.
+- Included media links produce content-addressed objects with safe URL or
+  content-type suffixes, plus metadata rows with source URL, resolved URL,
+  source page, include decision, `content_sha256`, content type, content length,
+  target key, document family/version fields, and archive `storage_uri`.
 - Excluded and `needs_human_review` source-page or source-link observations,
   plus failed direct-media validation source-link observations, are retained in
-  `bronze_aemo_gas_document_sources` without landing PDF bytes. Failed
+  `bronze_aemo_gas_document_sources` without landing media bytes. Failed
   validation rows are not requested by the daily asset path until a later
   manifest refresh marks them downloadable. If a manifest row marked
   `should_download=true` still fails during daily materialization, the asset
@@ -248,7 +250,7 @@ Trigger and output notes:
   HTTP page loads as metadata-only source-page observations before continuing to
   later configured pages.
 - This flow stops at landing/archive plus bronze metadata. It has no wiki,
-  embedding, vector-store, or PDF text-extraction side effects. ADR
+  embedding, vector-store, or document text-extraction side effects. ADR
   [0010](../../../../../docs/adr/0010-gas-market-knowledge-base.md) and the
   [Gas market knowledge base Subproject](../../../../../tools/gas-market-knowledge-base/README.md)
   keep the bronze source manifest command, archive PDF cache fetcher,
@@ -328,7 +330,7 @@ valid source-table archive gaps; zip-domain coverage remains mandatory so
 unzipper-backed e2e inputs are still present.
 
 The AEMO gas document Integration test uses the same LocalStack buckets and
-Delta lock table to verify included PDF bytes move from
+Delta lock table to verify included media bytes move from
 `LANDING_BUCKET/bronze/aemo_gas_documents` to
 `ARCHIVE_BUCKET/bronze/aemo_gas_documents` after
 `bronze_aemo_gas_document_sources` is written.

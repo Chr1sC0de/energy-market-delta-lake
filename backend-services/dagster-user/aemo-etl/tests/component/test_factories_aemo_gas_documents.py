@@ -84,7 +84,7 @@ def _context_and_s3(mocker: MockerFixture) -> tuple[MagicMock, MagicMock, MagicM
     return context, s3, s3_client
 
 
-def test_asset_archives_landed_pdf_only_after_metadata_write(
+def test_asset_archives_landed_media_only_after_metadata_write(
     mocker: MockerFixture,
 ) -> None:
     events: list[str] = []
@@ -118,9 +118,9 @@ def test_asset_archives_landed_pdf_only_after_metadata_write(
     s3_client.delete_object.assert_called_once()
     metadata = result.metadata
     assert metadata is not None
-    assert metadata["included_pdf_count"] == 1
-    assert metadata["landed_pdf_count"] == 1
-    assert metadata["archived_pdf_count"] == 1
+    assert metadata["included_media_count"] == 1
+    assert metadata["landed_media_count"] == 1
+    assert metadata["archived_media_count"] == 1
 
 
 def test_asset_leaves_landing_object_when_metadata_write_fails(
@@ -299,8 +299,8 @@ def test_asset_discovers_major_publications_hub_observations_without_landing(
 
     assert isinstance(result, MaterializeResult)
     assert result.metadata is not None
-    assert result.metadata["included_pdf_count"] == 0
-    assert result.metadata["landed_pdf_count"] == 0
+    assert result.metadata["included_media_count"] == 0
+    assert result.metadata["landed_media_count"] == 0
     assert result.metadata["needs_human_review_observation_count"] == 6
     assert result.metadata["excluded_observation_count"] == 1
     assert {row["source_url"] for row in captured_rows} == {
@@ -374,7 +374,7 @@ def test_definitions_factory_default_asset_uses_packaged_manifest_media_only(
     assert requested_urls
     assert later_downloadable_url in requested_urls
     assert result.metadata is not None
-    assert result.metadata["included_pdf_count"] == len(requested_urls)
+    assert result.metadata["included_media_count"] == len(requested_urls)
     s3_client.copy_object.assert_not_called()
 
 

@@ -30,7 +30,7 @@ class AEMOGasDocumentSourcePage:
 
 @dataclass(frozen=True, slots=True)
 class AEMOGasDocumentPendingObservation:
-    """Source-page or link observation before optional PDF byte download."""
+    """Source-page or link observation before optional media byte download."""
 
     observation_type: ObservationType
     corpus_source: str

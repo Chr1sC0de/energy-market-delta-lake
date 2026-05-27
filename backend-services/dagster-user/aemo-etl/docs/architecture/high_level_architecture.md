@@ -105,18 +105,18 @@ for the STTM unzipper path.
 uses `factories/aemo_gas_documents` to load a checked-in package media manifest,
 record included, excluded, and `needs_human_review` source-page or direct
 `https://www.aemo.com.au/-/media/...` media-link observations, land
-direct-media PDF bytes under `LANDING_BUCKET/bronze/aemo_gas_documents` only
-when the manifest row has `should_download=true` using browser-compatible
-request headers, write the metadata Delta table, and archive landed PDFs under
+direct-media bytes under `LANDING_BUCKET/bronze/aemo_gas_documents` only when
+the manifest row has `should_download=true` using browser-compatible request
+headers, write the metadata Delta table, and archive landed media under
 `ARCHIVE_BUCKET/bronze/aemo_gas_documents` only after that metadata write
 succeeds. If a direct-media request that was downloadable during manifest
 refresh still fails during the daily materialization, the asset records a
 metadata-only row and increments `failed_download_count` instead of failing the
 run. Source-page HTML discovery is a manual Playwright CLI workflow, so the
-daily asset path does not fetch AEMO source-page HTML. It does not extract PDF
-text, create wiki output, or write embeddings/vector storage. Custom live-scrape
-uses of the factory record failed HTTP page loads as metadata-only source-page
-observations before continuing to later configured pages. The packaged
+daily asset path does not fetch AEMO source-page HTML. It does not extract
+document text, create wiki output, or write embeddings/vector storage. Custom
+live-scrape uses of the factory record failed HTTP page loads as metadata-only
+source-page observations before continuing to later configured pages. The packaged
 manifest is expected to contain media-link observations, and the paired
 discovery report records direct-media validation status, HTTP metadata, resolved
 URLs, and validation errors. Failed direct-media validation rows are retained in
@@ -124,7 +124,7 @@ the manifest with `should_download=false`, so daily materialization writes
 metadata for the row without requesting the failed media URL. Observation-only
 configured source pages, including the AEMO energy-systems major publications
 hub, keep hub and public media-link coverage as `needs_human_review` metadata
-until a later approved slice enables publication byte landing.
+until an approved scope marks those observations downloadable.
 
 ### Unzipper assets
 
