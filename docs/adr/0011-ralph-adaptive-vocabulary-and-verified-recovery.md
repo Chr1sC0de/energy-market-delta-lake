@@ -79,11 +79,12 @@ canonical **Delivery mode** vocabulary. The `$shape-issues` gate remains the
 first routing surface: low scores can proceed, medium scores need human review
 or narrowing, and high scores split unless an Operator records an override.
 
-Ralph implementation work can add adaptive-event manifest fields later without
-changing recovery policy. `gated_retry` remains tied to the per-issue Codex
-attempt budget and only applies before a pushed boundary. `hard_stop` remains an
-outer-loop stop that preserves evidence and requires inspection. `residual_update`
-keeps verified follow-on metadata changes separate from unverified code repair.
+Ralph run manifests record adaptive-event evidence without changing recovery
+policy. `gated_retry` remains tied to the per-issue Codex attempt budget and
+only applies before a pushed boundary. `hard_stop` remains an outer-loop stop
+that preserves evidence, records no automatic retry and no attempt-budget
+consumption, and requires inspection. `residual_update` keeps verified
+follow-on metadata changes separate from unverified code repair.
 
 Verified-only post-push recovery prevents Ralph from hiding a partial publish.
 If code reached the expected branch and QA evidence is still recorded, Ralph can

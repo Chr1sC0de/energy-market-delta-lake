@@ -715,6 +715,11 @@ Key fields for inspection:
 - `run_kind`: `implementation` or `promotion`.
 - `status` and `stage`: current run outcome and latest milestone.
 - `events`: timestamped milestone history.
+- `adaptive_events`: structured adaptive-event evidence with event type
+  (`hard_stop`, `gated_retry`, or `residual_update`), trigger reason, related
+  issue number, residual work summary when applicable, whether automatic Codex
+  retry is allowed, and whether the event consumes per-issue attempt budget.
+  `hard_stop` records automatic retry and attempt-budget consumption as false.
 - `issue`: implementation issue number, title, and URL.
 - `github_metadata.issues`: promoted issue numbers, recorded issue evidence
   commits, per-issue Promotion metadata command log paths, and manual recovery
@@ -824,9 +829,9 @@ Use `--inspect-run <run_dir>` first when a terminal shows a post-push metadata
 failure, a completed issue looks inconsistent in GitHub, or an AFK run needs a
 read-only summary. Inspection reads only `<run_dir>/ralph-run.json` and reports
 the issue, **Delivery mode**, **Integration target**, QA status, push status,
-metadata status, Issue completion review status, requeue eligibility, and
-recommended next action. It does not call `gh`, run git commands, edit labels,
-comment, close issues, or change refs.
+metadata status, Issue completion review status, adaptive event summaries,
+requeue eligibility, and recommended next action. It does not call `gh`, run git
+commands, edit labels, comment, close issues, or change refs.
 
 For failed implementation runs with no recorded `integration_commit`,
 inspection classifies whether the run is eligible for Ralph-owned pre-push
@@ -1673,6 +1678,11 @@ Adaptive events use three stable names:
   remaining queue or issue metadata without changing code. Examples include
   **Ready issue refresh** metadata updates, verified post-push issue label or
   closure repair, and validated follow-up issue creation after **Promotion**.
+
+Run manifests store adaptive event evidence under `adaptive_events`.
+`--inspect-run` prints those summaries from the manifest only. When the latest
+adaptive event is `hard_stop`, inspection recommends manual review and explicitly
+does not suggest an automatic Codex retry or attempt-budget consumption.
 
 Post-push metadata recovery is verified-only. Ralph may reconcile GitHub Issue
 comments, labels, body text, or closure only after it verifies that the recorded
