@@ -7,6 +7,11 @@ from typing import Literal
 type IncludeDecision = Literal["include", "exclude", "needs_human_review"]
 type ObservationType = Literal["source_page", "link"]
 
+AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE = "major_publications"
+AEMO_MAJOR_PUBLICATIONS_HUB_URL = (
+    "https://www.aemo.com.au/energy-systems/major-publications/"
+)
+
 
 @dataclass(frozen=True, slots=True)
 class AEMOGasDocumentSourcePage:
@@ -231,6 +236,18 @@ DEFAULT_AEMO_GAS_DOCUMENT_SOURCE_PAGES: tuple[AEMOGasDocumentSourcePage, ...] = 
         include_decision="needs_human_review",
         include_reason="Mixed forms, online help, and guides need review before ingestion.",
         source_page_title="Gas systems guides",
+    ),
+    AEMOGasDocumentSourcePage(
+        corpus_source=AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+        source_page_url=AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+        include_decision="needs_human_review",
+        include_reason=(
+            "Energy-systems major publications hub coverage is observation-only "
+            "until publication landing scope is explicitly approved."
+        ),
+        source_page_title="Major publications",
+        source_page_section="Energy systems major publications",
+        discover_child_pages=True,
     ),
     AEMOGasDocumentSourcePage(
         corpus_source="gas_forecasting_planning",

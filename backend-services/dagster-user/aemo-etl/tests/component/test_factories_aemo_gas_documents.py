@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from unittest.mock import MagicMock
 
+import polars as pl
 import pytest
 from botocore.exceptions import ClientError
 from dagster import AssetsDefinition, Definitions, MaterializeResult, ScheduleDefinition
@@ -20,7 +21,11 @@ from aemo_etl.factories.aemo_gas_documents.manifest import (
     load_default_discovery_report_payload,
     load_default_manifest_payload,
 )
-from aemo_etl.factories.aemo_gas_documents.models import AEMOGasDocumentSourcePage
+from aemo_etl.factories.aemo_gas_documents.models import (
+    AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+    AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+    AEMOGasDocumentSourcePage,
+)
 
 _PAGE_URL = "https://www.aemo.com.au/energy-systems/gas/component"
 _PDF_URL = "https://www.aemo.com.au/-/media/files/gas/component-guide.pdf"
@@ -215,6 +220,99 @@ def test_definitions_factory_default_getter_uses_retrying_request_get(
     assert isinstance(result, MaterializeResult)
     request_get.assert_called_once_with(page_url)
     s3_client.copy_object.assert_not_called()
+
+
+def test_asset_discovers_major_publications_hub_observations_without_landing(
+    mocker: MockerFixture,
+) -> None:
+    child_url = f"{AEMO_MAJOR_PUBLICATIONS_HUB_URL}integrated-system-plan-isp"
+    hub_media_url = (
+        "https://www.aemo.com.au/-/media/files/major-publications/"
+        "isp/2026-integrated-system-plan.pdf?rev=HUB"
+    )
+    child_media_url = (
+        "https://www.aemo.com.au/-/media/files/major-publications/"
+        "isp/2026-integrated-system-plan-appendix.pdf?rev=CHILD"
+    )
+    html_by_url = {
+        AEMO_MAJOR_PUBLICATIONS_HUB_URL: f"""
+        <html>
+          <head>
+            <link rel="stylesheet" href="/assets/site.css">
+            <script src="/assets/site.js"></script>
+          </head>
+          <body>
+            <h1>Major publications</h1>
+            <a href="/energy-systems/electricity">Electricity navigation</a>
+            <a href="{child_url}">Integrated System Plan</a>
+            <a href="{child_url}">Integrated System Plan</a>
+            <a href="{hub_media_url}">2026 Integrated System Plan</a>
+          </body>
+        </html>
+        """,
+        child_url: f"""
+        <html>
+          <body>
+            <h1>Integrated System Plan</h1>
+            <a href="{child_media_url}">2026 ISP Appendix</a>
+            <a href="https://example.com/isp.pdf">External report</a>
+          </body>
+        </html>
+        """,
+    }
+    captured_rows: list[dict[str, object]] = []
+
+    def _write(
+        batch: pl.LazyFrame, **_kwargs: object
+    ) -> AEMOGasDocumentSourceWriteResult:
+        captured_rows.extend(batch.collect().to_dicts())
+        return AEMOGasDocumentSourceWriteResult(
+            row_count=len(captured_rows),
+            target_exists_before_write=True,
+            wrote_table=False,
+            write_mode="skip",
+        )
+
+    mocker.patch(
+        "aemo_etl.factories.aemo_gas_documents.assets.write_aemo_gas_document_sources_batch",
+        side_effect=_write,
+    )
+    asset_def = aemo_gas_document_sources_asset_factory(
+        source_pages=(
+            AEMOGasDocumentSourcePage(
+                corpus_source=AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+                source_page_url=AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+                include_decision="needs_human_review",
+                include_reason="Observation-only major publications test scope.",
+                discover_child_pages=True,
+            ),
+        ),
+        request_getter=lambda url: _response(url=url, text=html_by_url[url]),
+        landing_bucket="landing",
+        archive_bucket="archive",
+        aemo_bucket="aemo",
+    )
+    context, s3, s3_client = _context_and_s3(mocker)
+
+    fn = asset_def.op.compute_fn.decorated_fn  # type: ignore[attr-defined, union-attr]
+    result = fn(context, s3=s3)
+
+    assert isinstance(result, MaterializeResult)
+    assert result.metadata is not None
+    assert result.metadata["included_pdf_count"] == 0
+    assert result.metadata["landed_pdf_count"] == 0
+    assert result.metadata["needs_human_review_observation_count"] == 6
+    assert result.metadata["excluded_observation_count"] == 1
+    assert {row["source_url"] for row in captured_rows} == {
+        AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+        child_url,
+        "https://www.aemo.com.au/energy-systems/electricity",
+        hub_media_url,
+        child_media_url,
+        "https://example.com/isp.pdf",
+    }
+    assert all(row["content_sha256"] is None for row in captured_rows)
+    s3_client.upload_fileobj.assert_not_called()
 
 
 def test_definitions_factory_default_asset_uses_packaged_manifest_media_only(

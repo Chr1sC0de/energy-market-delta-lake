@@ -114,12 +114,17 @@ refresh still fails during the daily materialization, the asset records a
 metadata-only row and increments `failed_download_count` instead of failing the
 run. Source-page HTML discovery is a manual Playwright CLI workflow, so the
 daily asset path does not fetch AEMO source-page HTML. It does not extract PDF
-text, create wiki output, or write embeddings/vector storage. The packaged
+text, create wiki output, or write embeddings/vector storage. Custom live-scrape
+uses of the factory record failed HTTP page loads as metadata-only source-page
+observations before continuing to later configured pages. The packaged
 manifest is expected to contain media-link observations, and the paired
 discovery report records direct-media validation status, HTTP metadata, resolved
 URLs, and validation errors. Failed direct-media validation rows are retained in
 the manifest with `should_download=false`, so daily materialization writes
-metadata for the row without requesting the failed media URL.
+metadata for the row without requesting the failed media URL. Observation-only
+configured source pages, including the AEMO energy-systems major publications
+hub, keep hub and public media-link coverage as `needs_human_review` metadata
+until a later approved slice enables publication byte landing.
 
 ### Unzipper assets
 

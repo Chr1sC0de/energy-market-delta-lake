@@ -7,6 +7,11 @@ media PDF bytes, writes `bronze_aemo_gas_document_sources` metadata, and
 archives the bytes in S3-compatible storage. That path stops at PDF bytes and
 metadata. It does not extract text, build retrieval chunks, create wiki pages,
 write embeddings, or update a vector store.
+Observation-only configured source pages can still add `needs_human_review`
+metadata coverage, such as the AEMO energy-systems major publications hub,
+without landing publication bytes until a later approved slice expands scope.
+When live source-page scraping is used outside the packaged manifest path,
+failed HTTP page loads remain auditable metadata-only source-page observations.
 
 The knowledge-base work needs a repo-owned corpus that agents can review in
 diffs and cite in future gas-market issues. It also needs to keep raw PDFs out

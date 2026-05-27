@@ -21,6 +21,8 @@ from aemo_etl.factories.aemo_gas_documents.assets import (
     AEMO_GAS_DOCUMENT_REQUEST_HEADERS,
 )
 from aemo_etl.factories.aemo_gas_documents.models import (
+    AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+    AEMO_MAJOR_PUBLICATIONS_HUB_URL,
     AEMOGasDocumentMediaValidation,
     AEMOGasDocumentSourcePage,
 )
@@ -107,6 +109,81 @@ def test_discover_manifest_payloads_extracts_public_aemo_media_links() -> None:
             "status_code": 200,
         }
     ]
+
+
+def test_discover_manifest_payloads_reports_major_publications_review_media() -> None:
+    child_url = f"{AEMO_MAJOR_PUBLICATIONS_HUB_URL}integrated-system-plan-isp"
+    hub_media_url = (
+        "https://www.aemo.com.au/-/media/files/major-publications/"
+        "isp/2026-integrated-system-plan.pdf?rev=HUB"
+    )
+    child_media_url = (
+        "https://www.aemo.com.au/-/media/files/major-publications/"
+        "isp/2026-integrated-system-plan-appendix.pdf?rev=CHILD"
+    )
+    source_page = AEMOGasDocumentSourcePage(
+        corpus_source=AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+        source_page_url=AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+        include_decision="needs_human_review",
+        include_reason="Observation-only major publications test scope.",
+        discover_child_pages=True,
+    )
+    html_by_url = {
+        AEMO_MAJOR_PUBLICATIONS_HUB_URL: f"""
+        <html>
+          <head>
+            <link rel="stylesheet" href="/assets/site.css">
+            <script src="/assets/site.js"></script>
+          </head>
+          <body>
+            <h1>Major publications</h1>
+            <a href="/energy-systems/electricity">Electricity navigation</a>
+            <a href="{child_url}">Integrated System Plan</a>
+            <a href="{child_url}">Integrated System Plan</a>
+            <a href="{hub_media_url}">2026 Integrated System Plan</a>
+          </body>
+        </html>
+        """,
+        child_url: f"""
+        <html>
+          <body>
+            <h1>Integrated System Plan</h1>
+            <a href="{child_media_url}">2026 ISP Appendix</a>
+            <a href="https://example.com/isp.pdf">External report</a>
+          </body>
+        </html>
+        """,
+    }
+    validated_urls: list[str] = []
+
+    def _validate(source_url: str) -> AEMOGasDocumentMediaValidation:
+        validated_urls.append(source_url)
+        return _validation(source_url)
+
+    manifest, report = discover_manifest_payloads(
+        source_pages=(source_page,),
+        page_loader=lambda source_page: html_by_url[source_page.source_page_url],
+        media_validator=_validate,
+        generated_at=_GENERATED_AT,
+        existing_payload={"schema_version": 1, "source_pages": [], "media_links": []},
+    )
+
+    assert manifest["source_page_count"] == 2
+    assert manifest["media_link_count"] == 2
+    assert validated_urls == [hub_media_url, child_media_url]
+    assert [
+        source_page["source_page_url"] for source_page in manifest["source_pages"]
+    ] == [AEMO_MAJOR_PUBLICATIONS_HUB_URL, child_url]
+    assert {
+        media_link["include_decision"] for media_link in manifest["media_links"]
+    } == {"needs_human_review"}
+    assert {
+        media_link["should_download"] for media_link in manifest["media_links"]
+    } == {False}
+    assert [
+        source_page["candidate_media_link_count"]
+        for source_page in report["source_pages"]
+    ] == [1, 1]
 
 
 def test_discover_manifest_payloads_discovers_child_pages_and_failed_validations() -> (

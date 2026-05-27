@@ -230,7 +230,10 @@ Trigger and output notes:
   status, HTTP metadata, resolved URLs, and validation errors in the discovery
   report, holds failed validation rows in the manifest with
   `should_download=false`, and preserves existing manifest entries when a source
-  page is blocked or unreadable.
+  page is blocked or unreadable. Observation-only configured source pages,
+  including the AEMO energy-systems major publications hub, keep hub and public
+  media-link coverage as `needs_human_review` metadata until a later approved
+  slice enables publication byte landing.
 - Included PDF links produce content-addressed PDF objects and metadata rows
   with source URL, resolved URL, source page, include decision,
   `content_sha256`, document family/version fields, and archive `storage_uri`.
@@ -241,7 +244,9 @@ Trigger and output notes:
   manifest refresh marks them downloadable. If a manifest row marked
   `should_download=true` still fails during daily materialization, the asset
   records a metadata-only row with the failure reason and increments
-  `failed_download_count`.
+  `failed_download_count`. Custom live-scrape uses of the factory record failed
+  HTTP page loads as metadata-only source-page observations before continuing to
+  later configured pages.
 - This flow stops at landing/archive plus bronze metadata. It has no wiki,
   embedding, vector-store, or PDF text-extraction side effects. ADR
   [0010](../../../../../docs/adr/0010-gas-market-knowledge-base.md) and the

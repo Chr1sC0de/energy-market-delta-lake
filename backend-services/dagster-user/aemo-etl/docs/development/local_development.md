@@ -418,7 +418,10 @@ browser-compatible request headers for AEMO media URLs. If a row marked
 records a metadata-only row with the failure reason and reports it through
 `failed_download_count`. Source-page discovery is refreshed manually with a
 Playwright-backed CLI so regular Dagster runs do not depend on source-page HTML
-availability.
+availability. Observation-only configured source pages, including the AEMO
+energy-systems major publications hub, keep hub and public media-link coverage
+as `needs_human_review` metadata until a later approved slice enables
+publication byte landing.
 
 Run commands from this Subproject:
 
