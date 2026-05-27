@@ -23,7 +23,10 @@ Issues published by `$shape-issues` v2 intentionally start with
 `needs-triage` only; `$ralph-triage` owns category, state, and **Delivery mode**
 labels before an issue enters the ready queue. Fixture-gated non-dry-run
 publication requires `--allow-fixture-publish`; all non-dry-run publication
-preflights `gh` auth and target repository access before issue creation.
+preflights `gh` auth and target repository access before issue creation. For
+Codex-owned publication, `--publish-backend auto` may write a create-only
+connector publish plan when local `gh` auth fails; created issues still enter
+with `needs-triage` only.
 
 ## Ralph runtime labels
 

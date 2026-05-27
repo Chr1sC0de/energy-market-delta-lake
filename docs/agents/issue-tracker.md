@@ -106,10 +106,18 @@ GitHub Issue request. Fixture-gated reports can preview with `--dry-run`, but
 non-dry-run publication requires `--allow-fixture-publish` and records fixture
 provenance in the manifest and issue body. Non-dry-run publication preflights
 `gh`, authentication, and target repository access before writing final body
-files; later duplicate-search or create failures record their phase, exit code,
-stderr summary, and stdout summary in `publish-manifest.json`. `$ralph-triage`
-remains responsible for category, state, and **Delivery mode** labels before
-Ralph drain.
+files. Codex-owned live gating uses the narrow
+`run_live_shape_issue_gate.py` runner, which preflights nested Codex and records
+`live_assessor_runner` provenance instead of requiring a manual operator shell
+handoff. When `--publish-backend auto` cannot use local `gh` auth, the
+publisher writes `connector-publish-plan.json` for Codex to execute through the
+installed GitHub connector. That fallback is create-only and keeps source
+marker duplicate detection, blocker ordering, and `needs-triage` labels; it
+must not edit, comment on, close, reopen, or relabel existing issues. Later
+duplicate-search or create failures record their phase, exit code, stderr
+summary, and stdout summary in `publish-manifest.json`. `$ralph-triage` remains
+responsible for category, state, and **Delivery mode** labels before Ralph
+drain.
 
 Deploy-repair issues created from failed deployment evidence use a separate
 `ralph-deploy-repair:...` source marker namespace for duplicate detection.
@@ -238,6 +246,7 @@ for the decision that keeps **Exploratory branches** outside automatic
   - `.agents/skills/shape-issues/SKILL.md`
   - `.agents/skills/shape-issues/scripts/shape_issue_gate.py`
   - `.agents/skills/shape-issues/scripts/codex_context_assessor.py`
+  - `.agents/skills/shape-issues/scripts/run_live_shape_issue_gate.py`
   - `.agents/skills/shape-issues/scripts/publish_shape_issues.py`
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-triage/SKILL.md`

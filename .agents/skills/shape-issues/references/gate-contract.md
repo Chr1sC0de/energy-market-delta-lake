@@ -15,6 +15,11 @@ too large for default Ralph drain.
 - The repo root supplies the bounded evidence corpus. The gate assembles it
   from declared `Path:` and `Doc:` anchors plus up to eight deterministic `rg`
   candidate files per issue.
+- For each readable text file, the gate scans up to 640 KB and sends only
+  bounded snippets to the **Issue context assessor**. Snippet selection favors
+  declared `Symbol:` and `Constant:` anchors, exact `class ...` and `def ...`
+  anchors, snake_case identifiers, and other high-specificity terms before
+  generic prose matches. It includes at most five snippets per file.
 - The **Issue context assessor** command reads one JSON request from stdin and
   writes one JSON response to stdout.
 
@@ -98,3 +103,16 @@ fixture evidence rather than the live **Issue context assessor**.
 
 Operator approval evidence is recorded only as context. It does not grant tool
 permission and must not bypass Codex escalation or sandbox review.
+
+For Codex-owned automation, run the live gate through
+`scripts/run_live_shape_issue_gate.py`. The runner keeps the provider command
+non-configurable, preflights nested Codex, writes runtime files under the run
+directory, and records `live_assessor_runner` provenance in `report.json` and
+`report.md`.
+
+Non-dry-run publication may use `--publish-backend auto`. That path uses the
+GitHub CLI when `gh` auth preflight passes. If the preflight fails, it writes a
+create-only `connector-publish-plan.json` for Codex to execute through the
+installed GitHub connector. The connector fallback must preserve source marker
+dedupe, blocker ordering, and `needs-triage` labels, and it must not edit,
+comment on, close, reopen, or relabel existing issues.

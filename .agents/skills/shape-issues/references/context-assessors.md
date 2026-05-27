@@ -87,6 +87,23 @@ confidence values, missing reasons, or citations outside supplied evidence to
 
 ## Default Provider
 
+Default automated live runner:
+
+```bash
+python3 .agents/skills/shape-issues/scripts/run_live_shape_issue_gate.py \
+  .shape-issues/runs/<slug>/bundle.json \
+  --repo-root . \
+  --out-dir .shape-issues/runs/<slug>
+```
+
+The runner is the Codex-owned automation boundary. It validates the bundle and
+output paths under `.shape-issues/runs/`, creates writable nested-Codex runtime
+directories under the run directory, preflights the live assessor, invokes the
+gate with the live provider, and records `live_assessor_runner` provenance in
+the report. When the current Codex sandbox cannot start nested Codex, request
+tool escalation for this exact runner command instead of asking the Operator to
+run the assessor manually.
+
 Default command:
 
 ```bash

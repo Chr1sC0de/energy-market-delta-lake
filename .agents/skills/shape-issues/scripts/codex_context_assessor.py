@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -54,6 +55,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--codex-binary", default="codex")
     parser.add_argument("--model", default=None)
     parser.add_argument("--timeout", type=int, default=600)
+    parser.add_argument(
+        "--runtime-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Writable runtime directory for nested Codex temporary files and "
+            "cache state. Authentication still uses the caller's CODEX_HOME."
+        ),
+    )
+    parser.add_argument(
+        "--preflight",
+        action="store_true",
+        help="Run a minimal live assessor request to validate nested Codex startup.",
+    )
     return parser.parse_args()
 
 
@@ -90,6 +105,7 @@ def run_codex(
     repo_root: Path,
     prompt: str,
     timeout: int,
+    env: dict[str, str] | None,
 ) -> str:
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -125,6 +141,7 @@ def run_codex(
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=env,
         )
         if result.returncode != 0:
             detail = result.stderr.strip() or result.stdout.strip()
@@ -149,19 +166,50 @@ def parse_json_response(text: str) -> dict[str, Any]:
     return payload
 
 
+def runtime_environment(runtime_dir: Path | None) -> dict[str, str] | None:
+    if runtime_dir is None:
+        return None
+
+    runtime_path = runtime_dir.resolve()
+    tmp_dir = runtime_path / "tmp"
+    xdg_cache_dir = runtime_path / "xdg-cache"
+    for path in (runtime_path, tmp_dir, xdg_cache_dir):
+        path.mkdir(parents=True, exist_ok=True)
+
+    env = os.environ.copy()
+    env["TMPDIR"] = str(tmp_dir)
+    env["TMP"] = str(tmp_dir)
+    env["TEMP"] = str(tmp_dir)
+    env["XDG_CACHE_HOME"] = str(xdg_cache_dir)
+    env["CODEX_SHAPE_ISSUES_RUNTIME_DIR"] = str(runtime_path)
+    return env
+
+
+def preflight_request() -> dict[str, Any]:
+    return {
+        "schema_version": "shape-issues-context-assessor-v1",
+        "bundle_digest": "preflight",
+        "corpus_digest": "preflight",
+        "shared_context": [],
+        "issues": [],
+    }
+
+
 def main() -> None:
     args = parse_args()
-    request_text = sys.stdin.read()
+    request_text = json.dumps(preflight_request()) if args.preflight else sys.stdin.read()
     try:
         request = json.loads(request_text)
         if not isinstance(request, dict):
             raise RuntimeError("request must be a JSON object")
+        env = runtime_environment(args.runtime_dir)
         response_text = run_codex(
             codex_binary=args.codex_binary,
             model=args.model,
             repo_root=args.repo_root.resolve(),
             prompt=build_prompt(json.dumps(request, indent=2, sort_keys=True)),
             timeout=args.timeout,
+            env=env,
         )
         response = parse_json_response(response_text)
     except (OSError, RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError) as error:

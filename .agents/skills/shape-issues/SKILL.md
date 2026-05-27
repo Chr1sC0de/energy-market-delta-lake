@@ -195,6 +195,24 @@ ready-state recommendations and creates new issues with `needs-triage` only, so
 
 ## Gate Command
 
+Default automated live runner:
+
+```bash
+python3 .agents/skills/shape-issues/scripts/run_live_shape_issue_gate.py \
+  .shape-issues/runs/<slug>/bundle.json \
+  --repo-root . \
+  --out-dir .shape-issues/runs/<slug>
+```
+
+When Codex runs `$shape-issues` and the live runner needs to start nested Codex
+outside the current sandbox, request escalation for the exact
+`python3 .agents/skills/shape-issues/scripts/run_live_shape_issue_gate.py ...`
+command. Do not ask the Operator to copy/paste the assessor command manually.
+The runner hardcodes the live Codex-backed **Issue context assessor**, validates
+the bundle and output paths under `.shape-issues/runs/`, preflights nested
+Codex startup, writes runtime files under the run directory, then records live
+assessor provenance in `report.json` and `report.md`.
+
 Default live provider command:
 
 ```bash
@@ -230,7 +248,8 @@ After Operator confirmation, publish gated outputs:
 python3 .agents/skills/shape-issues/scripts/publish_shape_issues.py \
   .shape-issues/runs/<slug>/bundle.json \
   --repo Chr1sC0de/energy-market-delta-lake \
-  --confirm-publish
+  --confirm-publish \
+  --publish-backend auto
 ```
 
 Preview without creating issues:
@@ -260,6 +279,14 @@ Fixture publication with the override records the fixture assessor provider in
 Codex-backed **Issue context assessor** publication does not require this
 override.
 
+Use `--publish-backend auto` for Codex-owned publication. It first tries the
+GitHub CLI path. If non-dry-run `gh` preflight fails, the publisher writes
+`connector-publish-plan.json` with source markers, blocker order, labels, and
+body paths so Codex can create the missing `needs-triage` issues through the
+installed GitHub connector. The connector fallback is create-only: search by
+source marker, create missing issues, and do not edit, comment on, close,
+reopen, or relabel existing GitHub Issues.
+
 The publisher:
 
 - refuses to run without `--confirm-publish`
@@ -273,6 +300,8 @@ The publisher:
 - refuses duplicate issue IDs, source markers, or generated body paths
 - creates only `needs-triage` issues
 - never mutates existing issues
+- can write a create-only connector publish plan when `--publish-backend auto`
+  cannot use local `gh` auth
 - writes `publish-manifest.json` and final issue bodies under the run directory
 - adds deterministic source markers, searches for duplicates before create,
   and skips duplicates

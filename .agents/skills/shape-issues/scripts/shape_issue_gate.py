@@ -55,9 +55,9 @@ DEFAULT_CONTEXT_ASSESSOR_PROVIDER = "codex"
 SOURCE_MARKER_PREFIX = "shape-issues-source"
 DEFAULT_RG_CANDIDATE_FILES = 8
 MAX_SEARCH_TERMS = 24
-MAX_EVIDENCE_SNIPPETS_PER_FILE = 3
+MAX_EVIDENCE_SNIPPETS_PER_FILE = 5
 MAX_SNIPPET_CHARS = 900
-MAX_FILE_READ_CHARS = 80_000
+MAX_FILE_READ_CHARS = 640_000
 ASSESSOR_VERDICTS = frozenset({"pass", "weak", "fail"})
 IGNORED_DIRS = frozenset(
     {
@@ -682,14 +682,27 @@ def evidence_snippets(
     lines = text.splitlines()
     if not lines:
         return ()
-    lowered_terms = tuple(term.lower() for term in search_terms)
-    hit_indexes: list[int] = []
-    for index, line in enumerate(lines):
-        line_lower = line.lower()
-        if any(term in line_lower for term in lowered_terms):
-            hit_indexes.append(index)
-        if len(hit_indexes) >= MAX_EVIDENCE_SNIPPETS_PER_FILE:
-            break
+    weighted_terms = tuple(
+        (term.lower(), evidence_term_weight(term), ordinal)
+        for ordinal, term in enumerate(search_terms)
+    )
+    lowered_lines = tuple(line.lower() for line in lines)
+    hit_candidates: list[tuple[int, int, int]] = []
+    for term, weight, ordinal in weighted_terms:
+        if term == "":
+            continue
+        for index, line_lower in enumerate(lowered_lines):
+            if term in line_lower:
+                hit_candidates.append((weight, ordinal, index))
+                break
+    hit_indexes = [
+        index
+        for _, _, index in sorted(
+            hit_candidates,
+            key=lambda candidate: (-candidate[0], candidate[1], candidate[2]),
+        )[:MAX_EVIDENCE_SNIPPETS_PER_FILE]
+    ]
+    hit_indexes.sort()
     if not hit_indexes:
         hit_indexes = [0]
 
@@ -713,6 +726,21 @@ def evidence_snippets(
             )
         )
     return tuple(snippets)
+
+
+def evidence_term_weight(term: str) -> int:
+    weight = 1
+    if "_" in term:
+        weight += 20
+    if re.search(r"[a-z][A-Z]|[A-Z]{2,}", term):
+        weight += 15
+    if re.search(r"[().]", term):
+        weight += 10
+    if len(term) >= 16:
+        weight += 8
+    elif len(term) >= 10:
+        weight += 4
+    return weight
 
 
 def clip_snippet(text: str) -> str:
