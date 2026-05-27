@@ -12479,6 +12479,169 @@ def launch_detached_operator_run(args: CliArgs, runner: CommandRunner) -> None:
     emit(f"Status command: {operator_status_command(run_dir)}")
 
 
+def doctor_check(
+    checks: list[dict[str, Any]],
+    name: str,
+    action: Callable[[], dict[str, Any] | None],
+) -> None:
+    try:
+        details = action() or {}
+    except Exception as error:  # noqa: BLE001 - doctor records all boundary failures.
+        checks.append(
+            {
+                "name": name,
+                "status": "failed",
+                "error": user_facing_error(error),
+            }
+        )
+        return
+    checks.append({"name": name, "status": "passed", "details": details})
+
+
+def doctor_push_targets(config: LoopConfig, args: CliArgs) -> tuple[str, ...]:
+    targets: set[str] = set()
+    if args.drain_promote_all or args.promote:
+        targets.add(config.source_branch)
+        targets.add(config.target_branch or DEFAULT_TRUNK_BRANCH)
+    elif config.delivery_mode == TRUNK_MODE:
+        targets.add(config.target_branch or DEFAULT_TRUNK_BRANCH)
+    elif config.delivery_mode == EXPLORATORY_MODE:
+        targets.add(config.target_branch or DEFAULT_TRUNK_BRANCH)
+    else:
+        targets.add(config.target_branch or DEFAULT_GITFLOW_BRANCH)
+    return tuple(sorted(target for target in targets if target.strip() != ""))
+
+
+def inspect_shape_issues_run_for_doctor(
+    run_path: Path, repo_root: Path
+) -> dict[str, Any]:
+    resolved_run = run_path.resolve()
+    runs_root = (repo_root / ".shape-issues" / "runs").resolve()
+    if not resolved_run.is_relative_to(runs_root):
+        raise EnvironmentFailure(
+            "--shape-issues-run must be under .shape-issues/runs/."
+        )
+    bundle_path = resolved_run / "bundle.json"
+    report_path = resolved_run / "report.json"
+    if not bundle_path.exists():
+        raise EnvironmentFailure(f"Missing shape-issues bundle: {bundle_path}")
+    if not report_path.exists():
+        raise EnvironmentFailure(f"Missing shape-issues gate report: {report_path}")
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise EnvironmentFailure("Shape-issues report must be a JSON object.")
+    assessor = payload.get("context_assessor")
+    provider = assessor.get("provider") if isinstance(assessor, dict) else None
+    if provider != "codex":
+        raise EnvironmentFailure(
+            "Shape-issues report was not gated by the live codex assessor."
+        )
+    live_runner = payload.get("live_assessor_runner")
+    if not isinstance(live_runner, dict):
+        raise EnvironmentFailure(
+            "Shape-issues report is missing live_assessor_runner provenance."
+        )
+    if live_runner.get("schema_version") != "shape-issues-live-gate-runner-v1":
+        raise EnvironmentFailure(
+            "Shape-issues live assessor runner provenance is stale."
+        )
+    if payload.get("bundle_digest") is None:
+        raise EnvironmentFailure("Shape-issues report is missing bundle_digest.")
+    return {
+        "run": str(resolved_run.relative_to(repo_root)),
+        "provider": provider,
+        "live_assessor_runner": live_runner.get("schema_version"),
+        "publish_backends": ["gh", "auto", "connector-plan"],
+    }
+
+
+def run_ralph_doctor(args: CliArgs, runner: CommandRunner) -> dict[str, Any]:
+    config = build_config(args, runner)
+    loop = RalphLoop(config, runner)
+    checks: list[dict[str, Any]] = []
+
+    def check_tools() -> dict[str, Any]:
+        tools = ["git", "gh", "codex"]
+        missing = [tool for tool in tools if shutil.which(tool) is None]
+        if missing:
+            raise EnvironmentFailure(
+                "Missing required command(s): " + ", ".join(missing)
+            )
+        return {"tools": tools}
+
+    def check_worktree() -> dict[str, Any]:
+        result = runner.run(["git", "status", "--porcelain"], cwd=config.repo_root)
+        dirty_lines = result.stdout.splitlines()
+        if dirty_lines and not config.allow_dirty_worktree:
+            raise EnvironmentFailure(
+                "Root worktree is dirty. Commit or stash changes before live Ralph runs."
+            )
+        return {"dirty_paths": dirty_lines[:DIRTY_WORKTREE_STATUS_PREVIEW_LIMIT]}
+
+    def check_sandboxed_issue_access() -> dict[str, Any]:
+        _token, source = resolve_sandbox_gh_token(runner, config.repo_root)
+        return {"token_source": source}
+
+    def check_labels() -> dict[str, Any]:
+        actual = loop.github.list_labels()
+        expected = {label.name for label in LABEL_SPECS}
+        missing = sorted(expected - actual)
+        if missing:
+            raise EnvironmentFailure("Missing labels: " + ", ".join(missing))
+        return {"checked": len(expected)}
+
+    def check_push_dry_run() -> dict[str, Any]:
+        targets = doctor_push_targets(config, args)
+        for target in targets:
+            runner.run(
+                ["git", "push", "--dry-run", "origin", f"HEAD:{target}"],
+                cwd=config.repo_root,
+            )
+        return {"targets": list(targets)}
+
+    doctor_check(checks, "required tools", check_tools)
+    doctor_check(checks, "root worktree", check_worktree)
+    doctor_check(checks, "GitHub CLI auth", lambda: loop.github.auth_status() or {})
+    doctor_check(checks, "sandboxed issue access", check_sandboxed_issue_access)
+    doctor_check(checks, "GitHub labels", check_labels)
+    doctor_check(checks, "Git push dry-run", check_push_dry_run)
+    if args.shape_issues_run is not None:
+        doctor_check(
+            checks,
+            "shape-issues run",
+            lambda: inspect_shape_issues_run_for_doctor(
+                Path(args.shape_issues_run),
+                config.repo_root,
+            ),
+        )
+
+    status = (
+        "passed" if all(check["status"] == "passed" for check in checks) else "failed"
+    )
+    result = {
+        "schema_version": "ralph-doctor-v1",
+        "status": status,
+        "repo": config.repo,
+        "delivery_mode": config.delivery_mode,
+        "checks": checks,
+    }
+    emit(f"Ralph doctor: {status}")
+    for check in checks:
+        suffix = ""
+        if check["status"] == "failed":
+            suffix = f" - {check['error']}"
+        emit(f"- {check['status']}: {check['name']}{suffix}")
+    if args.doctor_json is not None:
+        output_path = Path(args.doctor_json)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(
+            json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+    if status != "passed":
+        raise EnvironmentFailure("Ralph doctor found failing preflight checks.")
+    return result
+
+
 typer_app = typer.Typer(
     add_completion=False,
     context_settings={"help_option_names": ["--help"]},
@@ -12537,6 +12700,33 @@ def typer_options(
             ),
         ),
     ] = False,
+    doctor: Annotated[
+        bool,
+        typer.Option(
+            "--doctor",
+            help=(
+                "Run read-only permission and runtime diagnostics for the "
+                "selected Ralph intent, then exit."
+            ),
+        ),
+    ] = False,
+    doctor_json: Annotated[
+        str | None,
+        typer.Option(
+            "--doctor-json",
+            help="Write the --doctor result as JSON to this path.",
+        ),
+    ] = None,
+    shape_issues_run: Annotated[
+        str | None,
+        typer.Option(
+            "--shape-issues-run",
+            help=(
+                "With --doctor, inspect a .shape-issues/runs/<slug> directory "
+                "for live assessor and publish readiness."
+            ),
+        ),
+    ] = None,
     max_cycles: Annotated[
         int,
         typer.Option(
@@ -12784,13 +12974,30 @@ def cli_error(message: str) -> None:
 
 
 def validate_cli_args(args: CliArgs) -> None:
+    if args.shape_issues_run is not None and not args.doctor:
+        cli_error("--shape-issues-run is only supported with --doctor.")
+    if args.doctor_json is not None and not args.doctor:
+        cli_error("--doctor-json is only supported with --doctor.")
+    if args.doctor and args.detach:
+        cli_error("--doctor cannot be combined with --detach.")
+    if args.doctor and (
+        args.inspect_run is not None
+        or args.recover_run is not None
+        or args.operator_run_status is not None
+        or args.apply_exploratory_acceptance_decisions is not None
+        or args.continue_exploratory_acceptance is not None
+    ):
+        cli_error(
+            "--doctor cannot be combined with inspect, recover, status, "
+            "apply, or continue modes."
+        )
     exclusive_modes = [
         args.inspect_run is not None,
         args.recover_run is not None,
         args.operator_run_status is not None,
         args.apply_exploratory_acceptance_decisions is not None,
         args.continue_exploratory_acceptance is not None,
-        args.drain_promote_all,
+        args.drain_promote_all and not args.doctor,
     ]
     if sum(1 for enabled in exclusive_modes if enabled) > 1:
         cli_error(
@@ -12871,6 +13078,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if parsed_args.operator_run_status is not None:
             inspect_operator_run_status(parsed_args.operator_run_status, runner)
+            return 0
+        if parsed_args.doctor:
+            run_ralph_doctor(parsed_args, runner)
             return 0
         if parsed_args.detach:
             launch_detached_operator_run(parsed_args, runner)

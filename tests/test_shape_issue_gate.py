@@ -290,6 +290,59 @@ class ShapeIssueGateTests(unittest.TestCase):
 
             self.assertTrue(gate.is_candidate_text_file(caddyfile))
 
+    def test_evidence_snippets_prioritize_symbol_anchors(self) -> None:
+        gate = load_script_module("shape_issue_gate_snippets_under_test", GATE_SCRIPT)
+        text = "\n".join(
+            [
+                '"""Evaluate shape-issues bundles for context evidence and stiffness."""',
+                "stiffness appears in generic prose before the symbol definitions.",
+                "",
+                "class Thresholds:",
+                "    pass",
+                "",
+                "class StiffnessResult:",
+                "    pass",
+                "",
+                "def stiffness_score(issue):",
+                "    return 0",
+            ]
+        )
+
+        snippets = gate.evidence_snippets(
+            text,
+            ("Thresholds", "StiffnessResult", "stiffness_score", "stiffness"),
+        )
+        snippet_text = "\n".join(snippet.text for snippet in snippets)
+
+        self.assertIn("class Thresholds:", snippet_text)
+        self.assertIn("class StiffnessResult:", snippet_text)
+        self.assertIn("def stiffness_score", snippet_text)
+
+    def test_evidence_document_can_find_deep_symbols(self) -> None:
+        gate = load_script_module("shape_issue_gate_deep_symbol_under_test", GATE_SCRIPT)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            source = repo_root / "large_source.py"
+            source.write_text(
+                ("# filler\n" * 12_000)
+                + "\n\n"
+                + "def deep_symbol_anchor():\n"
+                + "    return True\n",
+                encoding="utf-8",
+            )
+
+            document = gate.read_evidence_document(
+                repo_root,
+                "large_source.py",
+                source="anchor",
+                search_terms=("def deep_symbol_anchor",),
+            )
+
+        self.assertIsNotNone(document)
+        snippet_text = "\n".join(snippet.text for snippet in document.snippets)
+        self.assertIn("def deep_symbol_anchor", snippet_text)
+
     def test_ready_issue_passes_with_context_anchors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

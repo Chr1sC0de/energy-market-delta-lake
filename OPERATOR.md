@@ -38,9 +38,15 @@ evidence, and stiffness scoring. It writes `.shape-issues/runs/.../report.md`,
 `report.json`, `issue-drafts.md`, and per-draft `issue-drafts/*.md` review
 files; after explicit Operator confirmation it may publish the gated outputs as
 `needs-triage` issues. Non-dry-run publication preflights `gh` auth and target
-repository access before writing final body files. `$shape-issues` does not
-move issues to `ready-for-agent` and must not edit, comment on, close, reopen,
-or relabel existing GitHub Issues. After a `$shape-issues` plan, follow-up
+repository access before writing final body files. Codex-owned live gating uses
+`run_live_shape_issue_gate.py`, which preflights nested Codex, writes runtime
+files under the `.shape-issues/runs/...` directory, and records live assessor
+provenance so the Operator does not need to run the assessor manually. Use
+`--publish-backend auto` for Codex-owned publication: if local `gh` auth fails,
+the publisher writes a create-only connector publish plan for Codex's GitHub
+connector path. `$shape-issues` does not move issues to `ready-for-agent` and
+must not edit, comment on, close, reopen, or relabel existing GitHub Issues.
+After a `$shape-issues` plan, follow-up
 verbs such as `proceed`, `continue`, or `implement the plan` stay in the
 issue-draft workflow; direct implementation requires `$ralph-loop` or an
 explicit named GitHub Issue request such as `implement issue #123`. Each
@@ -466,6 +472,7 @@ Keep failed worktrees unless the maintainer asks for cleanup.
   - `.agents/skills/shape-issues/SKILL.md`
   - `.agents/skills/shape-issues/scripts/shape_issue_gate.py`
   - `.agents/skills/shape-issues/scripts/codex_context_assessor.py`
+  - `.agents/skills/shape-issues/scripts/run_live_shape_issue_gate.py`
   - `.agents/skills/shape-issues/scripts/publish_shape_issues.py`
   - `scripts/ralph.py`
   - `tools/ralph-loop/.pre-commit-config.yaml`

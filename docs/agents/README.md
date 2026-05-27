@@ -58,6 +58,9 @@ Use this page as the agent documentation map. The imperative policy lives in
   Fixture-gated reports can preview with `--dry-run`, but non-dry-run
   publication requires `--allow-fixture-publish`, preflights `gh`
   authentication and repository access, and records fixture provenance.
+  Codex-owned live gates use `run_live_shape_issue_gate.py`; Codex-owned
+  publication can use `--publish-backend auto` to fall back to a create-only
+  GitHub connector plan when local `gh` auth is unavailable.
 - Use `$ralph-curate` to review open GitHub Issues against the current branch
   and propose stale, satisfied, blocked, or mislabeled issue updates.
 - Use `$ralph-issue-refresh` to reconcile ready issues after **Local
@@ -88,6 +91,7 @@ Use this page as the agent documentation map. The imperative policy lives in
   - `.agents/skills/shape-issues/SKILL.md`
   - `.agents/skills/shape-issues/scripts/shape_issue_gate.py`
   - `.agents/skills/shape-issues/scripts/codex_context_assessor.py`
+  - `.agents/skills/shape-issues/scripts/run_live_shape_issue_gate.py`
   - `.agents/skills/shape-issues/scripts/publish_shape_issues.py`
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`

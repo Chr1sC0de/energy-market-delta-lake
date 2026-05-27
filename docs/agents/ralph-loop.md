@@ -112,6 +112,11 @@ direct implementation requires `$ralph-loop` or an explicit named GitHub Issue
 request. Fixture-gated reports can preview with `--dry-run`, but non-dry-run
 publication requires `--allow-fixture-publish`, preflights `gh`
 authentication and repository access, and records fixture provenance.
+Codex-owned live gates use `run_live_shape_issue_gate.py` so nested Codex
+startup and runtime directories are preflighted and recorded without requiring
+the Operator to run the assessor manually. Codex-owned publication should use
+`--publish-backend auto`; when `gh` auth fails, the publisher writes a
+create-only connector publish plan for Codex's GitHub connector path.
 `$ralph-triage` prepares GitHub Issues for drain by setting category, state, and
 **Delivery mode** labels. `$ralph-loop` owns the backing script commands,
 including `$ralph-loop drain` and `$ralph-loop promote`.
@@ -421,6 +426,19 @@ python3 scripts/ralph.py --drain --allow-dirty-worktree
 ```
 
 ## Live run preflight
+
+Run the read-only Ralph doctor before a long drain, **Promotion**, or
+Codex-owned shape-issues handoff:
+
+```bash
+python3 scripts/ralph.py --doctor --drain-promote-all --shape-issues-run .shape-issues/runs/<slug>
+```
+
+The doctor checks local tool availability, clean root worktree state, GitHub
+CLI auth, **Sandboxed issue access**, required labels, Git push dry-runs for
+the selected **Integration target** set, and optional shape-issues live assessor
+provenance. It does not claim issues, create worktrees, update labels, push, or
+run **Promotion**.
 
 Live `--issue`, `--drain`, `--promote`,
 `--apply-exploratory-acceptance-decisions`, and
@@ -1875,6 +1893,7 @@ ordinary issue failure or retryable QA failure.
   - `.agents/skills/shape-issues/SKILL.md`
   - `.agents/skills/shape-issues/scripts/shape_issue_gate.py`
   - `.agents/skills/shape-issues/scripts/codex_context_assessor.py`
+  - `.agents/skills/shape-issues/scripts/run_live_shape_issue_gate.py`
   - `.agents/skills/shape-issues/scripts/publish_shape_issues.py`
   - `.agents/skills/ralph-curate/SKILL.md`
   - `.agents/skills/ralph-loop/SKILL.md`

@@ -317,6 +317,9 @@ class CliArgs:
     source_branch: str = DEFAULT_GITFLOW_BRANCH
     promote: bool = False
     drain_promote_all: bool = False
+    doctor: bool = False
+    doctor_json: str | None = None
+    shape_issues_run: str | None = None
     max_cycles: int = DEFAULT_OPERATOR_MAX_CYCLES
     detach: bool = False
     operator_run_status: str | None = None

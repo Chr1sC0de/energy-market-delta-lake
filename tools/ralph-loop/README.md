@@ -22,9 +22,9 @@ make run-prek
 ## Layout
 
 - `src/ralph_loop/cli.py`: Ralph CLI, side-effect adapters, loop controller,
-  Operator **Integration target** baseline guard, operator-smoke execution,
-  deploy-repair issue creation, Promotion source-table replay recovery output,
-  and compatibility re-exports
+  read-only `--doctor` preflight checks, Operator **Integration target**
+  baseline guard, operator-smoke execution, deploy-repair issue creation,
+  Promotion source-table replay recovery output, and compatibility re-exports
 - `src/ralph_loop/workflow.py`: pure label, **Delivery mode**, QA selection,
   comment, **Issue completion review** trigger, Operator smoke request,
   deployment classification/execution selection, source-table replay recovery

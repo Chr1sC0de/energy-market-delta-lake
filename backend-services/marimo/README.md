@@ -25,7 +25,7 @@ Marimo-Codex research workspace image.
 - [Source table lineage explorer](#source-table-lineage-explorer)
 - [Gas Day explainer dashboard](#gas-day-explainer-dashboard)
 - [Participant explainer dashboard](#participant-explainer-dashboard)
-- [Hub / Zone explainer dashboard](#hub--zone-explainer-dashboard)
+- [Hub / Zone explainer dashboard](#hub-zone-explainer-dashboard)
 - [Connection Point explainer dashboard](#connection-point-explainer-dashboard)
 - [Flow operations dashboard](#flow-operations-dashboard)
 - [Pipeline and Connection operations dashboard](#pipeline-and-connection-operations-dashboard)
@@ -473,7 +473,7 @@ IDs, and generated-gold metadata. Empty reads and unavailable Parquet prefixes
 render designed empty states with the checked assets, read policy, and refresh
 action.
 
-## Hub / Zone explainer dashboard
+## Hub Zone explainer dashboard
 
 [notebooks/hub_zone_explainer.py](notebooks/hub_zone_explainer.py) is an
 analytical dashboard for the Hub / Zone concept. It renders the

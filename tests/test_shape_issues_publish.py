@@ -236,6 +236,7 @@ def publish_config(
     confirm_publish: bool = True,
     dry_run: bool = True,
     allow_fixture_publish: bool = False,
+    publish_backend: str = publisher.PUBLISH_BACKEND_GH,
 ) -> Any:
     return publisher.PublishConfig(
         bundle_path=bundle_path,
@@ -246,6 +247,7 @@ def publish_config(
         confirm_publish=confirm_publish,
         dry_run=dry_run,
         gh_binary="gh",
+        publish_backend=publish_backend,
         allow_fixture_publish=allow_fixture_publish,
     )
 
@@ -583,6 +585,81 @@ class ShapeIssuesPublishTests(unittest.TestCase):
         self.assertEqual(FakeGithubClient.preflight_calls, 1)
         self.assertFalse((self.tmp_path / "publish-bodies").exists())
         self.assertFalse((self.tmp_path / "publish-manifest.json").exists())
+
+    def test_auto_backend_writes_connector_plan_when_gh_preflight_fails(self) -> None:
+        bundle_path, report_path = write_bundle_and_report(
+            self.tmp_path,
+            issues=[
+                issue_payload("dependent", "Dependent issue", blocked_by=["blocker"]),
+                issue_payload("blocker", "Blocker issue"),
+            ],
+            actions={"dependent": "ready", "blocker": "ready"},
+            assessor_provider="codex",
+        )
+        FakeGithubClient.preflight_failure = command_error(
+            publisher.PREFLIGHT_AUTH_PHASE,
+            exit_code=1,
+            stderr="not logged in",
+            stdout="",
+        )
+
+        manifest = publisher.publish(
+            publish_config(
+                self.tmp_path,
+                bundle_path,
+                report_path,
+                dry_run=False,
+                publish_backend=publisher.PUBLISH_BACKEND_AUTO,
+            )
+        )
+
+        self.assertEqual(FakeGithubClient.preflight_calls, 1)
+        self.assertEqual(FakeGithubClient.created, [])
+        self.assertEqual(manifest["publish_backend"], publisher.PUBLISH_BACKEND_AUTO)
+        self.assertEqual(
+            [entry["state"] for entry in manifest["issues"]],
+            ["connector-plan", "connector-plan"],
+        )
+        self.assertEqual(
+            manifest["gh_failure"]["phase"],
+            publisher.PREFLIGHT_AUTH_PHASE,
+        )
+        plan = json.loads(
+            (self.tmp_path / "connector-publish-plan.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            plan["schema_version"],
+            publisher.CONNECTOR_PLAN_SCHEMA_VERSION,
+        )
+        self.assertEqual(
+            [issue["id"] for issue in plan["issues"]],
+            ["blocker", "dependent"],
+        )
+        self.assertEqual(plan["issues"][1]["blocked_by"], ["blocker"])
+        body = Path(plan["issues"][0]["body_path"]).read_text(encoding="utf-8")
+        self.assertIn("shape-issues-source", body)
+
+    def test_connector_plan_backend_does_not_preflight_gh(self) -> None:
+        bundle_path, report_path = write_bundle_and_report(
+            self.tmp_path,
+            issues=[issue_payload("first", "First issue")],
+            actions={"first": "ready"},
+            assessor_provider="codex",
+        )
+
+        manifest = publisher.publish(
+            publish_config(
+                self.tmp_path,
+                bundle_path,
+                report_path,
+                dry_run=False,
+                publish_backend=publisher.PUBLISH_BACKEND_CONNECTOR_PLAN,
+            )
+        )
+
+        self.assertEqual(FakeGithubClient.preflight_calls, 0)
+        self.assertEqual(manifest["issues"][0]["state"], "connector-plan")
+        self.assertTrue((self.tmp_path / "connector-publish-plan.json").exists())
 
     def test_duplicate_search_failure_records_github_diagnostics(self) -> None:
         bundle_path, report_path = write_bundle_and_report(

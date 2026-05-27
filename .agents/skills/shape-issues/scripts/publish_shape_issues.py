@@ -19,6 +19,10 @@ NEEDS_TRIAGE_LABEL = "needs-triage"
 PUBLISHABLE_ACTIONS = frozenset({"ready", "exploratory"})
 SOURCE_MARKER_PREFIX = "shape-issues-source"
 FIXTURE_ASSESSOR_PROVIDER = "fixture"
+PUBLISH_BACKEND_GH = "gh"
+PUBLISH_BACKEND_AUTO = "auto"
+PUBLISH_BACKEND_CONNECTOR_PLAN = "connector-plan"
+CONNECTOR_PLAN_SCHEMA_VERSION = "shape-issues-connector-publish-plan-v1"
 COMMAND_SUMMARY_MAX_CHARS = 600
 PREFLIGHT_GH_PHASE = "preflight-gh"
 PREFLIGHT_AUTH_PHASE = "preflight-auth"
@@ -109,6 +113,7 @@ class PublishConfig:
     confirm_publish: bool
     dry_run: bool
     gh_binary: str
+    publish_backend: str = PUBLISH_BACKEND_GH
     allow_fixture_publish: bool = False
 
 
@@ -790,7 +795,98 @@ def write_manifest(path: Path, manifest: dict[str, Any]) -> None:
     path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def validate_publish_backend(backend: str) -> None:
+    if backend not in {
+        PUBLISH_BACKEND_GH,
+        PUBLISH_BACKEND_AUTO,
+        PUBLISH_BACKEND_CONNECTOR_PLAN,
+    }:
+        raise PublishError(f"Unsupported publish backend: {backend}.")
+
+
+def connector_plan_body(issue: IssueDraft, *, marker: str, bundle_path: Path) -> str:
+    body = append_source_section(
+        issue.body,
+        marker=marker,
+        bundle_path=bundle_path,
+        context_assessor_provider=None,
+        dry_run=False,
+        allow_fixture_publish=False,
+    )
+    return body
+
+
+def write_connector_publish_plan(
+    *,
+    config: PublishConfig,
+    report: GateReport,
+    ordered: tuple[IssueDraft, ...],
+    manifest: dict[str, Any],
+    manifest_path: Path,
+    bodies_dir: Path,
+    gh_failure: GithubCommandFailure | None = None,
+) -> dict[str, Any]:
+    plan_path = config.out_dir / "connector-publish-plan.json"
+    plan: dict[str, Any] = {
+        "schema_version": CONNECTOR_PLAN_SCHEMA_VERSION,
+        "repo": config.repo,
+        "bundle": str(config.bundle_path),
+        "report": str(config.report_path),
+        "publish_contract": (
+            "Create-only GitHub connector fallback. Search by source marker, "
+            "create missing needs-triage issues in listed order, and do not edit, "
+            "comment on, close, reopen, or relabel existing issues."
+        ),
+        "issues": [],
+    }
+    if gh_failure is not None:
+        plan["gh_failure"] = gh_failure.to_manifest()
+        manifest["gh_failure"] = gh_failure.to_manifest()
+
+    for issue in ordered:
+        marker = source_marker(config.bundle_path, issue)
+        action = report.issues[issue.issue_id].action
+        body_path = bodies_dir / body_file_name(issue)
+        body_path.write_text(
+            connector_plan_body(issue, marker=marker, bundle_path=config.bundle_path),
+            encoding="utf-8",
+        )
+        plan["issues"].append(
+            {
+                "id": issue.issue_id,
+                "title": issue.title,
+                "labels": [NEEDS_TRIAGE_LABEL],
+                "blocked_by": list(issue.blocked_by),
+                "source_marker": marker,
+                "body_path": str(body_path),
+                "gate_action": action,
+            }
+        )
+        reference = IssueReference(number=None, title=issue.title, url="")
+        manifest["issues"].append(
+            manifest_entry(
+                issue=issue,
+                action=action,
+                state="connector-plan",
+                marker=marker,
+                body_path=body_path,
+                reference=reference,
+            )
+        )
+
+    manifest["connector_publish_plan"] = str(plan_path)
+    manifest["recovery"] = (
+        "Use connector-publish-plan.json with the installed GitHub connector. "
+        "After creating issues, rerun the publisher with `--publish-backend gh` "
+        "when local gh auth is repaired so source markers can detect duplicates."
+    )
+    plan_path.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_manifest(manifest_path, manifest)
+    return manifest
+
+
 def publish(config: PublishConfig) -> dict[str, Any]:
+    validate_publish_backend(config.publish_backend)
     bundle = parse_bundle(config.bundle_path)
     report = parse_gate_report(config.report_path)
     validate_publishable(
@@ -810,14 +906,25 @@ def publish(config: PublishConfig) -> dict[str, Any]:
         repo_root=config.repo_root,
         gh_binary=config.gh_binary,
     )
-    if not config.dry_run:
+    connector_plan_failure: GithubCommandFailure | None = None
+    use_connector_plan = (
+        not config.dry_run and config.publish_backend == PUBLISH_BACKEND_CONNECTOR_PLAN
+    )
+    if not config.dry_run and config.publish_backend in {
+        PUBLISH_BACKEND_GH,
+        PUBLISH_BACKEND_AUTO,
+    }:
         try:
             github.preflight()
         except GithubCommandError as error:
-            raise PublishError(
-                "GitHub CLI preflight failed before writing publish body files: "
-                f"{error}"
-            ) from error
+            if config.publish_backend == PUBLISH_BACKEND_AUTO:
+                connector_plan_failure = error.failure
+                use_connector_plan = True
+            else:
+                raise PublishError(
+                    "GitHub CLI preflight failed before writing publish body files: "
+                    f"{error}"
+                ) from error
 
     config.out_dir.mkdir(parents=True, exist_ok=True)
     bodies_dir = config.out_dir / "publish-bodies"
@@ -829,6 +936,7 @@ def publish(config: PublishConfig) -> dict[str, Any]:
         "dry_run": config.dry_run,
         "issues": [],
         "published_at": datetime.now(UTC).isoformat(),
+        "publish_backend": config.publish_backend,
         "report": str(config.report_path),
         "repo": config.repo,
         "summary": bundle.summary,
@@ -842,6 +950,17 @@ def publish(config: PublishConfig) -> dict[str, Any]:
             "dry_run": config.dry_run,
         }
     write_manifest(manifest_path, manifest)
+
+    if use_connector_plan:
+        return write_connector_publish_plan(
+            config=config,
+            report=report,
+            ordered=ordered,
+            manifest=manifest,
+            manifest_path=manifest_path,
+            bodies_dir=bodies_dir,
+            gh_failure=connector_plan_failure,
+        )
 
     references: dict[str, IssueReference] = {}
 
@@ -1014,6 +1133,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--gh-binary", default="gh")
+    parser.add_argument(
+        "--publish-backend",
+        choices=[
+            PUBLISH_BACKEND_GH,
+            PUBLISH_BACKEND_AUTO,
+            PUBLISH_BACKEND_CONNECTOR_PLAN,
+        ],
+        default=PUBLISH_BACKEND_GH,
+        help=(
+            "`gh` publishes with the GitHub CLI; `auto` writes a connector plan "
+            "when gh preflight fails; `connector-plan` writes that plan directly."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -1031,6 +1163,7 @@ def main(argv: list[str] | None = None) -> None:
         confirm_publish=args.confirm_publish,
         dry_run=args.dry_run,
         gh_binary=args.gh_binary,
+        publish_backend=args.publish_backend,
         allow_fixture_publish=args.allow_fixture_publish,
     )
     try:
@@ -1042,7 +1175,7 @@ def main(argv: list[str] | None = None) -> None:
     created = [
         issue
         for issue in manifest["issues"]
-        if issue["state"] in {"created", "duplicate", "dry-run"}
+        if issue["state"] in {"created", "duplicate", "dry-run", "connector-plan"}
     ]
     sys.stdout.write(f"publishable issue entries: {len(created)}\n")
 

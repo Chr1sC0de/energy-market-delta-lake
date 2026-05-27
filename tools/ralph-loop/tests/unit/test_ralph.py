@@ -4945,7 +4945,20 @@ Build it.
         self.assertIn("Defaults to 5", help_text)
         self.assertIn("--exploratory-concurrency", help_text)
         self.assertIn("Defaults to 2", help_text)
+        self.assertIn("--doctor", help_text)
+        self.assertIn("--shape-issues-run", help_text)
         self.assertIn("exploratory", help_text)
+
+    def test_parse_args_rejects_shape_issues_run_without_doctor(self) -> None:
+        output = io.StringIO()
+
+        with redirect_stderr(output), self.assertRaises(SystemExit) as caught:
+            ralph.parse_args(["--shape-issues-run", ".shape-issues/runs/demo"])
+
+        self.assertEqual(caught.exception.code, 2)
+        self.assertIn(
+            "--shape-issues-run is only supported with --doctor", output.getvalue()
+        )
 
     def test_parse_args_rejects_exploratory_concurrency_below_one(self) -> None:
         output = io.StringIO()
@@ -5236,6 +5249,67 @@ Build it.
         )
 
         self.assertTrue(config.allow_full_access_implementation)
+
+    def test_ralph_doctor_checks_drain_promote_permissions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            label_payload = json.dumps(
+                [{"name": label.name} for label in ralph.LABEL_SPECS]
+            )
+            runner = FakeRunner(
+                command_outputs={
+                    ("git", "rev-parse", "--show-toplevel"): [str(repo_root) + "\n"],
+                    ("git", "config", "--get", "remote.origin.url"): [
+                        "git@github.com:example/repo.git\n"
+                    ],
+                    (
+                        "gh",
+                        "label",
+                        "list",
+                        "-R",
+                        "example/repo",
+                        "--limit",
+                        "200",
+                        "--json",
+                        "name",
+                    ): [label_payload],
+                }
+            )
+            args = ralph.parse_args(["--doctor", "--drain-promote-all"])
+
+            with patch.object(ralph.shutil, "which", return_value="/usr/bin/tool"):
+                result = ralph.run_ralph_doctor(args, runner)
+
+        self.assertEqual(result["status"], "passed")
+        self.assertIn(
+            ("git", "push", "--dry-run", "origin", "HEAD:dev"),
+            [call.args for call in runner.calls],
+        )
+        self.assertIn(
+            ("git", "push", "--dry-run", "origin", "HEAD:main"),
+            [call.args for call in runner.calls],
+        )
+
+    def test_shape_issues_doctor_requires_live_runner_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            run_dir = repo_root / ".shape-issues" / "runs" / "demo"
+            run_dir.mkdir(parents=True)
+            (run_dir / "bundle.json").write_text("{}", encoding="utf-8")
+            (run_dir / "report.json").write_text(
+                json.dumps(
+                    {
+                        "bundle_digest": "abc",
+                        "context_assessor": {"provider": "codex"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ralph.EnvironmentFailure, "live_assessor_runner"
+            ):
+                ralph.inspect_shape_issues_run_for_doctor(run_dir, repo_root)
 
     def test_dirty_root_blocks_live_issue_drain_and_promote_before_side_effects(
         self,

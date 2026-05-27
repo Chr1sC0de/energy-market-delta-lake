@@ -61,6 +61,10 @@ class ShapeIssuesSkillContractTests(unittest.TestCase):
         self.assertIn("before writing final body files", text)
         self.assertIn("failing phase, exit code, stderr summary", text)
         self.assertIn("stdout summary", text)
+        self.assertIn("run_live_shape_issue_gate.py", text)
+        self.assertIn("Do not ask the Operator to copy/paste", text)
+        self.assertIn("`--publish-backend auto`", text)
+        self.assertIn("connector-publish-plan.json", text)
 
     def test_skill_documents_followup_command_guardrail(self) -> None:
         text = SKILL_PATH.read_text(encoding="utf-8")
