@@ -135,7 +135,7 @@ future shared UI primitive surface.
 defines the Marimo-local dashboard registry used by the dashboard roadmap. It
 parses structured records into typed entries with concept IDs, audience tags,
 planned or available status, notebook names and routes, backing
-`silver.gas_model` assets, generated-gold metadata paths, source chunk IDs,
+`silver.gas_model` assets, Market context IDs, source chunk IDs,
 silver chunk paths, and source hashes.
 
 The `/marimo` entry route renders this registry as a concept gallery hub.
@@ -144,11 +144,11 @@ the current image. Planned entries stay visible as roadmap cards but do not
 emit notebook links. The same registry is served as JSON from
 `/marimo/dashboard-registry.json` so future Marimo notebooks can render context
 panels without reading Gas market knowledge base Markdown directly. When the
-packaged generated corpus is present, the registry loader resolves current
-source chunk IDs, silver chunk paths, and source hashes from generated gold
-frontmatter and the silver chunk index. In AWS mode this remains read-only,
-uses the existing dashboard image contents, and does not require a Docker
-build-context change.
+packaged generated corpus is absent, registry loading still succeeds because
+Market context IDs, source chunk IDs, silver chunk paths, and source hashes are
+code-local registry metadata. In AWS mode this remains read-only, uses the
+existing dashboard image contents, and does not require a Docker build-context
+change.
 
 Registry-backed dashboards that only browse registry metadata may have no
 backing `silver.gas_model` assets. The concept gallery renders those entries as
@@ -157,7 +157,7 @@ registry metadata only instead of inventing table dependencies.
 [src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py) exposes
 `render_dashboard_context_panel()` for notebooks that need the same registry
 context in-page. The helper renders the concept summary, dashboard usage
-metadata, related concepts, generated-gold paths, source chunk IDs, and backing
+metadata, related concepts, Market context IDs, source chunk IDs, and backing
 `silver.gas_model` assets from the parsed registry. It also exposes silver
 chunk paths and source hashes when the registry has them. The available roadmap
 notebooks call it with their registry concept IDs near the top of the notebook.
@@ -173,11 +173,11 @@ GraphQL at runtime.
 registry-backed glossary browser. It uses
 [src/marimoserver/glossary_explorer.py](src/marimoserver/glossary_explorer.py)
 to list seeded glossary concepts from the Marimo-local dashboard registry and
-show each concept's generated-gold metadata path, source chunk IDs, inferred
+show each concept's Market context metadata path, source chunk IDs, inferred
 related concepts, and planned or available dashboard links.
 
-The dashboard consumes the parsed registry rather than opening generated gold
-Markdown itself. Missing generated-gold paths or source chunk IDs render as
+The dashboard consumes the parsed registry rather than opening generated Market context
+Markdown itself. Missing Market context IDs or source chunk IDs render as
 validation-visible gaps inside the concept card rather than fallback prose. Its
 first viewport includes a registry health strip with source, freshness, concept
 count, scope, available-dashboard count, planned-dashboard count, and
@@ -188,11 +188,11 @@ metadata-gap count.
 [notebooks/concept_to_asset_explorer.py](notebooks/concept_to_asset_explorer.py)
 is the registry-backed Market context to table explorer. It uses
 [src/marimoserver/concept_asset_explorer.py](src/marimoserver/concept_asset_explorer.py)
-to map generated-gold glossary concepts such as Flow, Capacity, Settlement,
+to map Market context IDs such as Flow, Capacity, Settlement,
 Facility, and Participant to backing `silver.gas_model` assets from the
 Marimo-local dashboard registry.
 
-The dashboard reads no table rows and consumes generated-gold lineage through
+The dashboard reads no table rows and consumes Market context lineage through
 the parsed registry. Its first viewport shows registry health, mapped asset count,
 available dashboard count, planned dashboard count, and coverage-gap count.
 Concept cards link to mounted dashboard routes, planned concept-gallery cards,
@@ -213,7 +213,7 @@ concept-to-asset mapping from
 
 The dashboard groups mapped fields by Market context concept, documented
 gas-model mart, asset, and dashboard route. It does not scan table rows, change
-ETL schemas, or read generated gold Markdown at runtime. Unavailable Dagster
+ETL schemas, or read generated Market context artifacts at runtime. Unavailable Dagster
 GraphQL, mapped assets missing from Dagster table metadata, and assets without
 parsed column metadata stay visible as explicit schema states in the asset and
 field tables.
@@ -223,11 +223,11 @@ field tables.
 [notebooks/citation_chain_explorer.py](notebooks/citation_chain_explorer.py)
 is the registry-backed citation-chain audit dashboard. It uses
 [src/marimoserver/citation_chain_explorer.py](src/marimoserver/citation_chain_explorer.py)
-to list dashboard concept metadata alongside generated-gold paths, source chunk
+to list dashboard concept metadata alongside Market context IDs, source chunk
 IDs, silver chunk paths, and source hashes from the code-local Marimo dashboard
 registry.
 
-The dashboard reads no table rows and consumes generated-gold and silver
+The dashboard reads no table rows and consumes Market context and source chunk
 lineage through the parsed registry. Its first viewport shows registry health,
 complete-record count, coverage-gap count, source chunk count, and source hash
 count. Concept cards make incomplete citation-chain metadata visible as
@@ -375,7 +375,7 @@ show asset key, group, kinds, description, `dagster/uri`, materializable and
 executable flags, latest materialization timestamp, and column metadata when
 Dagster provides it. For mapped `silver.gas_model` assets, the explorer also
 surfaces Marimo concept-gallery metadata, including matching concept IDs,
-audience tags, notebook routes, generated-gold paths, source chunk IDs, and
+audience tags, notebook routes, Market context IDs, source chunk IDs, and
 backing asset links from the dashboard registry. If GraphQL is unavailable, the
 notebook warns clearly and continues in storage-only mode. Empty buckets render
 bucket health and an empty state instead of raising notebook exceptions.
@@ -423,7 +423,7 @@ to represented source systems, source tables, and extra `source_*` lineage
 fields. It uses
 [src/marimoserver/source_lineage_explorer.py](src/marimoserver/source_lineage_explorer.py)
 for row extraction, explicit missing-metadata states, registry-backed concept
-card links, generated Market context paths, source chunk IDs, table explorer
+card links, Market context IDs, source chunk IDs, table explorer
 deep links, and asset metadata links.
 
 The dashboard reuses the source coverage matrix's bounded table read surface
@@ -437,7 +437,7 @@ lineage fields render as explicit gaps.
 
 [notebooks/gas_day_explainer.py](notebooks/gas_day_explainer.py) is an
 analytical dashboard for the Gas Day concept. It renders the registry-backed
-Gas Day context panel with the generated-gold path and source chunk ID copied
+Gas Day context panel with the Market context ID and source chunk ID copied
 from the Gas market knowledge base, then loads bounded samples from current
 registry-backed `silver.gas_model` assets through the shared gas model loader.
 
@@ -454,7 +454,7 @@ empty states with the checked assets, read policy, and refresh action.
 
 [notebooks/participant_explainer.py](notebooks/participant_explainer.py) is an
 analytical dashboard for the Participant concept. It renders the
-registry-backed context panel with the generated-gold path and source chunk IDs
+registry-backed context panel with the Market context ID and source chunk IDs
 copied from the Gas market knowledge base, then loads bounded samples from
 `silver.gas_model.silver_gas_dim_participant`,
 `silver.gas_model.silver_gas_participant_market_membership`,
@@ -469,7 +469,7 @@ status, and participant-facing market facts that connect Participant to
 Facility, Bid / Offer, and Settlement dashboards. Its previews make the current
 participant identity grain and membership grain visible while preserving
 bounded-read health, cache status, load timing, row-limit policy, source chunk
-IDs, and generated-gold metadata. Empty reads and unavailable Parquet prefixes
+IDs, and Market context metadata. Empty reads and unavailable Parquet prefixes
 render designed empty states with the checked assets, read policy, and refresh
 action.
 
@@ -477,7 +477,7 @@ action.
 
 [notebooks/hub_zone_explainer.py](notebooks/hub_zone_explainer.py) is an
 analytical dashboard for the Hub / Zone concept. It renders the
-registry-backed context panel with the generated-gold path and source chunk IDs
+registry-backed context panel with the Market context ID and source chunk IDs
 copied from the Gas market knowledge base, then loads a bounded
 `silver.gas_model.silver_gas_dim_zone` sample through the shared gas model
 loader.
@@ -494,7 +494,7 @@ policy, and refresh action.
 
 [notebooks/connection_point_explainer.py](notebooks/connection_point_explainer.py)
 is an analytical dashboard for the Connection Point concept. It renders the
-registry-backed context panel with the generated-gold path and source chunk IDs
+registry-backed context panel with the Market context ID and source chunk IDs
 copied from the Gas market knowledge base, then loads bounded samples from
 `silver.gas_model.silver_gas_dim_connection_point`,
 `silver.gas_model.silver_gas_dim_facility`,
@@ -1019,10 +1019,10 @@ flow direction follows AEMO's documented GBB map rule shape: past gas days use
 gas days use `silver_gas_fact_nomination_forecast`. Capacity comes from
 `silver_gas_fact_capacity_outlook`. The notebook renders the available GBB map
 registry context plus the shared Flow, Facility, Capacity, and Gas Day concept
-panels below the primary map work surface. Registry status, generated-gold
-paths, source chunk IDs, related concepts, and backing `silver.gas_model`
+panels below the primary map work surface. Registry status, Market context
+IDs, source chunk IDs, related concepts, and backing `silver.gas_model`
 assets come from the code-local registry rather than runtime reads from
-generated Markdown.
+generated Market context artifacts.
 
 The map still renders if LocalStack has no materialized inputs; the notebook
 shows first-viewport data health, keeps table-level diagnostics in an

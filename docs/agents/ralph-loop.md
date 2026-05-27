@@ -30,6 +30,7 @@ archive replay recovery guidance when a Promotion changes existing source-table
 - [Promotion pass](#promotion-pass)
 - [Triage pass](#triage-pass)
 - [Ready issue refresh](#ready-issue-refresh)
+- [Adaptive vocabulary](#adaptive-vocabulary)
 - [QA policy](#qa-policy)
 - [Failure handling](#failure-handling)
 
@@ -1618,6 +1619,79 @@ and reports structured follow-up issue drafts in the Promotion artifact. Only
 Ralph's validated create-only helper may turn those drafts into GitHub Issues
 after a successful **Promotion**.
 
+## Adaptive vocabulary
+
+Ralph uses adaptive vocabulary for issue shaping, retry decisions, and recovery
+evidence. These terms describe queue and verification decisions; they do not
+rename Ralph's runtime execution loop or require operators to reason about
+numerical solvers.
+
+**Step size** is the size and reversibility of a Ralph work slice. A small step
+changes one bounded behavior, has clear **Test lane** evidence, and can fail
+without forcing unrelated queue work to stop. A large step crosses multiple
+**Subprojects**, mixes unclear acceptance criteria with runtime changes, or
+needs recovery that cannot be limited to one issue. Step size is not the Python
+loop iteration, a Codex attempt number, or a single shell command.
+
+**Stiffness ratio** is hidden-coupling and blast-radius pressure divided by the
+slice's safe feedback step. The current `$shape-issues` gate records this as a
+0-100 stiffness score. Initial routing uses these bands:
+
+- score below `55`: keep the issue eligible for normal triage and the declared
+  **Delivery mode** when the **Issue context assessor** passes.
+- score from `55` through `69`: route to `human-review` unless an Operator
+  narrows the slice or records an override for why the issue can stay
+  AFK-drainable.
+- score `70` or higher: route to `split` by default. The Operator should
+  reduce step size before `ready-for-agent`, or choose **Exploratory delivery**
+  only when the issue needs durable human review and includes `## Review focus`.
+
+High-stiffness evidence in an already ready issue triggers **Issue completion
+review** after QA and before **Local integration**, a Trunk push, or
+Exploratory handoff. It does not change the issue's **Delivery mode** by
+itself.
+
+**Residual work** is the verified remaining delta after Ralph crosses a boundary
+and compares the result with the issue or queue contract. Residual work can come
+from a successful **Local integration** that leaves follow-on issues stale, a
+failed post-push metadata publication, a failed or partial **Promotion**, or a
+**Ready issue refresh** result. Ralph records the residual as issue metadata
+reconciliation, preserved logs, run-manifest recovery guidance, or new
+validated follow-up work. It does not mean rerunning the same unverified change.
+
+Adaptive events use three stable names:
+
+- `gated_retry`: a gate failed before any **Integration target** update or
+  Exploratory branch push, the failure evidence is local to the issue, and the
+  issue still has `--max-codex-attempts` budget. Ralph may run another Codex
+  attempt, then rerun the selected QA and review gates.
+- `hard_stop`: Ralph stops automatic recovery because continuing could hide an
+  inconsistent queue, unsafe environment, partial push, or policy boundary.
+  `hard_stop` is an outer-loop stop. It has no automatic Codex retry and does
+  not consume the per-issue Codex attempt budget.
+- `residual_update`: Ralph has verified the crossed boundary and can update the
+  remaining queue or issue metadata without changing code. Examples include
+  **Ready issue refresh** metadata updates, verified post-push issue label or
+  closure repair, and validated follow-up issue creation after **Promotion**.
+
+Post-push metadata recovery is verified-only. Ralph may reconcile GitHub Issue
+comments, labels, body text, or closure only after it verifies that the recorded
+**Local integration**, Exploratory handoff, accepted Exploratory commit, or
+**Promotion** commit is reachable from the expected **Integration target** or
+promoted range, with the recorded QA evidence still attached to the run
+manifest. If Ralph cannot verify that boundary, recovery becomes `hard_stop`;
+operators must inspect the run, branch state, and issue metadata before changing
+anything manually.
+
+Runtime feedback is queue-local unless an Operator changes policy. A
+`gated_retry`, `hard_stop`, or `residual_update` may change the current issue
+run, the current checkpointed Operator cycle, or the current refresh candidate
+set. It must not change future stiffness thresholds, **Delivery mode** policy,
+global retry budgets, or maintained docs/config unless the Operator records that
+policy change explicitly. ADR
+[0011](../adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md)
+records the threshold and recovery-boundary decision.
+
 ## QA policy
 
 For runtime `aemo-etl` changes, Ralph runs from the owning **Subproject**:
@@ -1703,9 +1777,10 @@ make unit-test
 make run-prek
 ```
 
-Generated corpus Markdown under `tools/gas-market-knowledge-base/generated/` is
-artifact output rather than maintained router documentation, so it does not
-trigger the root doc **Commit check**.
+Generated corpus Markdown under `ENERGY_MARKET_CORPUS_ROOT` or an explicit
+`tools/gas-market-knowledge-base/generated/` path is artifact output rather
+than maintained router documentation, so it does not trigger the root doc
+**Commit check**.
 
 For root docs/config or cross-**Subproject** changes, Ralph runs:
 
@@ -1890,6 +1965,7 @@ ordinary issue failure or retryable QA failure.
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
+  - `docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md`
   - `.agents/skills/shape-issues/SKILL.md`
   - `.agents/skills/shape-issues/scripts/shape_issue_gate.py`
   - `.agents/skills/shape-issues/scripts/codex_context_assessor.py`

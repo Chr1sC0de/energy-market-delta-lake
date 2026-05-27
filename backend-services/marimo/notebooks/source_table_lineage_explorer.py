@@ -70,7 +70,7 @@ def _(mo):
             **Dashboard brief**: **Dashboard intent**: Analytical. Analysts,
             operators, and data engineers start from curated `silver.gas_model`
             tables, inspect represented source systems and tables, and follow
-            registry mappings to concept cards, generated Market context paths,
+            registry mappings to concept cards, Market context IDs,
             table metadata, and asset metadata. Data scope is bounded Parquet
             reads plus S3/Dagster catalogue metadata and the code-local Marimo
             dashboard registry. Freshness, load timing, cache state, row-limit
@@ -350,7 +350,7 @@ def _(
                 pl.col("concept cards")
                 .str.to_lowercase()
                 .str.contains(search_term, literal=True),
-                pl.col("Market context paths")
+                pl.col("Market context IDs")
                 .str.to_lowercase()
                 .str.contains(search_term, literal=True),
                 pl.col("detail")

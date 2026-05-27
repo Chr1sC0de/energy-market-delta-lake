@@ -8,22 +8,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from gas_market_knowledge_base.corpus_paths import (
+    default_silver_chunks_dir,
+    default_silver_documents_dir,
+    default_silver_index_path,
+    default_source_manifest_path,
+    display_path,
+    path_from_display,
+)
 from gas_market_knowledge_base.pdf_cache import default_pdf_cache_dir
 from gas_market_knowledge_base.silver_documents import (
     DEFAULT_MIN_TEXT_CHARS,
     SourceDocumentEntry,
-    default_silver_documents_dir,
     extraction_settings,
     extraction_settings_sha256,
     load_source_document_manifest,
 )
-from gas_market_knowledge_base.source_manifest import (
-    default_source_manifest_path,
-    subproject_root,
-)
 
-SILVER_CHUNKS_RELATIVE_PATH = Path("generated/silver/chunks")
-SILVER_INDEX_RELATIVE_PATH = Path("generated/silver/index/chunks.jsonl")
 CHUNK_SCHEMA_VERSION = 1
 CHUNKING_TOOL = "docling-hybrid"
 
@@ -150,16 +151,6 @@ class _RenderedChunk:
     index_row: dict[str, object]
 
 
-def default_silver_chunks_dir() -> Path:
-    """Return the default silver chunk Markdown output directory."""
-    return subproject_root() / SILVER_CHUNKS_RELATIVE_PATH
-
-
-def default_silver_index_path() -> Path:
-    """Return the default silver chunk index JSONL path."""
-    return subproject_root() / SILVER_INDEX_RELATIVE_PATH
-
-
 def chunking_settings() -> dict[str, object]:
     """Return deterministic Docling Hybrid chunk settings."""
     return {
@@ -181,22 +172,27 @@ def chunking_settings_sha256(settings: Mapping[str, object]) -> str:
 def build_silver_index(
     *,
     extractor: HybridChunkExtractor,
-    manifest_path: Path = default_source_manifest_path(),
-    cache_dir: Path = default_pdf_cache_dir(),
-    document_dir: Path = default_silver_documents_dir(),
-    chunk_dir: Path = default_silver_chunks_dir(),
-    index_path: Path = default_silver_index_path(),
+    manifest_path: Path | None = None,
+    cache_dir: Path | None = None,
+    document_dir: Path | None = None,
+    chunk_dir: Path | None = None,
+    index_path: Path | None = None,
     min_text_chars: int = DEFAULT_MIN_TEXT_CHARS,
 ) -> SilverChunkBuildResult:
     """Build silver chunk Markdown and the global chunk index."""
+    effective_manifest_path = manifest_path or default_source_manifest_path()
+    effective_cache_dir = cache_dir or default_pdf_cache_dir()
+    effective_document_dir = document_dir or default_silver_documents_dir()
+    effective_chunk_dir = chunk_dir or default_silver_chunks_dir()
+    effective_index_path = index_path or default_silver_index_path()
     extraction_config = extraction_settings(min_text_chars=min_text_chars)
     extraction_config_sha256 = extraction_settings_sha256(extraction_config)
     chunking_config = chunking_settings()
     chunking_config_sha256 = chunking_settings_sha256(chunking_config)
     manifest = load_source_document_manifest(
-        manifest_path,
-        cache_dir=cache_dir,
-        output_dir=document_dir,
+        effective_manifest_path,
+        cache_dir=effective_cache_dir,
+        output_dir=effective_document_dir,
     )
 
     errors = list(manifest.errors)
@@ -234,7 +230,7 @@ def build_silver_index(
                 extracted_chunks,
                 source_metadata=source_metadata,
                 manifest_path=manifest.path,
-                chunk_dir=chunk_dir,
+                chunk_dir=effective_chunk_dir,
                 extraction_settings_sha=extraction_config_sha256,
                 chunking_config=chunking_config,
                 chunking_settings_sha=chunking_config_sha256,
@@ -247,9 +243,9 @@ def build_silver_index(
     if errors:
         return SilverChunkBuildResult(
             manifest_path=manifest.path,
-            document_dir=document_dir,
-            chunk_dir=chunk_dir,
-            index_path=index_path,
+            document_dir=effective_document_dir,
+            chunk_dir=effective_chunk_dir,
+            index_path=effective_index_path,
             manifest_row_count=manifest.row_count,
             source_document_count=len(manifest.entries),
             chunk_count=0,
@@ -259,17 +255,17 @@ def build_silver_index(
     try:
         _write_chunks_and_index(
             rendered_chunks,
-            chunk_dir=chunk_dir,
-            index_path=index_path,
+            chunk_dir=effective_chunk_dir,
+            index_path=effective_index_path,
         )
     except SilverChunkWriteError as e:
         errors.append(str(e))
 
     return SilverChunkBuildResult(
         manifest_path=manifest.path,
-        document_dir=document_dir,
-        chunk_dir=chunk_dir,
-        index_path=index_path,
+        document_dir=effective_document_dir,
+        chunk_dir=effective_chunk_dir,
+        index_path=effective_index_path,
         manifest_row_count=manifest.row_count,
         source_document_count=len(manifest.entries),
         chunk_count=len(rendered_chunks),
@@ -279,18 +275,22 @@ def build_silver_index(
 
 def validate_silver_index(
     *,
-    manifest_path: Path = default_source_manifest_path(),
-    document_dir: Path = default_silver_documents_dir(),
-    chunk_dir: Path = default_silver_chunks_dir(),
-    index_path: Path = default_silver_index_path(),
+    manifest_path: Path | None = None,
+    document_dir: Path | None = None,
+    chunk_dir: Path | None = None,
+    index_path: Path | None = None,
     min_text_chars: int = DEFAULT_MIN_TEXT_CHARS,
 ) -> SilverIndexValidationResult:
     """Validate silver chunk Markdown and chunk index consistency."""
+    effective_manifest_path = manifest_path or default_source_manifest_path()
+    effective_document_dir = document_dir or default_silver_documents_dir()
+    effective_chunk_dir = chunk_dir or default_silver_chunks_dir()
+    effective_index_path = index_path or default_silver_index_path()
     extraction_config = extraction_settings(min_text_chars=min_text_chars)
     extraction_config_sha256 = extraction_settings_sha256(extraction_config)
     manifest = load_source_document_manifest(
-        manifest_path,
-        output_dir=document_dir,
+        effective_manifest_path,
+        output_dir=effective_document_dir,
     )
 
     errors = list(manifest.errors)
@@ -304,9 +304,9 @@ def validate_silver_index(
             )
         )
 
-    index_rows, index_errors = _load_index_rows(index_path)
+    index_rows, index_errors = _load_index_rows(effective_index_path)
     errors.extend(index_errors)
-    chunk_file_paths = _chunk_file_paths(chunk_dir)
+    chunk_file_paths = _chunk_file_paths(effective_chunk_dir)
     referenced_chunk_paths: set[Path] = set()
     discovered_index_rows: list[dict[str, object]] = []
     chunk_ids: dict[str, Path] = {}
@@ -320,7 +320,8 @@ def validate_silver_index(
         if chunk_id is not None:
             if chunk_id in chunk_ids:
                 errors.append(
-                    f"{index_path}:{row_number} duplicate chunk_id {chunk_id!r}; "
+                    f"{effective_index_path}:{row_number} duplicate chunk_id "
+                    f"{chunk_id!r}; "
                     f"first seen at {chunk_ids[chunk_id]}"
                 )
             else:
@@ -351,7 +352,9 @@ def validate_silver_index(
         if _REQUIRED_INDEX_FIELDS.issubset(frontmatter):
             expected_row = _index_row_from_frontmatter(frontmatter)
             if expected_row != row:
-                errors.append(f"{index_path}:{row_number} is stale for {chunk_path}")
+                errors.append(
+                    f"{effective_index_path}:{row_number} is stale for {chunk_path}"
+                )
             discovered_index_rows.append(expected_row)
 
     for chunk_path in chunk_file_paths:
@@ -367,7 +370,7 @@ def validate_silver_index(
     duplicate_frontmatter_errors = _duplicate_chunk_frontmatter_errors(chunk_file_paths)
     errors.extend(duplicate_frontmatter_errors)
 
-    if index_path.exists() and discovered_index_rows:
+    if effective_index_path.exists() and discovered_index_rows:
         expected_index_text = _dump_jsonl(
             sorted(
                 discovered_index_rows,
@@ -378,15 +381,17 @@ def validate_silver_index(
                 ),
             )
         )
-        actual_index_text = index_path.read_text(encoding="utf-8")
+        actual_index_text = effective_index_path.read_text(encoding="utf-8")
         if actual_index_text != expected_index_text:
-            errors.append(f"{index_path} is stale; run gas-market-kb build-index")
+            errors.append(
+                f"{effective_index_path} is stale; run gas-market-kb build-index"
+            )
 
     return SilverIndexValidationResult(
         manifest_path=manifest.path,
-        document_dir=document_dir,
-        chunk_dir=chunk_dir,
-        index_path=index_path,
+        document_dir=effective_document_dir,
+        chunk_dir=effective_chunk_dir,
+        index_path=effective_index_path,
         manifest_row_count=manifest.row_count,
         index_row_count=len(index_rows),
         chunk_file_count=len(chunk_file_paths),
@@ -897,15 +902,8 @@ def _jsonable_value(value: object) -> object:
 
 
 def _display_path(path: Path) -> str:
-    resolved_path = path.resolve()
-    root = subproject_root().resolve()
-    if resolved_path.is_relative_to(root):
-        return resolved_path.relative_to(root).as_posix()
-    return path.as_posix()
+    return display_path(path)
 
 
 def _path_from_display(path_text: str) -> Path:
-    path = Path(path_text)
-    if path.is_absolute():
-        return path
-    return subproject_root() / path
+    return path_from_display(path_text)

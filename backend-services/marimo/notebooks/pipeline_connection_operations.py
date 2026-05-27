@@ -62,8 +62,8 @@ def _(
             and analysts use this dashboard to inspect Connection Point flow
             beside Facility, Capacity, and pipeline segment context while
             keeping missing conformed relationships visible as relationship
-            gaps. Data scope is the Marimo dashboard registry, generated-gold
-            path and source chunk metadata copied into that registry, plus
+            gaps. Data scope is the Marimo dashboard registry, Market context
+            IDs and source chunk metadata recorded in that registry, plus
             read-only bounded Parquet samples from
             `silver_gas_dim_connection_point`, `silver_gas_dim_facility`,
             `silver_gas_dim_pipeline_segment`, `silver_gas_dim_zone`,
@@ -187,7 +187,7 @@ def _(config, mo, pipeline_connection_specs, pl):
                 "AEMO bucket",
                 "Parquet root",
                 "Pipeline and Connection assets",
-                "Generated-gold paths",
+                "Market context IDs",
                 "Source chunk IDs",
                 "AWS endpoint",
                 "AWS region",
@@ -197,7 +197,10 @@ def _(config, mo, pipeline_connection_specs, pl):
                 config.aemo_bucket,
                 f"s3://{config.aemo_bucket}/silver/gas_model",
                 str(len(pipeline_connection_specs)),
-                ("connection-point.md, facility.md, flow.md, capacity.md"),
+                (
+                    "glossary:connection-point, glossary:facility, "
+                    "glossary:flow, glossary:capacity"
+                ),
                 (
                     "chunk-gbb-guide-connection-point-identifiers, "
                     "chunk-gbb-guide-flow-report, "

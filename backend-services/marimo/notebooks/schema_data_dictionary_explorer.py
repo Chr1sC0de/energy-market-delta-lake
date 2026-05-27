@@ -55,8 +55,8 @@ def _(mo):
             Market context concept, gas-model mart, asset, and dashboard route.
             Data scope is read-only Dagster GraphQL table metadata and the
             code-local Marimo concept-to-asset mapping; it does not scan table
-            rows, change ETL schemas, or open generated gold Markdown at
-            runtime. Freshness is the latest notebook refresh. Unavailable
+            rows, change ETL schemas, or open generated Market context
+            artifacts at runtime. Freshness is the latest notebook refresh. Unavailable
             GraphQL, missing Dagster asset metadata, and assets without parsed
             schema metadata render as explicit data dictionary states.
             """),

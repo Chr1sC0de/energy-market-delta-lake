@@ -130,7 +130,7 @@ start-localstack() {
 		--network="$network" \
 		--name "$container_name" \
 		--env "DISABLE_CORS_CHECKS=1" \
-		"${LOCALSTACK_IMAGE:-localstack/localstack:4.8.1}" >/dev/null
+		"${LOCALSTACK_IMAGE:-docker.io/localstack/localstack:4.8.1}" >/dev/null
 
 	info created container "$container_name"
 	info waiting for "$container_name" to be healthy

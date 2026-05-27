@@ -71,7 +71,7 @@ def _(
             cited Participant Market context to current participant standing
             data, market membership coverage, and participant-facing bid,
             settlement, and facility relationships. Data scope is the Marimo
-            dashboard registry, generated-gold path and source chunk metadata
+            dashboard registry, Market context ID and source chunk metadata
             copied into that registry, plus read-only bounded Parquet samples
             from `silver_gas_dim_participant`,
             `silver_gas_participant_market_membership`,
@@ -196,7 +196,7 @@ def _(config, mo, participant_coverage, participant_specs, pl):
                 "AEMO bucket",
                 "Parquet root",
                 "Participant-oriented assets",
-                "Generated-gold path",
+                "Market context ID",
                 "Source chunk IDs",
                 "Core participant grain",
                 "Membership grain",
@@ -208,7 +208,7 @@ def _(config, mo, participant_coverage, participant_specs, pl):
                 config.aemo_bucket,
                 f"s3://{config.aemo_bucket}/silver/gas_model",
                 str(len(participant_specs)),
-                "tools/gas-market-knowledge-base/generated/gold/glossary/participant.md",
+                "glossary:participant",
                 (
                     "chunk-gbb-guide-participants-report, "
                     "chunk-gbb-procedures-registration, "

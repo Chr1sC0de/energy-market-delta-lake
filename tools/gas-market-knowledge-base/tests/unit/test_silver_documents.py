@@ -9,6 +9,11 @@ from click.testing import CliRunner
 
 from gas_market_knowledge_base import cli as cli_module
 from gas_market_knowledge_base.cli import main
+from gas_market_knowledge_base.corpus_paths import (
+    CORPUS_ROOT_ENV_VAR,
+    default_silver_documents_dir,
+    default_source_manifest_path,
+)
 from gas_market_knowledge_base.silver_documents import (
     MarkdownExtractionError,
     MarkdownExtractor,
@@ -153,6 +158,41 @@ def test_extract_silver_writes_markdown_with_stable_frontmatter(
     source_manifest = frontmatter["source_manifest"]
     assert isinstance(source_manifest, dict)
     assert source_manifest["line_number"] == 1
+
+
+def test_extract_silver_default_output_uses_corpus_root_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    corpus_root = tmp_path / "corpora"
+    pdf_content = b"%PDF-1.7\nfixture pdf bytes\n"
+    content_sha256 = _sha256(pdf_content)
+    monkeypatch.setenv(CORPUS_ROOT_ENV_VAR, str(corpus_root))
+    manifest_path = default_source_manifest_path()
+    manifest_path.parent.mkdir(parents=True)
+    cache_dir = tmp_path / ".cache" / "pdfs"
+    _write_cached_pdf(cache_dir, pdf_content)
+    _write_manifest(manifest_path, [_manifest_row(pdf_content)])
+
+    result = extract_silver_documents(
+        extractor=FakeMarkdownExtractor(),
+        manifest_path=manifest_path,
+        cache_dir=cache_dir,
+        min_text_chars=20,
+    )
+
+    output_path = (
+        default_silver_documents_dir()
+        / "gbb"
+        / "gas-guide"
+        / f"sha256-{content_sha256}.md"
+    )
+    frontmatter = _frontmatter(output_path)
+    source_manifest = frontmatter["source_manifest"]
+    assert result.output_dir == default_silver_documents_dir()
+    assert frontmatter["generated_path"] == output_path.as_posix()
+    assert isinstance(source_manifest, dict)
+    assert source_manifest["path"] == manifest_path.as_posix()
 
 
 def test_extract_silver_skips_current_output_without_cached_pdf(

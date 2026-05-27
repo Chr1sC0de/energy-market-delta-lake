@@ -6,7 +6,8 @@ archive-prefix completeness audit, archive PDF cache fetcher,
 Docling-based silver document extraction,
 Docling Hybrid silver chunk generation, retrieval index validation,
 gold **Market context** citation validation, generated-artifact policy, seed
-gold glossary artifacts, and **Unit test** lane.
+gold glossary Markdown rendering helpers, seed gold glossary artifacts, and
+**Unit test** lane.
 
 The CLI is available inside this Subproject with `uv run`:
 
@@ -14,8 +15,16 @@ The CLI is available inside this Subproject with `uv run`:
 uv run gas-market-kb --help
 ```
 
-Build the tracked bronze source manifest from the AEMO gas document metadata
-table contract:
+Generated corpus defaults use `ENERGY_MARKET_CORPUS_ROOT` as the artifact
+root. If the variable is unset or empty, the root defaults to
+`~/energy-market-delta-lake-artifacts/corpora`. The Gas market corpus lives
+under `$ENERGY_MARKET_CORPUS_ROOT/gas-market/{bronze,silver,gold}`. Explicit
+CLI path options such as `--output-path`, `--manifest-path`, `--output-dir`,
+`--document-dir`, `--chunk-dir`, `--index-path`, and `--gold-dir` still
+override those defaults.
+
+Build the bronze source manifest from the AEMO gas document metadata table
+contract:
 
 ```bash
 uv run gas-market-kb sync-manifest --environment dev
@@ -23,11 +32,12 @@ uv run gas-market-kb sync-manifest --environment dev
 
 The default `dev` environment reads
 `s3://dev-energy-market-aemo/bronze/aemo_gas_documents/bronze_aemo_gas_document_sources`
-and writes `generated/bronze/source_manifest.jsonl`. Manifest
-`document_identity` path parts are bounded with deterministic hash suffixes so
-long live metadata titles remain filesystem-safe. Unit tests use fixture JSON
-or JSONL metadata rows through `--metadata-path` and do not read deployed
-resources.
+and writes
+`$ENERGY_MARKET_CORPUS_ROOT/gas-market/bronze/source_manifest.jsonl`.
+Manifest `document_identity` path parts are bounded with deterministic hash
+suffixes so long live metadata titles remain filesystem-safe. Unit tests use
+fixture JSON or JSONL metadata rows through `--metadata-path` and do not read
+deployed resources.
 
 Audit archive-prefix PDF completeness against the bronze source manifest:
 
@@ -37,15 +47,17 @@ uv run gas-market-kb audit-archive-prefix --environment dev
 
 The default `dev` environment lists
 `s3://dev-energy-market-archive/bronze/aemo_gas_documents/` and compares PDF
-objects there with `generated/bronze/source_manifest.jsonl`. The audit reports
-the prefix PDF object total, manifest row total, unique manifest archive-object
-total, unique manifest hash total, missing archive PDFs, extra manifest rows,
-duplicate archive URIs, duplicate content hashes, and manifest row errors. It
-uses unique archive URIs and content hashes for object/hash totals, so duplicate
-metadata rows do not require duplicate downloaded PDFs. Missing archive PDFs,
-extra manifest rows, and manifest errors fail the audit; duplicate archive URI
-and content hash groups are reported as non-fatal warnings because the live
-metadata can contain multiple eligible rows for one archived PDF object.
+objects there with
+`$ENERGY_MARKET_CORPUS_ROOT/gas-market/bronze/source_manifest.jsonl`. The audit
+reports the prefix PDF object total, manifest row total, unique manifest
+archive-object total, unique manifest hash total, missing archive PDFs, extra
+manifest rows, duplicate archive URIs, duplicate content hashes, and manifest
+row errors. It uses unique archive URIs and content hashes for object/hash
+totals, so duplicate metadata rows do not require duplicate downloaded PDFs.
+Missing archive PDFs, extra manifest rows, and manifest errors fail the audit;
+duplicate archive URI and content hash groups are reported as non-fatal
+warnings because the live metadata can contain multiple eligible rows for one
+archived PDF object.
 
 Use fixture mode for deterministic local coverage or evidence when credentials
 are unavailable:
@@ -70,13 +82,14 @@ Populate the ignored local PDF cache from manifest archive objects:
 uv run gas-market-kb fetch-pdfs
 ```
 
-The command reads `generated/bronze/source_manifest.jsonl`, fetches each
-`archive_uri`, validates downloaded bytes against `content_sha256`, and writes
-deterministic cache files to `.cache/pdfs/<content_sha256>.pdf`. Valid existing
-cache files are reused. Invalid cache files are replaced only after a fresh
-download validates against the manifest hash. Row-level failures such as missing
-archive URIs, fetch failures, or hash mismatches are reported and cause a
-non-zero exit.
+The command reads
+`$ENERGY_MARKET_CORPUS_ROOT/gas-market/bronze/source_manifest.jsonl`, fetches
+each `archive_uri`, validates downloaded bytes against `content_sha256`, and
+writes deterministic cache files to `.cache/pdfs/<content_sha256>.pdf`. Valid
+existing cache files are reused. Invalid cache files are replaced only after a
+fresh download validates against the manifest hash. Row-level failures such as
+missing archive URIs, fetch failures, or hash mismatches are reported and cause
+a non-zero exit.
 
 Extract silver document Markdown from the bronze manifest and cached PDFs:
 
@@ -84,18 +97,20 @@ Extract silver document Markdown from the bronze manifest and cached PDFs:
 uv run gas-market-kb extract-silver
 ```
 
-The command reads `generated/bronze/source_manifest.jsonl`, validates cached
-PDF bytes in `.cache/pdfs/<content_sha256>.pdf`, converts each changed PDF to
-Markdown with Docling and OCR disabled, and writes deterministic document files
-under `generated/silver/documents/<document_identity>.md`. Each generated file
-starts with stable JSON frontmatter containing the manifest line, source
-document fields, `content_sha256`, and extraction settings hash. Existing
-outputs are skipped when the source hash and extraction settings hash still
-match. Duplicate manifest rows with the same document identity are coalesced
-before extraction so live metadata duplicates do not create duplicate silver
-documents or chunks. Failed conversions, missing or mismatched cached PDFs, and
-low-text extractions are reported as errors instead of writing empty Markdown
-pages.
+The command reads
+`$ENERGY_MARKET_CORPUS_ROOT/gas-market/bronze/source_manifest.jsonl`, validates
+cached PDF bytes in `.cache/pdfs/<content_sha256>.pdf`, converts each changed
+PDF to Markdown with Docling and OCR disabled, and writes deterministic
+document files under
+`$ENERGY_MARKET_CORPUS_ROOT/gas-market/silver/documents/<document_identity>.md`.
+Each generated file starts with stable JSON frontmatter containing the manifest
+line, source document fields, `content_sha256`, and extraction settings hash.
+Existing outputs are skipped when the source hash and extraction settings hash
+still match. Duplicate manifest rows with the same document identity are
+coalesced before extraction so live metadata duplicates do not create duplicate
+silver documents or chunks. Failed conversions, missing or mismatched cached
+PDFs, and low-text extractions are reported as errors instead of writing empty
+Markdown pages.
 
 Build silver Docling Hybrid chunks and the global retrieval index:
 
@@ -106,14 +121,15 @@ uv run gas-market-kb build-index
 The command reads the bronze manifest, validates current silver document
 Markdown targets and cached PDF bytes, converts each PDF through Docling's
 structured document model, runs Docling Hybrid chunking, and writes per-chunk
-Markdown files under `generated/silver/chunks/<document_identity>/<chunk_id>.md`.
+Markdown files under
+`$ENERGY_MARKET_CORPUS_ROOT/gas-market/silver/chunks/<document_identity>/<chunk_id>.md`.
 Chunk IDs are derived from the source hash, extraction settings, and chunk
 content; duplicate chunks are disambiguated deterministically. Each chunk
 frontmatter records source hash, document title, corpus, document family,
 heading path,
 `source_document_markdown_path`, and citations metadata back to the full
 document and source manifest. The command also writes one JSONL row per chunk
-to `generated/silver/index/chunks.jsonl`.
+to `$ENERGY_MARKET_CORPUS_ROOT/gas-market/silver/index/chunks.jsonl`.
 
 Validate silver document targets, chunks, the retrieval index, and gold
 **Market context** citations:
@@ -125,9 +141,10 @@ uv run gas-market-kb validate
 Validation fails on missing silver document targets, missing chunk targets,
 duplicate chunk IDs, malformed frontmatter, missing citations metadata, body
 hash mismatches, chunk files not referenced by the index, stale index rows,
-uncited gold glossary definition claims, broken gold chunk links, missing source
-hashes, or stale glossary index references. The command does not create
-embeddings or vector storage.
+uncited gold glossary definition claims, indented gold Markdown headings or
+normal body lines, malformed gold citation lists, broken gold chunk or source
+document links, missing source hashes, or stale glossary index references. The
+command does not create embeddings or vector storage.
 
 ## Local QA
 
@@ -153,27 +170,34 @@ Subproject **Commit check**.
 
 Corpus text artifacts belong under these generated roots:
 
-- `generated/bronze`: source manifest inventory used to plan extraction.
-- `generated/silver/documents`: Docling Markdown extraction output tied to
-  source document identity and `content_sha256`.
-- `generated/silver/chunks`: Docling Hybrid chunks prepared for retrieval.
-- `generated/silver/index/chunks.jsonl`: one index row per silver chunk.
-- `generated/gold`: cited, agent-authored **Market context** pages.
+- `$ENERGY_MARKET_CORPUS_ROOT/gas-market/bronze`: source manifest inventory
+  used to plan extraction.
+- `$ENERGY_MARKET_CORPUS_ROOT/gas-market/silver/documents`: Docling Markdown
+  extraction output tied to source document identity and `content_sha256`.
+- `$ENERGY_MARKET_CORPUS_ROOT/gas-market/silver/chunks`: Docling Hybrid chunks
+  prepared for retrieval.
+- `$ENERGY_MARKET_CORPUS_ROOT/gas-market/silver/index/chunks.jsonl`: one index
+  row per silver chunk.
+- `$ENERGY_MARKET_CORPUS_ROOT/gas-market/gold`: cited, agent-authored
+  **Market context** pages.
 
-Generated Markdown, JSON, JSONL, YAML, and text files under those roots may be
-tracked intentionally when future issues create reviewable corpus artifacts.
-Generated silver document Markdown under `generated/silver/documents/**/*.md`
-may exceed the generic 500 KB large-file hook limit because it preserves full
-Docling Markdown extraction output for source document review. The Subproject
-**Commit check** exempts only those generated silver document Markdown files
-from `check-added-large-files`; generated chunks, generated gold pages, raw
-PDFs, binary artifacts, and unrelated large files remain subject to the generic
-limit. Raw PDFs are not tracked. Source PDF bytes stay in S3-compatible archive
-storage or in the ignored local `.cache/pdfs/` cache, and repository ignore
-rules keep `*.pdf` files out of this Subproject.
+New default runs write outside the repository. This change does not remove
+existing tracked files under `tools/gas-market-knowledge-base/generated/`, and
+explicit CLI paths may still target that tree when a future issue intentionally
+creates reviewable corpus artifact diffs. Generated silver document Markdown
+under `generated/silver/documents/**/*.md` may exceed the generic 500 KB
+large-file hook limit because it preserves full Docling Markdown extraction
+output for source document review. The Subproject **Commit check** exempts only
+those generated silver document Markdown files from `check-added-large-files`;
+generated chunks, generated gold pages, raw PDFs, binary artifacts, and
+unrelated large files remain subject to the generic limit. Raw PDFs are not
+tracked. Source PDF bytes stay in S3-compatible archive storage or in the
+ignored local `.cache/pdfs/` cache, and repository ignore rules keep `*.pdf`
+files out of this Subproject.
 
-The repository **Documentation sync** workflow excludes any `generated/` path
-from maintained-doc discovery, so generated corpus Markdown is reviewable
+The repository **Documentation sync** workflow excludes any repo `generated/`
+path from maintained-doc discovery, and external corpus roots are outside the
+maintained router documentation scope. Generated corpus Markdown is corpus
 artifact output rather than maintained router documentation.
 
 ## Layout
@@ -181,10 +205,13 @@ artifact output rather than maintained router documentation.
 - `src/gas_market_knowledge_base/archive_audit.py`: archive-prefix completeness
   audit against the bronze source manifest.
 - `src/gas_market_knowledge_base/cli.py`: CLI entrypoint.
+- `src/gas_market_knowledge_base/corpus_paths.py`: external generated corpus
+  artifact root and default path policy.
 - `src/gas_market_knowledge_base/docling_adapter.py`: Docling PDF-to-Markdown
   and Hybrid chunking adapters with OCR disabled for v1 extraction.
 - `src/gas_market_knowledge_base/gold_context.py`: gold **Market context**
-  citation and glossary-index validation.
+  Markdown rendering helpers, citation validation, and glossary-index
+  validation.
 - `src/gas_market_knowledge_base/pdf_cache.py`: archive PDF cache fetcher.
 - `src/gas_market_knowledge_base/silver_chunks.py`: silver chunk Markdown,
   retrieval index, and validation behavior.
@@ -195,8 +222,9 @@ artifact output rather than maintained router documentation.
 - `tests/unit/`: package import, command-surface, and manifest writer tests.
 - `tests/docling/`: real Docling adapter smoke tests that are intentionally
   outside the **Unit test** lane.
-- `generated/bronze`, `generated/silver`, `generated/gold`: reserved text
-  artifact roots.
+- `generated/bronze`, `generated/silver`, `generated/gold`: existing and
+  explicit-review text artifact roots; default runs use the external corpus
+  root.
 - `.pre-commit-config.yaml`: Subproject `prek` hook surface, with file-based
   `uv run` hooks serialized so fresh Promotion worktrees do not race while
   creating the Subproject environment.
@@ -214,6 +242,7 @@ artifact output rather than maintained router documentation.
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/__init__.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/archive_audit.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_paths.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/docling_adapter.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/gold_context.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/pdf_cache.py`
@@ -222,6 +251,7 @@ artifact output rather than maintained router documentation.
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/source_manifest.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_archive_audit.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_cli.py`
+  - `tools/gas-market-knowledge-base/tests/unit/test_corpus_paths.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_gold_context.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_pdf_cache.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_precommit_policy.py`
@@ -238,4 +268,4 @@ artifact output rather than maintained router documentation.
   - `make docling-adapter-test`
   - `make run-prek`
   - `uv run gas-market-kb validate`
-  - `verify generated-artifact roots, raw-PDF ignore policy, CLI help, source manifest fixture behavior, archive-prefix audit fixture behavior, PDF cache fixture behavior, silver document extraction fixture behavior, real Docling adapter smoke lane, chunk index validation, gold citation validation, and no embedding or vector storage behavior`
+  - `verify external generated-artifact roots, ENERGY_MARKET_CORPUS_ROOT fallback behavior, raw-PDF ignore policy, CLI help, source manifest fixture behavior, archive-prefix audit fixture behavior, PDF cache fixture behavior, silver document extraction fixture behavior, real Docling adapter smoke lane, chunk index validation, gold citation validation, and no embedding or vector storage behavior`

@@ -131,7 +131,7 @@ class DataDictionaryConcept:
     concept_id: str
     title: str
     description: str
-    generated_gold_path: str | None
+    market_context_id: str | None
     assets: tuple[DataDictionaryAsset, ...]
     metadata_gaps: tuple[str, ...]
 
@@ -512,7 +512,7 @@ def _data_dictionary_concept(
         concept_id=mapping.concept_id,
         title=mapping.title,
         description=mapping.description,
-        generated_gold_path=mapping.generated_gold_path,
+        market_context_id=mapping.market_context_id,
         assets=assets,
         metadata_gaps=mapping.metadata_gaps,
     )

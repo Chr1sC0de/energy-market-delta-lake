@@ -1467,7 +1467,7 @@ def concept_gallery_metadata_frame(
             "audiences": ", ".join(audience.value for audience in concept.audiences),
             "concept gallery": _concept_gallery_anchor(concept.concept_id),
             "notebook route": concept.notebook_route or "",
-            "generated-gold paths": "\n".join(concept.generated_gold_paths),
+            "Market context IDs": "\n".join(concept.market_context_ids),
             "source chunk ids": "\n".join(concept.source_chunk_ids),
         }
         for concept in matched_entries
@@ -1486,7 +1486,7 @@ def concept_gallery_metadata_frame(
                 "audiences": "",
                 "concept gallery": _concept_gallery_anchor(TABLE_EXPLORER_CONCEPT_ID),
                 "notebook route": "",
-                "generated-gold paths": "",
+                "Market context IDs": "",
                 "source chunk ids": "",
             }
         ]

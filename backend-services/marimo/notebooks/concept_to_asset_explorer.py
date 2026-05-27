@@ -35,7 +35,7 @@ def _(mo, render_dashboard_context_panel):
             `silver.gas_model` assets, available dashboard routes, planned
             dashboard cards, and table explorer entries that support them.
             Data scope is the code-local Marimo dashboard registry only;
-            generated gold Markdown and gas-model docs remain read-only
+            generated Market context artifacts and gas-model docs remain read-only
             citation anchors and are not opened at runtime. Freshness is the
             registry snapshot packaged with the deployed dashboard image. The
             dashboard reads no table rows; unmapped concepts and unmapped

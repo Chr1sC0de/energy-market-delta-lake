@@ -32,12 +32,12 @@ def _(mo, render_dashboard_context_panel):
             **Dashboard brief**: **Dashboard intent**: Analytical. Analysts,
             stakeholders, and data engineers use this dashboard to browse the
             Marimo-local Market context registry for generated glossary
-            concepts, generated-gold metadata paths, source chunk IDs, related
+            concepts, Market context IDs, source chunk IDs, related
             concepts, and dashboard availability. Data scope is the code-local
-            dashboard registry only; generated gold Markdown stays read-only
+            dashboard registry only; generated Market context artifacts stay read-only
             citation context and is not opened at runtime. Freshness is the
             registry snapshot packaged with the deployed dashboard image.
-            Missing generated-gold paths or source chunk IDs render as
+            Missing Market context IDs or source chunk IDs render as
             validation-visible gaps.
             """),
             mo.Html(render_dashboard_context_panel("glossary-explorer")),

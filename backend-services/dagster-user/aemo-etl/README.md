@@ -334,7 +334,11 @@ missing zip-domain coverage still fails.
 the AEMO gas document asset. It uses Playwright Chromium to visit configured
 source pages, writes the checked-in media manifest and discovery report, and
 validates direct media URLs with the same browser-compatible request headers
-used by the daily asset. The checked-in manifest is expected to be non-empty,
+used by the daily asset. Configured source pages include the AEMO
+energy-systems major publications hub as observation-only `needs_human_review`
+coverage, so its hub links and public `/-/media/...` links can be reported
+without landing publication bytes until the scope is explicitly approved. The
+checked-in manifest is expected to be non-empty,
 and the discovery report records validation status, HTTP status code, content
 type, content length, resolved URL, and validation errors. Direct media rows
 with failed validation are retained in the manifest
@@ -342,7 +346,9 @@ with `should_download=false`; the daily asset path records their metadata rows
 without issuing media GETs or landing bytes, while rows with passing validation
 remain downloadable. If a source page is blocked or unreadable, the refresh
 preserves any existing media entries for that source page instead of replacing
-them with an empty discovery result. By default it stages and commits only those
+them with an empty discovery result. Custom live-scrape uses of the factory
+record a metadata-only source-page observation with the load error and continue
+to the next configured page. By default it stages and commits only those
 generated JSON files; use `--no-commit` to write them for review without staging
 or committing. If the local Playwright Chromium binary is missing, install it
 once with `uv run playwright install chromium`.

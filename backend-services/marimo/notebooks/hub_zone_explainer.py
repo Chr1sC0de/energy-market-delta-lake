@@ -57,7 +57,7 @@ def _(mo):
     stakeholders use this dashboard to connect the generated Hub / Zone Market
     context to the current `silver_gas_dim_zone` dimension, inspect STTM hub and
     DWGM/GBB zone coverage, and follow related operational or market-analysis
-    dashboards. Data scope is the Marimo dashboard registry, generated-gold path
+    dashboards. Data scope is the Marimo dashboard registry, Market context ID
     and source chunk metadata copied into that registry, plus a read-only
     bounded Parquet sample from `silver_gas_dim_zone`. Freshness, row coverage,
     cache status, load timing, row-limit policy, and missing-source behavior
@@ -170,7 +170,7 @@ def _(config, hub_zone_coverage, hub_zone_specs, mo, pl):
                 "AEMO bucket",
                 "Parquet root",
                 "Hub / Zone assets",
-                "Generated-gold path",
+                "Market context ID",
                 "Source chunk IDs",
                 "Source-qualified grain",
                 "AWS endpoint",
@@ -181,7 +181,7 @@ def _(config, hub_zone_coverage, hub_zone_specs, mo, pl):
                 config.aemo_bucket,
                 f"s3://{config.aemo_bucket}/silver/gas_model",
                 str(len(hub_zone_specs)),
-                "tools/gas-market-knowledge-base/generated/gold/glossary/hub-zone.md",
+                "glossary:hub-zone",
                 (
                     "chunk-sttm-procedures-definitions, "
                     "chunk-sttm-procedures-settlement-terms, "

@@ -36,9 +36,7 @@ def test_data_dictionary_groups_schema_metadata_by_concept_asset_and_route() -> 
             status=DashboardStatus.AVAILABLE,
             notebook_name="flow_dashboard",
             backing_assets=("silver.gas_model.silver_gas_fact_connection_point_flow",),
-            generated_gold_paths=(
-                "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
-            ),
+            market_context_ids=("glossary:flow",),
         ),
     )
     catalogue = DagsterAssetCatalogue(
@@ -128,9 +126,7 @@ def test_data_dictionary_renders_missing_schema_and_asset_metadata_explicitly() 
                 "silver.gas_model.silver_gas_fact_capacity_outlook",
                 "silver.gas_model.silver_gas_fact_capacity_transaction",
             ),
-            generated_gold_paths=(
-                "tools/gas-market-knowledge-base/generated/gold/glossary/capacity.md",
-            ),
+            market_context_ids=("glossary:capacity",),
         ),
     )
     catalogue = DagsterAssetCatalogue(
@@ -173,9 +169,7 @@ def test_data_dictionary_keeps_concept_grouping_when_graphql_unavailable() -> No
             status=DashboardStatus.PLANNED,
             notebook_name=None,
             backing_assets=("silver.gas_model.silver_gas_fact_schedule_run",),
-            generated_gold_paths=(
-                "tools/gas-market-knowledge-base/generated/gold/glossary/schedule.md",
-            ),
+            market_context_ids=("glossary:schedule",),
         ),
     )
     catalogue = DagsterAssetCatalogue(
@@ -209,9 +203,7 @@ def test_data_dictionary_filters_by_concept_mart_state_and_search() -> None:
             status=DashboardStatus.PLANNED,
             notebook_name=None,
             backing_assets=("silver.gas_model.silver_gas_fact_connection_point_flow",),
-            generated_gold_paths=(
-                "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
-            ),
+            market_context_ids=("glossary:flow",),
         ),
         _entry(
             concept_id="quality-context",
@@ -219,9 +211,7 @@ def test_data_dictionary_filters_by_concept_mart_state_and_search() -> None:
             status=DashboardStatus.PLANNED,
             notebook_name=None,
             backing_assets=("silver.gas_model.silver_gas_fact_gas_quality",),
-            generated_gold_paths=(
-                "tools/gas-market-knowledge-base/generated/gold/glossary/quality.md",
-            ),
+            market_context_ids=("glossary:quality",),
         ),
     )
     catalogue = DagsterAssetCatalogue(
@@ -279,7 +269,7 @@ def test_data_dictionary_empty_states_and_fallbacks_are_explicit() -> None:
                 concept_id="empty-context",
                 title="Empty",
                 description="No mapped assets.",
-                generated_gold_path=None,
+                market_context_id=None,
                 assets=(),
                 metadata_gaps=(
                     "No backing silver.gas_model assets are mapped to this concept.",
@@ -310,7 +300,7 @@ def test_data_dictionary_empty_states_and_fallbacks_are_explicit() -> None:
                 concept_id="fixture-context",
                 title="Fixture",
                 description="Fixture concept.",
-                generated_gold_path=None,
+                market_context_id=None,
                 assets=(no_route_asset,),
                 metadata_gaps=(),
             ),
@@ -369,9 +359,7 @@ def test_data_dictionary_accepts_dotted_dagster_asset_id_fallbacks() -> None:
             status=DashboardStatus.PLANNED,
             notebook_name=None,
             backing_assets=("silver.gas_model.silver_gas_fact_market_price",),
-            generated_gold_paths=(
-                "tools/gas-market-knowledge-base/generated/gold/glossary/price.md",
-            ),
+            market_context_ids=("glossary:price",),
         ),
     )
     catalogue = DagsterAssetCatalogue(
@@ -405,7 +393,7 @@ def _entry(
     status: DashboardStatus,
     notebook_name: str | None,
     backing_assets: tuple[str, ...],
-    generated_gold_paths: tuple[str, ...],
+    market_context_ids: tuple[str, ...],
 ) -> DashboardRegistryEntry:
     return DashboardRegistryEntry(
         concept_id=concept_id,
@@ -415,7 +403,7 @@ def _entry(
         status=status,
         notebook_name=notebook_name,
         backing_assets=backing_assets,
-        generated_gold_paths=generated_gold_paths,
+        market_context_ids=market_context_ids,
         source_chunks=(SourceChunkReference("chunk-fixture"),),
     )
 

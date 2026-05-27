@@ -21,6 +21,9 @@ Repo-wide ADRs live in `docs/adr/`. Create ADRs only when a decision is hard to
 reverse, surprising without context, and the result of a real trade-off.
 The **Issue context assessor** replacement is an in-development `$shape-issues`
 workflow change, so it does not require an ADR.
+ADR [0011](../adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md)
+records the adaptive Ralph vocabulary for Step size, Stiffness ratio, Residual
+work, adaptive events, and verified-only post-push metadata recovery.
 ADR [0010](../adr/0010-gas-market-knowledge-base.md) records the planned
 `tools/gas-market-knowledge-base` **Subproject** and the first **Market
 context** corpus architecture. The
@@ -45,6 +48,7 @@ citation validation, seed glossary artifacts, and generated-artifact policy.
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
   - `docs/adr/0010-gas-market-knowledge-base.md`
+  - `docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md`
   - `tools/gas-market-knowledge-base/README.md`
   - `backend-services/marimo/docs/dashboard-standard.md`
 - `sync.scope`: `operations`

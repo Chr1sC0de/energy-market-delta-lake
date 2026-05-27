@@ -183,7 +183,7 @@ def _(config, meter_flow_specs, mo, pl):
                 "AEMO bucket",
                 "Parquet root",
                 "Operational Meter Flow assets",
-                "Generated-gold path",
+                "Market context ID",
                 "Source chunk IDs",
                 "AWS endpoint",
                 "AWS region",
@@ -193,7 +193,7 @@ def _(config, meter_flow_specs, mo, pl):
                 config.aemo_bucket,
                 f"s3://{config.aemo_bucket}/silver/gas_model",
                 str(len(meter_flow_specs)),
-                "tools/gas-market-knowledge-base/generated/gold/glossary/flow.md",
+                "glossary:flow",
                 (
                     "chunk-gbb-guide-flow-report, "
                     "chunk-gbb-procedures-scheduled-flow, "

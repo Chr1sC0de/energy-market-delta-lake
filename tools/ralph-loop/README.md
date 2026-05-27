@@ -39,6 +39,16 @@ make run-prek
 - `tests/unit/`: Ralph unit tests
 - `.pre-commit-config.yaml`: Subproject `prek` hook surface
 
+## Adaptive vocabulary
+
+The maintained Ralph internals doc defines Step size, Stiffness ratio,
+Residual work, and adaptive events for queue-local retry and recovery behavior:
+[docs/agents/ralph-loop.md](../../docs/agents/ralph-loop.md#adaptive-vocabulary).
+ADR
+[0011](../../docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md)
+records the initial stiffness thresholds and verified-only post-push metadata
+recovery boundary.
+
 ## Sync metadata
 
 - `sync.owner`: `agents`
@@ -46,6 +56,7 @@ make run-prek
   - `AGENTS.md`
   - `OPERATOR.md`
   - `docs/agents/ralph-loop.md`
+  - `docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md`
   - `docs/repository/documentation-sync.md`
   - `scripts/ralph.py`
   - `tools/ralph-loop/.pre-commit-config.yaml`

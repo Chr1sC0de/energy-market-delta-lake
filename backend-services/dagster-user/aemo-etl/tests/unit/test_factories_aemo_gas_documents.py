@@ -25,7 +25,10 @@ from aemo_etl.factories.aemo_gas_documents.assets import (
     write_aemo_gas_document_sources_batch,
 )
 from aemo_etl.factories.aemo_gas_documents.models import (
+    AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+    AEMO_MAJOR_PUBLICATIONS_HUB_URL,
     AEMOGasDocumentSourcePage,
+    DEFAULT_AEMO_GAS_DOCUMENT_SOURCE_PAGES,
 )
 from aemo_etl.factories.aemo_gas_documents.manifest import (
     discovery_report_payload,
@@ -174,6 +177,157 @@ def test_discover_observations_classifies_pdf_non_pdf_and_review_links() -> None
     assert pdf_observation.published_date == "1 May 2026"
     assert pdf_observation.media_revision == "ABC"
     assert pdf_observation.document_kind == "guide"
+
+
+def test_discover_observations_records_failed_source_page_and_continues() -> None:
+    failed_url = "https://www.aemo.com.au/energy-systems/gas/blocked"
+    html = f"""
+    <html>
+      <body>
+        <h1>Example Gas Page</h1>
+        <a href="{_PDF_URL}">Gas Guide v2.1</a>
+      </body>
+    </html>
+    """
+
+    def _get(url: str) -> Response:
+        if url == failed_url:
+            raise HTTPError("403 Client Error: Forbidden for url")
+        return _response(url=url, text=html)
+
+    observations = discover_aemo_gas_document_observations(
+        source_pages=(
+            AEMOGasDocumentSourcePage(
+                corpus_source="blocked",
+                source_page_url=failed_url,
+                include_decision="include",
+                include_reason="Configured source page for test.",
+            ),
+            AEMOGasDocumentSourcePage(
+                corpus_source="example",
+                source_page_url=_PAGE_URL,
+                include_decision="include",
+                include_reason="Included for test",
+            ),
+        ),
+        request_getter=_get,
+        observed_at=_OBSERVED_AT,
+    )
+
+    failed_observation = observations[0]
+    pdf_observation = next(item for item in observations if item.source_url == _PDF_URL)
+
+    assert failed_observation.observation_type == "source_page"
+    assert failed_observation.source_url == failed_url
+    assert failed_observation.include_decision == "needs_human_review"
+    assert failed_observation.should_download is False
+    assert "Source page load failed" in (failed_observation.exclude_reason or "")
+    assert pdf_observation.include_decision == "include"
+    assert pdf_observation.should_download is True
+
+
+def test_default_source_pages_include_major_publications_hub_scope() -> None:
+    source_pages = [
+        source_page
+        for source_page in DEFAULT_AEMO_GAS_DOCUMENT_SOURCE_PAGES
+        if source_page.corpus_source == AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE
+    ]
+
+    assert len(source_pages) == 1
+    assert source_pages[0].source_page_url == AEMO_MAJOR_PUBLICATIONS_HUB_URL
+    assert source_pages[0].include_decision == "needs_human_review"
+    assert source_pages[0].discover_child_pages is True
+    assert source_pages[0].fetch_links is True
+
+
+def test_major_publications_hub_discovers_review_source_pages_and_links() -> None:
+    child_url = f"{AEMO_MAJOR_PUBLICATIONS_HUB_URL}integrated-system-plan-isp"
+    hub_media_url = (
+        "https://www.aemo.com.au/-/media/files/major-publications/"
+        "isp/2026-integrated-system-plan.pdf?rev=HUB"
+    )
+    child_media_url = (
+        "https://www.aemo.com.au/-/media/files/major-publications/"
+        "isp/2026-integrated-system-plan-appendix.pdf?rev=CHILD"
+    )
+    hub_html = f"""
+    <html>
+      <head>
+        <link rel="stylesheet" href="/assets/site.css">
+        <script src="/assets/site.js"></script>
+      </head>
+      <body>
+        <h1>Major publications</h1>
+        <nav>
+          <a href="/energy-systems/electricity">Electricity navigation</a>
+        </nav>
+        <section>
+          <h2>Planning</h2>
+          <a href="integrated-system-plan-isp">Integrated System Plan</a>
+          <a href="{child_url}">Integrated System Plan</a>
+          <a href="{hub_media_url}">2026 Integrated System Plan</a>
+          <a href="{hub_media_url}">2026 Integrated System Plan</a>
+          <a href="https://example.com/isp.pdf">External report</a>
+        </section>
+      </body>
+    </html>
+    """
+    child_html = f"""
+    <html>
+      <body>
+        <h1>Integrated System Plan</h1>
+        <a href="{child_media_url}">2026 ISP Appendix</a>
+        <a href="/energy-systems/gas">Gas navigation</a>
+      </body>
+    </html>
+    """
+
+    observations = discover_aemo_gas_document_observations(
+        source_pages=(
+            AEMOGasDocumentSourcePage(
+                corpus_source=AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+                source_page_url=AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+                include_decision="needs_human_review",
+                include_reason="Observation-only major publications test scope.",
+                discover_child_pages=True,
+            ),
+        ),
+        request_getter=_request_getter(
+            {
+                AEMO_MAJOR_PUBLICATIONS_HUB_URL: _response(
+                    url=AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+                    text=hub_html,
+                ),
+                child_url: _response(url=child_url, text=child_html),
+            }
+        ),
+        observed_at=_OBSERVED_AT,
+    )
+
+    source_page_urls = [
+        item.source_url
+        for item in observations
+        if item.observation_type == "source_page"
+    ]
+    link_observations = [
+        item for item in observations if item.observation_type == "link"
+    ]
+    link_urls = [item.source_url for item in link_observations]
+
+    assert source_page_urls == [AEMO_MAJOR_PUBLICATIONS_HUB_URL, child_url]
+    assert link_urls.count(child_url) == 1
+    assert link_urls.count(hub_media_url) == 1
+    assert child_media_url in link_urls
+    assert "/assets/site.css" not in link_urls
+    assert "/assets/site.js" not in link_urls
+    assert all(item.include_decision != "include" for item in link_observations)
+    assert all(item.should_download is False for item in link_observations)
+    external_observation = next(
+        item
+        for item in link_observations
+        if item.source_url == "https://example.com/isp.pdf"
+    )
+    assert external_observation.include_decision == "exclude"
 
 
 def test_manifest_payload_recreates_source_page_and_media_observations() -> None:

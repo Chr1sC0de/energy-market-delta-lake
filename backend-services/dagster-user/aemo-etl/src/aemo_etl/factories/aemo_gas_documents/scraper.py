@@ -7,7 +7,7 @@ from html import unescape
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 
 import bs4
-from requests import Response
+from requests import RequestException, Response
 
 from aemo_etl.factories.aemo_gas_documents.models import (
     AEMOGasDocumentPendingObservation,
@@ -206,6 +206,36 @@ def source_page_observation(
     )
 
 
+def _failed_source_page_observation(
+    source_page: AEMOGasDocumentSourcePage,
+    *,
+    observed_at: datetime,
+    error: RequestException,
+) -> AEMOGasDocumentPendingObservation:
+    """Return an auditable source-page observation for a failed page load."""
+    include_decision = source_page.include_decision
+    include_reason = source_page.include_reason
+    if include_decision == "include":
+        include_decision = "needs_human_review"
+        include_reason = (
+            f"{include_reason} Source page load failed before link discovery."
+            if include_reason
+            else "Source page load failed before link discovery."
+        )
+    failed_source_page = AEMOGasDocumentSourcePage(
+        corpus_source=source_page.corpus_source,
+        source_page_url=source_page.source_page_url,
+        include_decision=include_decision,
+        include_reason=include_reason,
+        exclude_reason=f"Source page load failed before link discovery: {error}",
+        source_page_title=source_page.source_page_title,
+        source_page_section=source_page.source_page_section,
+        fetch_links=source_page.fetch_links,
+        discover_child_pages=source_page.discover_child_pages,
+    )
+    return source_page_observation(failed_source_page, observed_at=observed_at)
+
+
 def _nearest_section(tag: bs4.Tag) -> str | None:
     """Return the nearest preceding local section heading for a link."""
     heading = tag.find_previous(["h2", "h3", "h4"])
@@ -225,6 +255,12 @@ def _link_decision(
     absolute_url: str,
 ) -> tuple[IncludeDecision, str | None, str | None, bool]:
     """Classify one observed source link."""
+    if source_page.include_decision == "exclude":
+        return "exclude", source_page.include_reason, source_page.exclude_reason, False
+    if is_authenticated_url(absolute_url):
+        return "exclude", None, "Authenticated portal link excluded.", False
+    if not is_aemo_public_url(absolute_url):
+        return "exclude", None, "External or non-public AEMO link excluded.", False
     if source_page.include_decision == "needs_human_review":
         return (
             "needs_human_review",
@@ -232,12 +268,6 @@ def _link_decision(
             source_page.exclude_reason,
             False,
         )
-    if source_page.include_decision == "exclude":
-        return "exclude", source_page.include_reason, source_page.exclude_reason, False
-    if is_authenticated_url(absolute_url):
-        return "exclude", None, "Authenticated portal link excluded.", False
-    if not is_aemo_public_url(absolute_url):
-        return "exclude", None, "External or non-public AEMO link excluded.", False
     if not is_pdf_url(absolute_url):
         return "exclude", None, "Non-PDF link excluded from this corpus slice.", False
     return "include", source_page.include_reason, None, True
@@ -391,7 +421,17 @@ def discover_aemo_gas_document_observations(
         page_title = source_page.source_page_title
         soup: bs4.BeautifulSoup | None = None
         if source_page.fetch_links:
-            response = request_getter(source_page.source_page_url)
+            try:
+                response = request_getter(source_page.source_page_url)
+            except RequestException as error:
+                observations.append(
+                    _failed_source_page_observation(
+                        source_page,
+                        observed_at=observed_at,
+                        error=error,
+                    )
+                )
+                continue
             soup = parse_soup(response.text)
             page_title = extract_page_title(soup, source_page.source_page_title)
 

@@ -12,6 +12,7 @@ from urllib.parse import unquote, urlparse
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
+from gas_market_knowledge_base.corpus_paths import default_source_manifest_path
 from gas_market_knowledge_base.pdf_cache import (
     PdfCacheInputError,
     SourcePdfEntry,
@@ -21,7 +22,6 @@ from gas_market_knowledge_base.source_manifest import (
     AEMO_GAS_DOCUMENTS_PREFIX,
     DEFAULT_ENVIRONMENT,
     DEFAULT_NAME_PREFIX,
-    default_source_manifest_path,
     environment_buckets,
 )
 
@@ -240,24 +240,26 @@ def load_archive_listing_from_json(
 
 def audit_archive_prefix(
     *,
-    manifest_path: Path = default_source_manifest_path(),
-    archive_prefix_uri: str = default_archive_prefix_uri(),
+    manifest_path: Path | None = None,
+    archive_prefix_uri: str | None = None,
     listing_path: Path | None = None,
     prefix_lister: ArchivePrefixLister | None = None,
 ) -> ArchiveAuditResult:
     """Audit archive-prefix PDF completeness against the source manifest."""
+    effective_manifest_path = manifest_path or default_source_manifest_path()
+    effective_archive_prefix_uri = archive_prefix_uri or default_archive_prefix_uri()
     try:
-        manifest = load_source_pdf_manifest(manifest_path)
+        manifest = load_source_pdf_manifest(effective_manifest_path)
     except PdfCacheInputError as e:
         raise ArchiveAuditInputError(str(e)) from e
 
     if listing_path is None:
         lister = prefix_lister or DefaultArchivePrefixLister()
-        expected_uris = lister.list_pdf_uris(archive_prefix_uri)
+        expected_uris = lister.list_pdf_uris(effective_archive_prefix_uri)
     else:
         expected_uris = load_archive_listing_from_json(
             listing_path,
-            archive_prefix_uri=archive_prefix_uri,
+            archive_prefix_uri=effective_archive_prefix_uri,
         )
 
     expected_uri_set = set(expected_uris)
@@ -279,7 +281,7 @@ def audit_archive_prefix(
 
     return ArchiveAuditResult(
         manifest_path=manifest.path,
-        archive_prefix_uri=archive_prefix_uri,
+        archive_prefix_uri=effective_archive_prefix_uri,
         prefix_pdf_object_count=len(expected_uris),
         manifest_row_count=manifest.row_count,
         manifest_object_count=len(manifest_uri_set),

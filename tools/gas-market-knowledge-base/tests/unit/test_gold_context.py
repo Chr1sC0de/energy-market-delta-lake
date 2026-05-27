@@ -1,7 +1,12 @@
 import json
 from pathlib import Path
 
-from gas_market_knowledge_base.gold_context import validate_gold_context
+from gas_market_knowledge_base.gold_context import (
+    GoldSourceCitation,
+    render_gold_glossary_body,
+    render_gold_markdown_page,
+    validate_gold_context,
+)
 
 SOURCE_HASH = "a" * 64
 
@@ -11,7 +16,7 @@ def _write_json_frontmatter(
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        f"---\n{json.dumps(frontmatter, indent=2, sort_keys=True)}\n---\n\n{body}",
+        render_gold_markdown_page(frontmatter=frontmatter, body=body),
         encoding="utf-8",
     )
 
@@ -56,7 +61,13 @@ def _write_gold_fixture(
     source_hash_list = [SOURCE_HASH] if source_hashes is None else source_hashes
     definition_text = definition or (
         f"A gas day is represented by the cited fixture source. "
-        f"[[chunk:{chunk_id}]] [[source:sha256:{SOURCE_HASH}]]\n"
+        f"[[chunk:{chunk_id}]] [[source:sha256:{SOURCE_HASH}]]"
+    )
+    source_citation = GoldSourceCitation(
+        chunk_id=chunk_id,
+        chunk_path=f"../../silver/chunks/fixture/{chunk_id}.md",
+        source_document_path="../../silver/documents/fixture.md",
+        source_hash=SOURCE_HASH,
     )
 
     _write_json_frontmatter(
@@ -94,18 +105,26 @@ def _write_gold_fixture(
             "source_hashes": source_hash_list,
             "related_concepts": [],
         },
-        (
-            "# Gas Day\n\n"
-            "## Definition\n\n"
-            f"{definition_text}\n"
-            "## Source Citations\n\n"
-            f"- [{chunk_id}](../../silver/chunks/fixture/{chunk_id}.md)\n"
-            "- [Fixture source](../../silver/documents/fixture.md)\n"
-            "\n## Related Concepts\n\n"
-            "- None yet.\n"
+        render_gold_glossary_body(
+            title="Gas Day",
+            definition=definition_text,
+            source_citations=[source_citation],
         ),
     )
     return gold_root
+
+
+def _gold_fixture_page(gold_dir: Path) -> Path:
+    return gold_dir / "glossary" / "gas-day.md"
+
+
+def _replace_gold_page_text(page_path: Path, old: str, new: str) -> None:
+    text = page_path.read_text(encoding="utf-8")
+    assert old in text
+    page_path.write_text(
+        text.replace(old, new, 1),
+        encoding="utf-8",
+    )
 
 
 def test_validate_gold_context_accepts_cited_glossary(tmp_path: Path) -> None:
@@ -117,6 +136,19 @@ def test_validate_gold_context_accepts_cited_glossary(tmp_path: Path) -> None:
     assert result.error_count == 0
     assert result.page_count == 3
     assert result.glossary_page_count == 1
+
+
+def test_validate_gold_context_accepts_generated_gas_day_and_capacity() -> None:
+    subproject_root = Path(__file__).resolve().parents[2]
+    gold_dir = subproject_root / "generated" / "gold"
+    index_path = subproject_root / "generated" / "silver" / "index" / "chunks.jsonl"
+
+    assert (gold_dir / "glossary" / "gas-day.md").exists()
+    assert (gold_dir / "glossary" / "capacity.md").exists()
+
+    result = validate_gold_context(gold_dir=gold_dir, index_path=index_path)
+
+    assert result.error_count == 0
 
 
 def test_validate_gold_context_reports_uncited_factual_claim(tmp_path: Path) -> None:
@@ -147,6 +179,98 @@ def test_validate_gold_context_reports_missing_source_hash(tmp_path: Path) -> No
     result = validate_gold_context(gold_dir=gold_dir, index_path=index_path)
 
     assert any("missing source" in error for error in result.errors)
+
+
+def test_validate_gold_context_reports_indented_atx_heading(tmp_path: Path) -> None:
+    index_path = _write_silver_fixture(tmp_path)
+    gold_dir = _write_gold_fixture(tmp_path)
+    _replace_gold_page_text(
+        _gold_fixture_page(gold_dir),
+        "## Definition",
+        "    ## Definition",
+    )
+
+    result = validate_gold_context(gold_dir=gold_dir, index_path=index_path)
+
+    assert any("indented ATX heading" in error for error in result.errors)
+
+
+def test_validate_gold_context_reports_tab_indented_heading(tmp_path: Path) -> None:
+    index_path = _write_silver_fixture(tmp_path)
+    gold_dir = _write_gold_fixture(tmp_path)
+    _replace_gold_page_text(
+        _gold_fixture_page(gold_dir),
+        "## Definition",
+        "\t## Definition",
+    )
+
+    result = validate_gold_context(gold_dir=gold_dir, index_path=index_path)
+
+    assert any("tab-indented ATX heading" in error for error in result.errors)
+
+
+def test_validate_gold_context_reports_indented_definition_paragraph(
+    tmp_path: Path,
+) -> None:
+    index_path = _write_silver_fixture(tmp_path)
+    gold_dir = _write_gold_fixture(tmp_path)
+    _replace_gold_page_text(
+        _gold_fixture_page(gold_dir),
+        "A gas day is represented",
+        "    A gas day is represented",
+    )
+
+    result = validate_gold_context(gold_dir=gold_dir, index_path=index_path)
+
+    assert any("normal paragraphs must start" in error for error in result.errors)
+
+
+def test_validate_gold_context_reports_malformed_citation_list(
+    tmp_path: Path,
+) -> None:
+    index_path = _write_silver_fixture(tmp_path)
+    gold_dir = _write_gold_fixture(tmp_path)
+    _replace_gold_page_text(
+        _gold_fixture_page(gold_dir),
+        "- `chunk-gas-day`:",
+        "`chunk-gas-day`:",
+    )
+
+    result = validate_gold_context(gold_dir=gold_dir, index_path=index_path)
+
+    assert any("malformed source citation list" in error for error in result.errors)
+
+
+def test_validate_gold_context_reports_citation_chunk_not_in_frontmatter(
+    tmp_path: Path,
+) -> None:
+    index_path = _write_silver_fixture(tmp_path, chunk_id="chunk-capacity")
+    gold_dir = _write_gold_fixture(tmp_path, chunk_id="chunk-capacity")
+    _replace_gold_page_text(
+        _gold_fixture_page(gold_dir),
+        f"[[chunk:chunk-capacity]] [[source:sha256:{SOURCE_HASH}]]\n\n"
+        "## Related Concepts",
+        f"[[chunk:chunk-gas-day]] [[source:sha256:{SOURCE_HASH}]]\n\n"
+        "## Related Concepts",
+    )
+
+    result = validate_gold_context(gold_dir=gold_dir, index_path=index_path)
+
+    assert any(
+        "source citation bullet references chunk" in error for error in result.errors
+    )
+
+
+def test_validate_gold_context_reports_broken_source_document_reference(
+    tmp_path: Path,
+) -> None:
+    index_path = _write_silver_fixture(tmp_path)
+    gold_dir = _write_gold_fixture(tmp_path)
+    (tmp_path / "generated" / "silver" / "documents" / "fixture.md").unlink()
+
+    result = validate_gold_context(gold_dir=gold_dir, index_path=index_path)
+
+    assert any("source document target missing" in error for error in result.errors)
 
 
 def test_validate_gold_context_reports_stale_glossary_index(tmp_path: Path) -> None:

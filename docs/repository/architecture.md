@@ -129,11 +129,11 @@ guest Dagster GraphQL endpoint, and has read-only access to curated AEMO and
 IO-manager buckets. Its data readiness overview gives platform operators a
 first-stop check over those read-only S3 and Dagster GraphQL surfaces. Its
 glossary explorer browses packaged registry metadata without reading generated
-gold Markdown or live S3 tables at runtime. Its concept-to-asset explorer maps
+Market context artifacts or live S3 tables at runtime. Its concept-to-asset explorer maps
 Market context glossary concepts to registry backing assets, dashboard routes,
 planned dashboard cards, and table explorer deep links without reading table
-rows. Its citation-chain explorer audits registry metadata from generated-gold
-paths to source chunk IDs, silver chunk paths, and source hashes without
+rows. Its citation-chain explorer audits registry metadata from Market context
+IDs to source chunk IDs, silver chunk paths, and source hashes without
 opening generated corpus files. Its Flow operations, Operational Meter Flow,
 market price, schedule run, settlement activity, customer transfer, Bid / Offer
 stack, capacity outlook, capacity auction, capacity transactions, gas quality,
@@ -241,7 +241,7 @@ Gas market knowledge base responsibility:
     citation validation, seed glossary artifacts, generated text artifact roots,
     raw-PDF ignore policy, unit tests, and **Commit check** surface. ADR
     [0010](../adr/0010-gas-market-knowledge-base.md) records the corpus
-    architecture and the generated gold boundary.
+    architecture and the generated Market context boundary.
 
 ## Related docs
 

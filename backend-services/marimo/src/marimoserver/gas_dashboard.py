@@ -25259,7 +25259,7 @@ def render_dashboard_context_panel(
         {_definition_item("Route", notebook_route or "No notebook route recorded")}
     </dl>
     <div class="context-panel__grid">
-        {_render_context_list("generated-gold paths", entry.generated_gold_paths)}
+        {_render_context_list("Market context IDs", entry.market_context_ids)}
         {_render_context_list("source chunk IDs", entry.source_chunk_ids)}
         {_render_context_list("silver chunk paths", entry.silver_chunk_paths)}
         {_render_context_list("source hashes", entry.source_hashes)}
@@ -25278,7 +25278,7 @@ def _related_context_entries(
         return ()
 
     scored_entries: list[tuple[int, str, DashboardRegistryEntry]] = []
-    entry_gold_paths = set(entry.generated_gold_paths)
+    entry_market_context_ids = set(entry.market_context_ids)
     entry_source_chunks = set(entry.source_chunk_ids)
     entry_assets = set(entry.backing_assets)
 
@@ -25287,7 +25287,7 @@ def _related_context_entries(
             continue
 
         score = (
-            len(entry_gold_paths & set(candidate.generated_gold_paths)) * 3
+            len(entry_market_context_ids & set(candidate.market_context_ids)) * 3
             + len(entry_assets & set(candidate.backing_assets)) * 2
             + len(entry_source_chunks & set(candidate.source_chunk_ids))
         )
@@ -25338,7 +25338,7 @@ def _render_related_context_list(
     if len(related_entries) == 0:
         body = (
             '<p class="context-panel__empty">'
-            "No related concepts share generated-gold paths, source chunk IDs, "
+            "No related concepts share Market context IDs, source chunk IDs, "
             "or backing assets in the Marimo registry."
             "</p>"
         )

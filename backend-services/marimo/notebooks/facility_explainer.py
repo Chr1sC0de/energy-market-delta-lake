@@ -66,7 +66,7 @@ def _(
             `silver.gas_model.silver_gas_dim_facility`, and trace available
             Facility relationships to participant, zone, flow, storage, and
             capacity context. Data scope is the Marimo dashboard registry,
-            generated-gold path and source chunk metadata copied into that
+            Market context ID and source chunk metadata copied into that
             registry, plus read-only bounded Parquet samples from
             `silver_gas_dim_facility`, `silver_gas_fact_facility_flow_storage`,
             and `silver_gas_fact_capacity_outlook`. Freshness, row coverage,
@@ -168,7 +168,7 @@ def _(config, facility_coverage, facility_specs, mo, pl):
                 "AEMO bucket",
                 "Parquet root",
                 "Facility-oriented assets",
-                "Generated-gold path",
+                "Market context ID",
                 "Source chunk IDs",
                 "AWS endpoint",
                 "AWS region",
@@ -178,7 +178,7 @@ def _(config, facility_coverage, facility_specs, mo, pl):
                 config.aemo_bucket,
                 f"s3://{config.aemo_bucket}/silver/gas_model",
                 str(len(facility_specs)),
-                "tools/gas-market-knowledge-base/generated/gold/glossary/facility.md",
+                "glossary:facility",
                 "chunk-gbb-guide-nodes-facilities, chunk-gbb-procedures-facility-nameplate",
                 config.aws_endpoint_url or "(default AWS)",
                 config.aws_region,

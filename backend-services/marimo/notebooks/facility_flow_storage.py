@@ -244,7 +244,7 @@ def _(FACILITY_FLOW_STORAGE_TABLE_NAME, config, mo, pl):
             "setting": [
                 "AEMO bucket",
                 "Parquet table",
-                "Generated-gold paths",
+                "Market context IDs",
                 "Source chunk IDs",
                 "AWS endpoint",
                 "AWS region",
@@ -253,10 +253,7 @@ def _(FACILITY_FLOW_STORAGE_TABLE_NAME, config, mo, pl):
             "value": [
                 config.aemo_bucket,
                 f"silver/gas_model/{FACILITY_FLOW_STORAGE_TABLE_NAME}",
-                (
-                    "facility.md, flow.md, capacity.md under "
-                    "tools/gas-market-knowledge-base/generated/gold/glossary"
-                ),
+                ("glossary:facility, glossary:flow, glossary:capacity"),
                 (
                     "chunk-gbb-guide-nodes-facilities, "
                     "chunk-gbb-procedures-daily-flow-storage, "

@@ -36,7 +36,7 @@ class CitationChainConcept:
     description: str
     status: DashboardStatus
     notebook_route: str | None
-    generated_gold_paths: tuple[str, ...]
+    market_context_ids: tuple[str, ...]
     source_chunks: tuple[CitationChainChunk, ...]
     backing_assets: tuple[str, ...]
     metadata_gaps: tuple[str, ...]
@@ -55,7 +55,7 @@ class CitationChainExplorer:
     source_label: str = "Marimo dashboard registry"
     freshness_label: str = "Code-local registry snapshot"
     scope_label: str = (
-        "Concept metadata, generated-gold paths, source chunks, and source hashes"
+        "Concept metadata, Market context IDs, source chunks, and source hashes"
     )
 
     @property
@@ -153,7 +153,7 @@ def _citation_chain_concept(
         description=entry.description,
         status=entry.status,
         notebook_route=entry.notebook_route,
-        generated_gold_paths=entry.generated_gold_paths,
+        market_context_ids=entry.market_context_ids,
         source_chunks=source_chunks,
         backing_assets=entry.backing_assets,
         metadata_gaps=metadata_gaps,
@@ -179,8 +179,8 @@ def _concept_metadata_gaps(
     source_chunks: Sequence[CitationChainChunk],
 ) -> tuple[str, ...]:
     gaps: list[str] = []
-    if len(entry.generated_gold_paths) == 0:
-        gaps.append("No generated-gold path recorded in the Marimo registry.")
+    if len(entry.market_context_ids) == 0:
+        gaps.append("No Market context ID recorded in the Marimo registry.")
     if len(entry.source_chunks) == 0:
         gaps.append("No source chunk IDs recorded in the Marimo registry.")
     for chunk in source_chunks:
@@ -220,7 +220,7 @@ def _render_concept_card(concept: CitationChainConcept) -> str:
                 {_definition_item("Route", concept.notebook_route or "No route")}
             </dl>
             {_render_gap_section(concept)}
-            {_render_code_list("generated-gold paths", concept.generated_gold_paths)}
+            {_render_code_list("Market context IDs", concept.market_context_ids)}
             {_render_chunk_list(concept.source_chunks)}
             {_render_code_list("backing assets", concept.backing_assets)}
         </article>"""

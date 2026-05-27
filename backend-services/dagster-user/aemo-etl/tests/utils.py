@@ -8,7 +8,10 @@ from typing import Protocol
 import requests
 
 GBB_DATA_DIR = Path(os.environ["HOME"]) / "localstack-landing-download/bronze/gbb"
-LOCALSTACK_IMAGE = os.environ.get("LOCALSTACK_IMAGE", "localstack/localstack:4.8.1")
+LOCALSTACK_IMAGE = os.environ.get(
+    "LOCALSTACK_IMAGE",
+    "docker.io/localstack/localstack:4.8.1",
+)
 LOCALSTACK_PORT = 4566
 LOCALSTACK_HEALTH_PATH = "_localstack/health"
 LOCALSTACK_READY_TIMEOUT = 60  # seconds

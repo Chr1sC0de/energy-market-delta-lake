@@ -7,6 +7,11 @@ media PDF bytes, writes `bronze_aemo_gas_document_sources` metadata, and
 archives the bytes in S3-compatible storage. That path stops at PDF bytes and
 metadata. It does not extract text, build retrieval chunks, create wiki pages,
 write embeddings, or update a vector store.
+Observation-only configured source pages can still add `needs_human_review`
+metadata coverage, such as the AEMO energy-systems major publications hub,
+without landing publication bytes until a later approved slice expands scope.
+When live source-page scraping is used outside the packaged manifest path,
+failed HTTP page loads remain auditable metadata-only source-page observations.
 
 The knowledge-base work needs a repo-owned corpus that agents can review in
 diffs and cite in future gas-market issues. It also needs to keep raw PDFs out
@@ -24,20 +29,29 @@ AEMO ETL remains responsible for source-page discovery, direct-media download,
 bronze metadata, and archive storage. Raw PDF bytes stay in S3 or in a local
 cache used by the knowledge-base tool. The repository must not commit raw PDFs.
 
-The knowledge-base Subproject tracks or reserves text artifacts under
-`generated/{bronze,silver,gold}`:
+The knowledge-base Subproject writes generated text artifacts to an external
+corpus artifact root by default. `ENERGY_MARKET_CORPUS_ROOT` selects that root;
+when it is unset or empty, the root is
+`~/energy-market-delta-lake-artifacts/corpora`. The Gas market corpus lives
+under `$ENERGY_MARKET_CORPUS_ROOT/gas-market/{bronze,silver,gold}`:
 
-- `generated/bronze`: source manifest inventory used to plan extraction.
-- `generated/silver/documents`: Docling Markdown extraction output tied to the
+- `gas-market/bronze`: source manifest inventory used to plan extraction.
+- `gas-market/silver/documents`: Docling Markdown extraction output tied to the
   source document identity and source hash.
-- `generated/silver/chunks`: Docling Hybrid chunks prepared for retrieval.
-- `generated/gold`: cited, agent-authored **Market context** pages.
+- `gas-market/silver/chunks`: Docling Hybrid chunks prepared for retrieval.
+- `gas-market/gold`: cited, agent-authored **Market context** pages.
 
-Generated silver document Markdown may exceed the generic 500 KB large-file
-hook limit because each file can contain full Docling Markdown extraction
-output for one source document. The Gas market knowledge base **Commit check**
-therefore exempts only `generated/silver/documents/**/*.md` from
-`check-added-large-files`; raw PDFs, binary artifacts, generated chunks,
+Existing tracked artifacts under `tools/gas-market-knowledge-base/generated/`
+remain valid review history and are not removed or rewritten by this decision.
+Explicit CLI path overrides may still target repo paths when a future issue
+intentionally creates reviewable corpus artifact diffs.
+
+Generated silver document Markdown explicitly kept under the repo
+`generated/silver/documents/**/*.md` tree may exceed the generic 500 KB
+large-file hook limit because each file can contain full Docling Markdown
+extraction output for one source document. The Gas market knowledge base
+**Commit check** therefore exempts only those silver document Markdown files
+from `check-added-large-files`; raw PDFs, binary artifacts, generated chunks,
 generated gold pages, and unrelated large files remain blocked by the raw-PDF
 repository ignore rules or the generic large-file limit.
 
@@ -55,8 +69,9 @@ them as cited review artifacts rather than fully automated truth.
 - Commit raw PDFs: rejected because the archive already stores source bytes,
   PDF diffs are not useful for review, and raw document storage would add bulk
   without improving citation quality.
-- Store everything outside git: rejected because agents and operators need
-  reviewable text diffs for extracted Markdown, retrieval chunks, and cited
+- Store all text evidence outside git with no reviewable artifact path:
+  rejected because agents and operators still need a way to create intentional
+  text diffs for extracted Markdown, retrieval chunks, and cited
   **Market context** pages.
 - Start with embeddings: rejected because embeddings are not inspectable source
   evidence. The project needs extracted text, stable chunks, and citation
@@ -67,22 +82,27 @@ them as cited review artifacts rather than fully automated truth.
 
 ## Consequences
 
-The Subproject owns its local cache rules, generated corpus layout, command
-surface, dependency files, and maintained README. Future implementation issues
-should add the PDF extraction, chunking, citation, and review workflows without
-moving those side effects into AEMO ETL.
+The Subproject owns its local cache rules, external generated corpus layout,
+command surface, dependency files, and maintained README. Future implementation
+issues should add the PDF extraction, chunking, citation, and review workflows
+without moving those side effects into AEMO ETL.
 
 AEMO ETL must not grow Docling dependencies or extraction side effects under
 this decision. `bronze_aemo_gas_document_sources` remains the boundary for
 document discovery, raw PDF landing/archive, and source metadata.
 
-The `generated/` corpus is intentionally separate from maintained repository
-docs. Future **Market context** pages can be tracked artifacts under
-`generated/gold`, but router docs and Subproject docs still need normal
-**Documentation sync** metadata outside that generated corpus.
-Runtime dashboards may copy generated-gold paths and source chunk IDs into
-their own registries as citation metadata, but generated gold Markdown remains
-read-only corpus output rather than a dashboard runtime dependency.
+The external corpus root and any explicit repo `generated/` corpus are
+intentionally separate from maintained repository docs. Future **Market
+context** pages can be tracked artifacts under `generated/gold` only when an
+issue intentionally targets reviewable artifact diffs, but router docs and
+Subproject docs still need normal **Documentation sync** metadata outside that
+generated corpus.
+Runtime dashboards may carry registry-only Market context IDs, source chunk
+IDs, source hashes, and optional external artifact references as citation
+metadata. These identifiers are metadata only: dashboards must not require
+generated gold or silver Markdown artifacts to exist on disk at runtime.
+Generated gold Markdown remains read-only corpus output rather than a dashboard
+runtime dependency.
 
 Embeddings or vector storage can be added later only after the extracted text
 and Docling Hybrid chunks exist. A future irreversible storage choice should get
@@ -101,6 +121,7 @@ its own ADR.
   - `docs/repository/workflow.md`
   - `tools/gas-market-knowledge-base/.pre-commit-config.yaml`
   - `tools/gas-market-knowledge-base/README.md`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_paths.py`
   - `docs/repository/documentation-sync.md`
   - `backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/aemo_gas_documents.py`

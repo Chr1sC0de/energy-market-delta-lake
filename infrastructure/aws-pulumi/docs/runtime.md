@@ -317,7 +317,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   gaps without scanning table contents. The S3 Bucket Health dashboard checks
   configured S3-compatible buckets and table-prefix discovery without
   account-wide bucket listing or AWS write paths. The glossary explorer browses
-  the packaged Marimo registry for generated-gold metadata paths, source chunk
+  the packaged Marimo registry for Market context IDs, source chunk
   IDs, related concepts, and dashboard states without generated-file or table
   reads. The table explorer links selected rows to readiness, bounded-read
   diagnostics, and concept-gallery metadata for mapped `silver.gas_model`

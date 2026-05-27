@@ -176,7 +176,7 @@ def _(CAPACITY_TRANSACTION_TABLE_NAME, config, mo, pl):
             "setting": [
                 "AEMO bucket",
                 "Parquet table",
-                "Generated-gold paths",
+                "Market context IDs",
                 "Source chunk IDs",
                 "AWS endpoint",
                 "AWS region",
@@ -185,7 +185,7 @@ def _(CAPACITY_TRANSACTION_TABLE_NAME, config, mo, pl):
             "value": [
                 config.aemo_bucket,
                 f"silver/gas_model/{CAPACITY_TRANSACTION_TABLE_NAME}",
-                "capacity.md under tools/gas-market-knowledge-base/generated/gold/glossary",
+                "glossary:capacity",
                 (
                     "chunk-gbb-procedures-capacity-outlooks, "
                     "chunk-gbb-guide-nameplate-capacity"
