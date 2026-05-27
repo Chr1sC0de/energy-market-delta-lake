@@ -34,6 +34,7 @@ from code_locations import (
     load_code_locations,
     required_ecs_service_names,
 )
+from components.postgres_settings import POSTGRES_ROOT_VOLUME_GIB
 from ecs_rollouts import incomplete_ecs_service_rollouts
 
 DAGSTER_CODE_LOCATIONS = load_code_locations()
@@ -537,6 +538,13 @@ def _expected_ec2_names(resource_name: str) -> set[str]:
     }
 
 
+def _ec2_instance_name(instance: dict) -> str | None:
+    for tag in instance.get("Tags", []):
+        if tag.get("Key") == "Name":
+            return str(tag.get("Value"))
+    return None
+
+
 def _deployed_ec2_instances(ec2_client: object, resource_name: str) -> list[dict]:
     expected_names = _expected_ec2_names(resource_name)
     response = ec2_client.describe_instances(  # type: ignore[union-attr]
@@ -554,14 +562,37 @@ def _deployed_ec2_instances(ec2_client: object, resource_name: str) -> list[dict
         for instance in reservation.get("Instances", [])
     ]
     found_names = {
-        tag["Value"]
+        name
         for instance in instances
-        for tag in instance.get("Tags", [])
-        if tag.get("Key") == "Name"
+        if (name := _ec2_instance_name(instance)) is not None
     }
     missing = expected_names - found_names
     assert not missing, f"Missing expected EC2 instances by Name tag: {sorted(missing)}"
     return instances
+
+
+def _root_ebs_volume_id(instance: dict) -> str:
+    root_device_name = instance.get("RootDeviceName")
+    assert root_device_name, f"Instance {instance['InstanceId']} has no root device"
+
+    for mapping in instance.get("BlockDeviceMappings", []):
+        if mapping.get("DeviceName") != root_device_name:
+            continue
+        ebs = mapping.get("Ebs")
+        assert ebs, (
+            f"Instance {instance['InstanceId']} root device {root_device_name!r} "
+            "is not backed by EBS"
+        )
+        volume_id = ebs.get("VolumeId")
+        assert volume_id, (
+            f"Instance {instance['InstanceId']} root EBS mapping has no volume ID"
+        )
+        return str(volume_id)
+
+    raise AssertionError(
+        f"Instance {instance['InstanceId']} has no EBS mapping for "
+        f"root device {root_device_name!r}"
+    )
 
 
 class TestLiveSecurityPosture:
@@ -599,6 +630,51 @@ class TestLiveSecurityPosture:
             if volume.get("Encrypted") is not True
         ]
         assert not unencrypted, f"Unencrypted EC2 EBS volumes: {unencrypted}"
+
+    def test_postgres_root_ebs_volume_metadata_matches_resize_target(
+        self, ec2_client: object, resource_name: str
+    ) -> None:
+        """The deployed Postgres root EBS volume must match the resize target."""
+        postgres_name = f"{resource_name}-postgres"
+        postgres_instances = [
+            instance
+            for instance in _deployed_ec2_instances(ec2_client, resource_name)
+            if _ec2_instance_name(instance) == postgres_name
+        ]
+        assert postgres_instances, (
+            f"No deployed Postgres instance named {postgres_name}"
+        )
+
+        volume_ids = [_root_ebs_volume_id(instance) for instance in postgres_instances]
+        response = ec2_client.describe_volumes(  # type: ignore[union-attr]
+            VolumeIds=volume_ids
+        )
+        volumes_by_id = {
+            volume["VolumeId"]: volume for volume in response.get("Volumes", [])
+        }
+        missing = set(volume_ids) - set(volumes_by_id)
+        assert not missing, f"Missing Postgres root EBS volume metadata: {missing}"
+
+        wrong_type = {
+            volume_id: volume.get("VolumeType")
+            for volume_id, volume in volumes_by_id.items()
+            if volume.get("VolumeType") != "gp3"
+        }
+        assert not wrong_type, f"Postgres root EBS volumes not gp3: {wrong_type}"
+
+        undersized = {}
+        for volume_id, volume in volumes_by_id.items():
+            volume_size = volume.get("Size")
+            if (
+                not isinstance(volume_size, int)
+                or volume_size < POSTGRES_ROOT_VOLUME_GIB
+            ):
+                undersized[volume_id] = volume_size
+
+        assert not undersized, (
+            "Postgres root EBS volumes smaller than "
+            f"{POSTGRES_ROOT_VOLUME_GIB} GiB: {undersized}"
+        )
 
     def test_ecr_repositories_scan_on_push(
         self, ecr_client: object, resource_name: str

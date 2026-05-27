@@ -270,7 +270,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
 | `ECRComponentResource` | ECR repos, lifecycle policies, docker build+push resources | Publish deployable images from repo source |
 | `EcsClusterComponentResource` | ECS cluster, CloudWatch log group, Fargate providers, optional EC2 run-worker provider | Shared compute substrate for Dagster runtime |
 | `ecs_services.py` components | task definitions, ECS services, Cloud Map service registrations | Run Dagster webserver, daemon, and user-code containers |
-| `PostgresComponentResource` | private `t4g.nano` EC2 instance with encrypted 32 GiB `gp3` root volume, SSM-backed password, and private DNS SSM parameter | Store Dagster run, event, and schedule metadata |
+| `PostgresComponentResource` | private `t4g.nano` EC2 instance with encrypted 32 GiB `gp3` root EBS volume, SSM-backed password, and private DNS SSM parameter | Store Dagster run, event, and schedule metadata |
 | `MarimoDashboardComponentResource` | private EC2 instance with encrypted 30 GiB `gp3` root volume, Cloud Map registration, SSM-enabled instance profile, read-only S3 policy | Run the curated Marimo dashboard outside ECS |
 | `code_locations.py` | manifest parser, workspace renderer, resource-name helpers | Keep user-code images, workspaces, services, and live checks aligned |
 
@@ -292,6 +292,11 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   backed by the SSM password parameter, not through plain container environment
   variables. The backing parameter is `SecureString` by default and `String`
   only for the gated `dev-energy-market` exception.
+- Deployed tests verify EC2/EBS metadata for the Postgres root EBS volume:
+  the `{resource_name}-postgres` root volume must be `gp3` and at least 32 GiB.
+  That is not a mounted Linux filesystem capacity check; operator verification
+  and recovery after a root EBS resize are documented in
+  [Storage](storage.md#postgres-root-volume-resize-operations).
 - Admin and guest webservers get separate task-definition families so revisions
   are not shared across the two variants.
 - Cloud Map registration is used only for the inbound-facing private services:
@@ -384,6 +389,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `infrastructure/aws-pulumi/code_locations.py`
   - `infrastructure/aws-pulumi/components/dagster_runtime_task.py`
   - `infrastructure/aws-pulumi/components/postgres.py`
+  - `infrastructure/aws-pulumi/components/postgres_settings.py`
   - `infrastructure/aws-pulumi/components/ecs_cluster.py`
   - `infrastructure/aws-pulumi/components/ecs_services.py`
   - `infrastructure/aws-pulumi/components/iam_roles.py`
