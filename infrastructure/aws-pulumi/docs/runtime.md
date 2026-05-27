@@ -270,6 +270,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
 | `ECRComponentResource` | ECR repos, lifecycle policies, docker build+push resources | Publish deployable images from repo source |
 | `EcsClusterComponentResource` | ECS cluster, CloudWatch log group, Fargate providers, optional EC2 run-worker provider | Shared compute substrate for Dagster runtime |
 | `ecs_services.py` components | task definitions, ECS services, Cloud Map service registrations | Run Dagster webserver, daemon, and user-code containers |
+| `PostgresComponentResource` | private `t4g.nano` EC2 instance with encrypted 32 GiB `gp3` root volume, SSM-backed password, and private DNS SSM parameter | Store Dagster run, event, and schedule metadata |
 | `MarimoDashboardComponentResource` | private EC2 instance with encrypted 30 GiB `gp3` root volume, Cloud Map registration, SSM-enabled instance profile, read-only S3 policy | Run the curated Marimo dashboard outside ECS |
 | `code_locations.py` | manifest parser, workspace renderer, resource-name helpers | Keep user-code images, workspaces, services, and live checks aligned |
 

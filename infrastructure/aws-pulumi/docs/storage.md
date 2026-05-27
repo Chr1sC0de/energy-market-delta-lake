@@ -70,7 +70,7 @@ All bucket names are prefixed by `"{ENVIRONMENT}-energy-market"`.
 |---|---|---|
 | `S3BucketsComponentResource` | 4 S3 buckets plus encryption, public-access-block, versioning, archive lifecycle | Host raw files, Delta tables, and Dagster intermediates |
 | `DeltaLockingTableComponentResource` | 1 DynamoDB table named `delta_log` with TTL on `expireTime` | Distributed lock table for `delta-rs` |
-| `PostgresComponentResource` | 1 private EC2 instance, password generator, 2 SSM params | Dagster run, schedule, and event-log metadata |
+| `PostgresComponentResource` | 1 private EC2 instance with encrypted 32 GiB `gp3` root volume, password generator, 2 SSM params | Dagster run, schedule, and event-log metadata |
 
 ## Implementation notes
 
@@ -82,8 +82,8 @@ All bucket names are prefixed by `"{ENVIRONMENT}-energy-market"`.
   `fileName` as the sort key, `PAY_PER_REQUEST` billing, and `expireTime` as
   the TTL attribute for automatic lock metadata expiry.
 - Postgres is provisioned on a private `t4g.nano` instance with IMDSv2
-  required and encrypted root storage. User data installs PostgreSQL 14,
-  fetches the database password from SSM at boot, configures
+  required and encrypted 32 GiB `gp3` root storage. User data installs
+  PostgreSQL 14, fetches the database password from SSM at boot, configures
   `scram-sha-256` password auth for the VPC CIDR, creates `dagster_user`, and
   creates the `dagster` database.
 - Postgres writes two SSM parameters:

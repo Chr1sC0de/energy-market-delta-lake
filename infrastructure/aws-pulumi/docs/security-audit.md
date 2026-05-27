@@ -48,7 +48,8 @@ tests, and a no-op preview. The rollout-completion wait is bounded and reports
 only service names, primary rollout states, and sanitized failed deployment
 state. The deployed tests verify:
 
-- guest access at `/dagster-webserver/guest` returns `200`, `302`, or `307`
+- guest access at `/dagster-webserver/guest` returns `200`, `302`, or `307`,
+  and `/dagster-webserver/guest/` returns `200` with non-empty HTML
 - Marimo health at `/marimo/health` returns `200`
 - the exact required ECS Fargate services, including manifest-declared
   user-code services, exist, are `ACTIVE`, have
@@ -56,7 +57,8 @@ state. The deployed tests verify:
   and have primary rollout `COMPLETED` with no failed rollout
 - Cloud Map registrations and CloudWatch log streams exist
 - the current daemon log stream has no post-deploy IAM permission denials
-- EC2 hosts require IMDSv2 and encrypted EBS volumes
+- EC2 hosts require IMDSv2 and encrypted EBS volumes, including the 32 GiB
+  `gp3` Postgres root volume
 - ECR repositories enable scan-on-push
 - required ECS task definitions use SSM-backed secrets for the Postgres
   password
