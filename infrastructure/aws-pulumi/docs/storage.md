@@ -11,6 +11,7 @@ Dagster metadata.
 - [Bucket roles](#bucket-roles)
 - [Component summary](#component-summary)
 - [Implementation notes](#implementation-notes)
+- [Postgres root-volume resize operations](#postgres-root-volume-resize-operations)
 - [Related docs](#related-docs)
 
 ## What this page covers
@@ -98,6 +99,45 @@ All bucket names are prefixed by `"{ENVIRONMENT}-energy-market"`.
   password, but it does not move `DAGSTER_POSTGRES_PASSWORD` into plain
   container environment variables.
 
+## Postgres root-volume resize operations
+
+`PostgresComponentResource` declares a 32 GiB `gp3` root EBS volume. Component
+tests check the Pulumi root-block-device config, and deployed tests check the
+live EC2/EBS metadata for the `{resource_name}-postgres` root volume. That
+metadata check proves the attached root EBS volume type and size, but it does
+not prove the mounted Linux `/` filesystem has expanded to the same capacity.
+
+After increasing `POSTGRES_ROOT_VOLUME_GIB` or recovering from a manual EBS
+resize, operators must treat the Linux partition and filesystem as a separate
+verification boundary:
+
+1. Create or confirm a recent snapshot before changing the root volume.
+1. Confirm the EBS volume modification is `optimizing` or `completed`.
+1. Connect through an approved maintenance path for the private Postgres host,
+   such as a reviewed temporary SSM/SSH access change or a helper instance flow
+   for an offline root volume.
+1. Identify the root mount and filesystem:
+
+   ```bash
+   findmnt -no SOURCE,FSTYPE,SIZE,USED,AVAIL,TARGET /
+   lsblk -f
+   df -hT /
+   ```
+
+1. If `/` is smaller than the EBS volume, extend the root partition first when
+   the root device has a partition, for example `sudo growpart /dev/nvme0n1 1`
+   on Nitro instances where `/` is mounted from `/dev/nvme0n1p1`.
+1. Extend the filesystem with the tool that matches `findmnt` output: use
+   `sudo xfs_growfs -d /` for XFS, or `sudo resize2fs <root-partition>` for
+   ext4.
+1. Re-run `df -hT /` and record the mounted filesystem size in the Operator
+   workflow evidence.
+
+The repo does not currently automate this mounted-filesystem check. Until a
+read-only deployed check is added, `scripts/run-integration-tests
+--with-idempotency` verifies only the EBS metadata target for the Postgres root
+volume.
+
 ## Related docs
 
 - [Connectivity](connectivity.md)
@@ -112,8 +152,10 @@ All bucket names are prefixed by `"{ENVIRONMENT}-energy-market"`.
   - `infrastructure/aws-pulumi/components/s3_buckets.py`
   - `infrastructure/aws-pulumi/components/dynamodb.py`
   - `infrastructure/aws-pulumi/components/postgres.py`
+  - `infrastructure/aws-pulumi/components/postgres_settings.py`
   - `infrastructure/aws-pulumi/Pulumi.dev-ausenergymarket.yaml`
   - `infrastructure/aws-pulumi/tests/component/test_postgres.py`
+  - `infrastructure/aws-pulumi/tests/deployed/test_integration.py`
 - `sync.scope`: `architecture`
 - `sync.qa`:
   - `git diff --name-only`

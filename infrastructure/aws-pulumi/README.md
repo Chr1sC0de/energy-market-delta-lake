@@ -148,6 +148,9 @@ security boundary to audit. Current controls include:
 - administrator SSH ingress is limited to validated IPv4 `/32` CIDRs from
   `ADMINISTRATOR_IPS`
 - EC2 hosts require IMDSv2 and encrypted root volumes
+- deployed tests check EC2/EBS metadata for the Postgres root EBS volume size
+  and type, while mounted Linux filesystem capacity after a resize remains an
+  operator verification path documented in [Storage](docs/storage.md)
 - the Marimo dashboard instance has no public IP, no SSH key, and is operated
   through SSM Session Manager
 - Cognito secrets and non-dev Postgres passwords are stored in SSM
@@ -202,8 +205,8 @@ Key deployed behaviors visible in the infrastructure code:
   - the FastAPI auth service
 - Dagster services run as ECS Fargate services in private subnets
 - Postgres runs on a private `t4g.nano` EC2 instance with an encrypted 32 GiB
-  `gp3` root volume and stores Dagster metadata for the webserver and daemon
-  services
+  `gp3` root EBS volume and stores Dagster metadata for the webserver and
+  daemon services
 - the curated Marimo dashboard runs on a private `t3.small` EC2 instance with
   an encrypted 30 GiB `gp3` root volume, uses its instance profile for S3
   reads, exposes `/marimo/health` and Marimo packaged asset routes through
@@ -439,6 +442,7 @@ system's services and Dagster workflows.
   - `infrastructure/aws-pulumi/components/iam_roles.py`
   - `infrastructure/aws-pulumi/components/marimo.py`
   - `infrastructure/aws-pulumi/components/postgres.py`
+  - `infrastructure/aws-pulumi/components/postgres_settings.py`
   - `infrastructure/aws-pulumi/components/s3_buckets.py`
   - `infrastructure/aws-pulumi/components/security_groups.py`
   - `infrastructure/aws-pulumi/components/service_discovery.py`

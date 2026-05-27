@@ -57,8 +57,12 @@ state. The deployed tests verify:
   and have primary rollout `COMPLETED` with no failed rollout
 - Cloud Map registrations and CloudWatch log streams exist
 - the current daemon log stream has no post-deploy IAM permission denials
-- EC2 hosts require IMDSv2 and encrypted EBS volumes, including the 32 GiB
-  `gp3` Postgres root volume
+- EC2 hosts require IMDSv2 and encrypted EBS volumes
+- EC2/EBS metadata for the `{resource_name}-postgres` root volume reports
+  `gp3` and at least 32 GiB
+- the deployed EBS metadata checks do not verify the mounted Linux `/`
+  filesystem capacity; [Storage](storage.md) owns the operator
+  verification/recovery path after a root EBS resize
 - ECR repositories enable scan-on-push
 - required ECS task definitions use SSM-backed secrets for the Postgres
   password
@@ -114,6 +118,9 @@ live proof for that parameter-type change.
   group only when explicitly paired with the matching dev-only Dagster image
   target, and still needs deployed smoke evidence before it should become part
   of the normal Gitflow runtime.
+- Mounted filesystem capacity on the Postgres root EBS volume remains an
+  operator-verified boundary after root-volume resize. The deployed tests check
+  EBS metadata only until a read-only host-level check is added.
 
 ## Related docs
 
@@ -141,6 +148,7 @@ live proof for that parameter-type change.
   - `infrastructure/aws-pulumi/components/iam_roles.py`
   - `infrastructure/aws-pulumi/components/marimo.py`
   - `infrastructure/aws-pulumi/components/postgres.py`
+  - `infrastructure/aws-pulumi/components/postgres_settings.py`
   - `infrastructure/aws-pulumi/components/s3_buckets.py`
   - `infrastructure/aws-pulumi/components/security_groups.py`
   - `infrastructure/aws-pulumi/components/vpc.py`
