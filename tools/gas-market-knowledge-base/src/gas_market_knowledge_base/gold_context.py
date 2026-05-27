@@ -8,10 +8,13 @@ from pathlib import Path
 from typing import cast
 from urllib.parse import unquote, urlparse
 
-from gas_market_knowledge_base.silver_chunks import default_silver_index_path
-from gas_market_knowledge_base.source_manifest import subproject_root
+from gas_market_knowledge_base.corpus_paths import (
+    default_gold_dir,
+    default_silver_index_path,
+    display_path,
+    path_from_display,
+)
 
-GOLD_RELATIVE_PATH = Path("generated/gold")
 GOLD_SCHEMA_VERSION = 1
 
 _FRONTMATTER_PREFIX = "---\n"
@@ -59,11 +62,6 @@ class GoldContextValidationResult:
         return len(self.errors)
 
 
-def default_gold_dir() -> Path:
-    """Return the default gold Market context directory."""
-    return subproject_root() / GOLD_RELATIVE_PATH
-
-
 def gold_dir_for_index_path(index_path: Path) -> Path:
     """Return the gold directory beside a silver chunk index path."""
     try:
@@ -76,21 +74,22 @@ def gold_dir_for_index_path(index_path: Path) -> Path:
 def validate_gold_context(
     *,
     gold_dir: Path | None = None,
-    index_path: Path = default_silver_index_path(),
+    index_path: Path | None = None,
 ) -> GoldContextValidationResult:
     """Validate gold Market context pages against the silver chunk index."""
-    effective_gold_dir = gold_dir or gold_dir_for_index_path(index_path)
+    effective_index_path = index_path or default_silver_index_path()
+    effective_gold_dir = gold_dir or gold_dir_for_index_path(effective_index_path)
     page_paths = _gold_page_paths(effective_gold_dir)
     if not page_paths:
         return GoldContextValidationResult(
             gold_dir=effective_gold_dir,
-            index_path=index_path,
+            index_path=effective_index_path,
             page_count=0,
             glossary_page_count=0,
             errors=(),
         )
 
-    chunk_rows, chunk_errors = _load_chunk_rows(index_path)
+    chunk_rows, chunk_errors = _load_chunk_rows(effective_index_path)
     chunk_rows_by_id = {
         cast(str, row["chunk_id"]): row
         for row in chunk_rows
@@ -152,7 +151,7 @@ def validate_gold_context(
 
     return GoldContextValidationResult(
         gold_dir=effective_gold_dir,
-        index_path=index_path,
+        index_path=effective_index_path,
         page_count=len(page_paths),
         glossary_page_count=len(glossary_pages),
         errors=tuple(errors),
@@ -473,15 +472,8 @@ def _string_sequence(value: object) -> tuple[str, ...]:
 
 
 def _display_path(path: Path) -> str:
-    resolved_path = path.resolve()
-    root = subproject_root().resolve()
-    if resolved_path.is_relative_to(root):
-        return resolved_path.relative_to(root).as_posix()
-    return path.as_posix()
+    return display_path(path)
 
 
 def _path_from_display(path_text: str) -> Path:
-    path = Path(path_text)
-    if path.is_absolute():
-        return path
-    return subproject_root() / path
+    return path_from_display(path_text)

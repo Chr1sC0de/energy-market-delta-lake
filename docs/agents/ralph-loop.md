@@ -1703,9 +1703,10 @@ make unit-test
 make run-prek
 ```
 
-Generated corpus Markdown under `tools/gas-market-knowledge-base/generated/` is
-artifact output rather than maintained router documentation, so it does not
-trigger the root doc **Commit check**.
+Generated corpus Markdown under `ENERGY_MARKET_CORPUS_ROOT` or an explicit
+`tools/gas-market-knowledge-base/generated/` path is artifact output rather
+than maintained router documentation, so it does not trigger the root doc
+**Commit check**.
 
 For root docs/config or cross-**Subproject** changes, Ralph runs:
 

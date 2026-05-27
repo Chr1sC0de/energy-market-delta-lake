@@ -29,6 +29,16 @@ def test_cli_help_renders() -> None:
     assert "--version" in result.output
 
 
+def test_generated_path_help_mentions_corpus_root_env() -> None:
+    result = CliRunner().invoke(main, ["validate", "--help"])
+    compact_output = result.output.replace("\n", "").replace(" ", "")
+
+    assert result.exit_code == 0
+    assert "ENERGY_MARKET_CORPUS_ROOT" in result.output
+    assert "gas-market/silver/index/chunks.jsonl" in compact_output
+    assert "gas-market/gold" in compact_output
+
+
 def test_runtime_imports_do_not_require_s3_type_stubs() -> None:
     script = """
 import builtins

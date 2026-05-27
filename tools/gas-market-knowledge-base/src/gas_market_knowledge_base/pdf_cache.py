@@ -13,7 +13,7 @@ from urllib.parse import ParseResult, unquote, urlparse
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-from gas_market_knowledge_base.source_manifest import (
+from gas_market_knowledge_base.corpus_paths import (
     default_source_manifest_path,
     subproject_root,
 )
@@ -187,13 +187,15 @@ def load_source_pdf_manifest(path: Path) -> SourcePdfManifest:
 
 def fetch_pdf_cache(
     *,
-    manifest_path: Path = default_source_manifest_path(),
-    cache_dir: Path = default_pdf_cache_dir(),
+    manifest_path: Path | None = None,
+    cache_dir: Path | None = None,
     archive_reader: ArchiveObjectReader | None = None,
 ) -> PdfCacheResult:
     """Populate the local PDF cache from source manifest archive objects."""
-    manifest = load_source_pdf_manifest(manifest_path)
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    effective_manifest_path = manifest_path or default_source_manifest_path()
+    effective_cache_dir = cache_dir or default_pdf_cache_dir()
+    manifest = load_source_pdf_manifest(effective_manifest_path)
+    effective_cache_dir.mkdir(parents=True, exist_ok=True)
 
     reader = archive_reader or DefaultArchiveObjectReader()
     errors = list(manifest.errors)
@@ -203,7 +205,10 @@ def fetch_pdf_cache(
     invalid_cache_entry_count = 0
 
     for entry in manifest.entries:
-        target_path = pdf_cache_path(entry.content_sha256, cache_dir=cache_dir)
+        target_path = pdf_cache_path(
+            entry.content_sha256,
+            cache_dir=effective_cache_dir,
+        )
         has_invalid_cache_entry = False
         if target_path.exists():
             try:
@@ -247,7 +252,7 @@ def fetch_pdf_cache(
 
     return PdfCacheResult(
         manifest_path=manifest.path,
-        cache_dir=cache_dir,
+        cache_dir=effective_cache_dir,
         manifest_row_count=manifest.row_count,
         fetchable_row_count=len(manifest.entries),
         reused_count=reused_count,

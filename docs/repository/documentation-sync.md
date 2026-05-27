@@ -53,12 +53,14 @@ The removed legacy `specs/` tree stays out of scope. New maintained design or
 migration docs should live under the maintained documentation paths above and
 carry sync metadata.
 
-ADR [0010](../adr/0010-gas-market-knowledge-base.md) reserves
-`generated/{bronze,silver,gold}` for **Gas market knowledge base** corpus
-artifacts. Those generated text artifacts are not maintained router docs under
-this workflow. The `tools/gas-market-knowledge-base/README.md` Subproject doc
-is maintained, but generated Markdown under that Subproject's `generated/`
-tree remains reviewable corpus output rather than maintained documentation.
+ADR [0010](../adr/0010-gas-market-knowledge-base.md) reserves the external
+`$ENERGY_MARKET_CORPUS_ROOT/gas-market/{bronze,silver,gold}` tree for
+**Gas market knowledge base** corpus artifacts. Those generated text artifacts
+are not maintained router docs under this workflow. The
+`tools/gas-market-knowledge-base/README.md` Subproject doc is maintained, but
+generated Markdown under that Subproject's explicit `generated/` tree and under
+the external corpus root remains corpus output rather than maintained
+documentation.
 
 ## Sync metadata contract
 
@@ -120,8 +122,8 @@ secret-scan tooling through:
 prek run -a
 ```
 
-The root Markdown hooks keep curated generated gold **Market context** Markdown
-lintable, but exclude
+The root Markdown hooks keep explicitly tracked generated gold **Market
+context** Markdown lintable, but exclude
 `tools/gas-market-knowledge-base/generated/silver/**`. Silver artifacts are raw
 corpus extraction output, so `rumdl` and `rumdl-fmt` must not lint or rewrite
 them during the root **Commit check**.
@@ -314,17 +316,23 @@ way:
   Subproject, bronze source manifest command, PDF archive cache fetcher,
   Docling-based silver document extraction, Docling Hybrid chunks, and silver
   chunk index validation were introduced with raw PDFs kept in S3 or the
-  ignored `.cache/pdfs/` local cache. Text artifacts live under
-  `generated/{bronze,silver,gold}`, and cited gold **Market context** pages are
-  corpus artifacts rather than maintained router docs. The decision lives in ADR
+  ignored `.cache/pdfs/` local cache. Text artifacts live under the Gas market
+  corpus root, and cited gold **Market context** pages are corpus artifacts
+  rather than maintained router docs. The decision lives in ADR
   [0010](../adr/0010-gas-market-knowledge-base.md), and the Subproject policy
   lives in the
   [Subproject README](../../tools/gas-market-knowledge-base/README.md).
 - #241: The **Gas market knowledge base** Subproject added an archive-prefix
   completeness audit for comparing configured archive PDF objects with
-  `generated/bronze/source_manifest.jsonl`, including fixture listing mode for
-  the **Unit test** lane. The command surface and QA expectation live in the
+  the bronze source manifest, including fixture listing mode for the
+  **Unit test** lane. The command surface and QA expectation live in the
   [Subproject README](../../tools/gas-market-knowledge-base/README.md).
+- #266: The **Gas market knowledge base** Subproject externalized generated
+  bronze, silver, and gold corpus defaults under
+  `$ENERGY_MARKET_CORPUS_ROOT/gas-market/{bronze,silver,gold}`, with an unset
+  or empty environment variable falling back to
+  `~/energy-market-delta-lake-artifacts/corpora`. Existing repo
+  `generated/` artifacts remain corpus output, not maintained router docs.
 
 ## Search commands
 
@@ -397,6 +405,7 @@ These commands support the intended flow:
   - `tools/gas-market-knowledge-base/pyproject.toml`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/archive_audit.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_paths.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/docling_adapter.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/gold_context.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/pdf_cache.py`
@@ -405,6 +414,7 @@ These commands support the intended flow:
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/source_manifest.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_archive_audit.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_cli.py`
+  - `tools/gas-market-knowledge-base/tests/unit/test_corpus_paths.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_gold_context.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_pdf_cache.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_precommit_policy.py`

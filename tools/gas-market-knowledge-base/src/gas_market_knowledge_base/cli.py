@@ -10,6 +10,13 @@ from gas_market_knowledge_base.archive_audit import (
     audit_archive_prefix,
     default_archive_prefix_uri,
 )
+from gas_market_knowledge_base.corpus_paths import (
+    CORPUS_ROOT_ENV_VAR,
+    default_silver_chunks_dir,
+    default_silver_documents_dir,
+    default_silver_index_path,
+    default_source_manifest_path,
+)
 from gas_market_knowledge_base.gold_context import validate_gold_context
 from gas_market_knowledge_base.pdf_cache import (
     PdfCacheInputError,
@@ -21,15 +28,12 @@ from gas_market_knowledge_base.silver_chunks import (
     HybridChunkExtractor,
     SilverChunkInputError,
     build_silver_index,
-    default_silver_chunks_dir,
-    default_silver_index_path,
     validate_silver_index,
 )
 from gas_market_knowledge_base.silver_documents import (
     DEFAULT_MIN_TEXT_CHARS,
     MarkdownExtractor,
     SilverExtractionInputError,
-    default_silver_documents_dir,
     extract_silver_documents,
 )
 from gas_market_knowledge_base.source_manifest import (
@@ -37,11 +41,20 @@ from gas_market_knowledge_base.source_manifest import (
     ManifestInputError,
     ManifestValidationError,
     default_metadata_table_uri,
-    default_source_manifest_path,
     load_metadata_rows_from_delta,
     load_metadata_rows_from_json,
     sync_source_manifest,
 )
+
+_SOURCE_MANIFEST_DEFAULT_HELP = (
+    f"${CORPUS_ROOT_ENV_VAR}/gas-market/bronze/source_manifest.jsonl"
+)
+_SILVER_DOCUMENTS_DEFAULT_HELP = f"${CORPUS_ROOT_ENV_VAR}/gas-market/silver/documents"
+_SILVER_CHUNKS_DEFAULT_HELP = f"${CORPUS_ROOT_ENV_VAR}/gas-market/silver/chunks"
+_SILVER_INDEX_DEFAULT_HELP = (
+    f"${CORPUS_ROOT_ENV_VAR}/gas-market/silver/index/chunks.jsonl"
+)
+_GOLD_DEFAULT_HELP = f"${CORPUS_ROOT_ENV_VAR}/gas-market/gold"
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
@@ -72,26 +85,26 @@ def main() -> None:
 @click.option(
     "--output-path",
     type=click.Path(dir_okay=False, path_type=Path),
-    default=default_source_manifest_path(),
-    show_default=True,
+    show_default=_SOURCE_MANIFEST_DEFAULT_HELP,
     help="JSONL source manifest path to write.",
 )
 def sync_manifest(
     environment: str,
     metadata_path: Path | None,
     table_uri: str | None,
-    output_path: Path,
+    output_path: Path | None,
 ) -> None:
-    """Build the tracked bronze PDF source manifest."""
+    """Build the bronze PDF source manifest."""
     try:
         effective_table_uri = table_uri or default_metadata_table_uri(environment)
         if metadata_path is None:
             metadata_rows = load_metadata_rows_from_delta(effective_table_uri)
         else:
             metadata_rows = load_metadata_rows_from_json(metadata_path)
+        effective_output_path = output_path or default_source_manifest_path()
         result = sync_source_manifest(
             metadata_rows,
-            output_path=output_path,
+            output_path=effective_output_path,
             environment=environment,
         )
     except (ManifestInputError, ManifestValidationError) as e:
@@ -135,23 +148,23 @@ def sync_manifest(
 @click.option(
     "--manifest-path",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    default=default_source_manifest_path(),
-    show_default=True,
+    show_default=_SOURCE_MANIFEST_DEFAULT_HELP,
     help="Bronze source manifest JSONL path to audit.",
 )
 def audit_archive_prefix_command(
     environment: str,
     archive_prefix: str | None,
     listing_path: Path | None,
-    manifest_path: Path,
+    manifest_path: Path | None,
 ) -> None:
     """Audit archive-prefix PDF completeness against the source manifest."""
     try:
         effective_archive_prefix = archive_prefix or default_archive_prefix_uri(
             environment
         )
+        effective_manifest_path = manifest_path or default_source_manifest_path()
         result = audit_archive_prefix(
-            manifest_path=manifest_path,
+            manifest_path=effective_manifest_path,
             archive_prefix_uri=effective_archive_prefix,
             listing_path=listing_path,
         )
@@ -180,8 +193,7 @@ def audit_archive_prefix_command(
 @click.option(
     "--manifest-path",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    default=default_source_manifest_path(),
-    show_default=True,
+    show_default=_SOURCE_MANIFEST_DEFAULT_HELP,
     help="Bronze source manifest JSONL path to read.",
 )
 @click.option(
@@ -191,10 +203,14 @@ def audit_archive_prefix_command(
     show_default=True,
     help="Ignored local PDF cache directory to populate.",
 )
-def fetch_pdfs(manifest_path: Path, cache_dir: Path) -> None:
+def fetch_pdfs(manifest_path: Path | None, cache_dir: Path) -> None:
     """Populate the ignored local PDF cache from archive objects."""
     try:
-        result = fetch_pdf_cache(manifest_path=manifest_path, cache_dir=cache_dir)
+        effective_manifest_path = manifest_path or default_source_manifest_path()
+        result = fetch_pdf_cache(
+            manifest_path=effective_manifest_path,
+            cache_dir=cache_dir,
+        )
     except PdfCacheInputError as e:
         click.echo(f"Error: {e}", err=True)
         raise SystemExit(1) from e
@@ -223,8 +239,7 @@ def fetch_pdfs(manifest_path: Path, cache_dir: Path) -> None:
 @click.option(
     "--manifest-path",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    default=default_source_manifest_path(),
-    show_default=True,
+    show_default=_SOURCE_MANIFEST_DEFAULT_HELP,
     help="Bronze source manifest JSONL path to read.",
 )
 @click.option(
@@ -237,8 +252,7 @@ def fetch_pdfs(manifest_path: Path, cache_dir: Path) -> None:
 @click.option(
     "--output-dir",
     type=click.Path(file_okay=False, path_type=Path),
-    default=default_silver_documents_dir(),
-    show_default=True,
+    show_default=_SILVER_DOCUMENTS_DEFAULT_HELP,
     help="Silver document Markdown directory to write.",
 )
 @click.option(
@@ -249,18 +263,20 @@ def fetch_pdfs(manifest_path: Path, cache_dir: Path) -> None:
     help="Minimum extracted non-whitespace text characters required per document.",
 )
 def extract_silver(
-    manifest_path: Path,
+    manifest_path: Path | None,
     cache_dir: Path,
-    output_dir: Path,
+    output_dir: Path | None,
     min_text_chars: int,
 ) -> None:
     """Convert cached PDFs into silver document Markdown."""
     try:
+        effective_manifest_path = manifest_path or default_source_manifest_path()
+        effective_output_dir = output_dir or default_silver_documents_dir()
         result = extract_silver_documents(
             extractor=_default_markdown_extractor(),
-            manifest_path=manifest_path,
+            manifest_path=effective_manifest_path,
             cache_dir=cache_dir,
-            output_dir=output_dir,
+            output_dir=effective_output_dir,
             min_text_chars=min_text_chars,
         )
     except SilverExtractionInputError as e:
@@ -291,8 +307,7 @@ def extract_silver(
 @click.option(
     "--manifest-path",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    default=default_source_manifest_path(),
-    show_default=True,
+    show_default=_SOURCE_MANIFEST_DEFAULT_HELP,
     help="Bronze source manifest JSONL path to read.",
 )
 @click.option(
@@ -305,22 +320,19 @@ def extract_silver(
 @click.option(
     "--document-dir",
     type=click.Path(file_okay=False, path_type=Path),
-    default=default_silver_documents_dir(),
-    show_default=True,
+    show_default=_SILVER_DOCUMENTS_DEFAULT_HELP,
     help="Silver document Markdown directory produced by extract-silver.",
 )
 @click.option(
     "--chunk-dir",
     type=click.Path(file_okay=False, path_type=Path),
-    default=default_silver_chunks_dir(),
-    show_default=True,
+    show_default=_SILVER_CHUNKS_DEFAULT_HELP,
     help="Silver chunk Markdown directory to write.",
 )
 @click.option(
     "--index-path",
     type=click.Path(dir_okay=False, path_type=Path),
-    default=default_silver_index_path(),
-    show_default=True,
+    show_default=_SILVER_INDEX_DEFAULT_HELP,
     help="Silver chunk index JSONL path to write.",
 )
 @click.option(
@@ -331,22 +343,26 @@ def extract_silver(
     help="Minimum extracted text setting used by extract-silver.",
 )
 def build_index(
-    manifest_path: Path,
+    manifest_path: Path | None,
     cache_dir: Path,
-    document_dir: Path,
-    chunk_dir: Path,
-    index_path: Path,
+    document_dir: Path | None,
+    chunk_dir: Path | None,
+    index_path: Path | None,
     min_text_chars: int,
 ) -> None:
     """Build silver Docling Hybrid chunks and the retrieval index."""
     try:
+        effective_manifest_path = manifest_path or default_source_manifest_path()
+        effective_document_dir = document_dir or default_silver_documents_dir()
+        effective_chunk_dir = chunk_dir or default_silver_chunks_dir()
+        effective_index_path = index_path or default_silver_index_path()
         result = build_silver_index(
             extractor=_default_hybrid_chunk_extractor(),
-            manifest_path=manifest_path,
+            manifest_path=effective_manifest_path,
             cache_dir=cache_dir,
-            document_dir=document_dir,
-            chunk_dir=chunk_dir,
-            index_path=index_path,
+            document_dir=effective_document_dir,
+            chunk_dir=effective_chunk_dir,
+            index_path=effective_index_path,
             min_text_chars=min_text_chars,
         )
     except (SilverChunkInputError, SilverExtractionInputError) as e:
@@ -380,37 +396,34 @@ def build_index(
 @click.option(
     "--manifest-path",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    default=default_source_manifest_path(),
-    show_default=True,
+    show_default=_SOURCE_MANIFEST_DEFAULT_HELP,
     help="Bronze source manifest JSONL path to read.",
 )
 @click.option(
     "--document-dir",
     type=click.Path(file_okay=False, path_type=Path),
-    default=default_silver_documents_dir(),
-    show_default=True,
+    show_default=_SILVER_DOCUMENTS_DEFAULT_HELP,
     help="Silver document Markdown directory produced by extract-silver.",
 )
 @click.option(
     "--chunk-dir",
     type=click.Path(file_okay=False, path_type=Path),
-    default=default_silver_chunks_dir(),
-    show_default=True,
+    show_default=_SILVER_CHUNKS_DEFAULT_HELP,
     help="Silver chunk Markdown directory to validate.",
 )
 @click.option(
     "--index-path",
     type=click.Path(dir_okay=False, path_type=Path),
-    default=default_silver_index_path(),
-    show_default=True,
+    show_default=_SILVER_INDEX_DEFAULT_HELP,
     help="Silver chunk index JSONL path to validate.",
 )
 @click.option(
     "--gold-dir",
     type=click.Path(file_okay=False, path_type=Path),
+    show_default=_GOLD_DEFAULT_HELP,
     help=(
-        "Gold Market context directory to validate. Defaults to the generated/gold "
-        "directory beside --index-path."
+        "Gold Market context directory to validate. Defaults to the gold directory "
+        "beside --index-path."
     ),
 )
 @click.option(
@@ -421,27 +434,34 @@ def build_index(
     help="Minimum extracted text setting used by extract-silver.",
 )
 def validate(
-    manifest_path: Path,
-    document_dir: Path,
-    chunk_dir: Path,
-    index_path: Path,
+    manifest_path: Path | None,
+    document_dir: Path | None,
+    chunk_dir: Path | None,
+    index_path: Path | None,
     gold_dir: Path | None,
     min_text_chars: int,
 ) -> None:
     """Validate silver chunks, retrieval index, and gold citations."""
+    effective_manifest_path = manifest_path or default_source_manifest_path()
+    effective_document_dir = document_dir or default_silver_documents_dir()
+    effective_chunk_dir = chunk_dir or default_silver_chunks_dir()
+    effective_index_path = index_path or default_silver_index_path()
     try:
         silver_result = validate_silver_index(
-            manifest_path=manifest_path,
-            document_dir=document_dir,
-            chunk_dir=chunk_dir,
-            index_path=index_path,
+            manifest_path=effective_manifest_path,
+            document_dir=effective_document_dir,
+            chunk_dir=effective_chunk_dir,
+            index_path=effective_index_path,
             min_text_chars=min_text_chars,
         )
     except (SilverChunkInputError, SilverExtractionInputError) as e:
         click.echo(f"Error: {e}", err=True)
         raise SystemExit(1) from e
 
-    gold_result = validate_gold_context(gold_dir=gold_dir, index_path=index_path)
+    gold_result = validate_gold_context(
+        gold_dir=gold_dir,
+        index_path=effective_index_path,
+    )
     errors = (*silver_result.errors, *gold_result.errors)
     summary = (
         f"summary: manifest_rows={silver_result.manifest_row_count} "

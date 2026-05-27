@@ -10,11 +10,21 @@ from typing import cast
 
 import polars as pl
 
+from gas_market_knowledge_base.corpus_paths import (
+    SOURCE_MANIFEST_RELATIVE_PATH as SOURCE_MANIFEST_RELATIVE_PATH,
+)
+from gas_market_knowledge_base.corpus_paths import (
+    default_generated_paths,
+    default_source_manifest_path,
+)
+from gas_market_knowledge_base.corpus_paths import (
+    subproject_root as subproject_root,
+)
+
 AEMO_GAS_DOCUMENTS_PREFIX = "bronze/aemo_gas_documents"
 BRONZE_AEMO_GAS_DOCUMENT_SOURCES_TABLE_NAME = "bronze_aemo_gas_document_sources"
 DEFAULT_ENVIRONMENT = "dev"
 DEFAULT_NAME_PREFIX = "energy-market"
-SOURCE_MANIFEST_RELATIVE_PATH = Path("generated/bronze/source_manifest.jsonl")
 MANIFEST_SCHEMA_VERSION = 1
 MAX_DOCUMENT_IDENTITY_PART_CHARS = 96
 DOCUMENT_IDENTITY_HASH_CHARS = 12
@@ -109,16 +119,6 @@ class SourceManifestResult:
     summary: SourceManifestSummary
 
 
-def subproject_root() -> Path:
-    """Return the Gas market knowledge base Subproject root."""
-    return Path(__file__).resolve().parents[2]
-
-
-def default_source_manifest_path() -> Path:
-    """Return the default tracked bronze source manifest path."""
-    return subproject_root() / SOURCE_MANIFEST_RELATIVE_PATH
-
-
 def environment_buckets(
     environment: str = DEFAULT_ENVIRONMENT,
     *,
@@ -182,19 +182,23 @@ def load_metadata_rows_from_json(path: Path) -> list[dict[str, object]]:
 def sync_source_manifest(
     metadata_rows: Iterable[MetadataRow],
     *,
-    output_path: Path = default_source_manifest_path(),
+    output_path: Path | None = None,
     environment: str = DEFAULT_ENVIRONMENT,
     name_prefix: str = DEFAULT_NAME_PREFIX,
 ) -> SourceManifestResult:
-    """Build and write the tracked bronze source manifest JSONL file."""
+    """Build and write the bronze source manifest JSONL file."""
+    effective_output_path = output_path or default_source_manifest_path()
     manifest_rows, summary = build_source_manifest_rows(
         metadata_rows,
         environment=environment,
         name_prefix=name_prefix,
     )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(dump_source_manifest_jsonl(manifest_rows), encoding="utf-8")
-    return SourceManifestResult(output_path=output_path, summary=summary)
+    effective_output_path.parent.mkdir(parents=True, exist_ok=True)
+    effective_output_path.write_text(
+        dump_source_manifest_jsonl(manifest_rows),
+        encoding="utf-8",
+    )
+    return SourceManifestResult(output_path=effective_output_path, summary=summary)
 
 
 def build_source_manifest_rows(
@@ -314,15 +318,7 @@ def _manifest_row(
 
 
 def _generated_paths(document_identity: str) -> dict[str, str]:
-    silver_document_base_path = f"generated/silver/documents/{document_identity}"
-    silver_base_path = f"generated/silver/chunks/{document_identity}"
-    gold_base_path = f"generated/gold/{document_identity}"
-    return {
-        "silver_document_markdown": f"{silver_document_base_path}.md",
-        "silver_chunks": silver_base_path,
-        "silver_chunk_index": "generated/silver/index/chunks.jsonl",
-        "gold_context": f"{gold_base_path}.md",
-    }
+    return default_generated_paths(document_identity)
 
 
 def _document_identity(

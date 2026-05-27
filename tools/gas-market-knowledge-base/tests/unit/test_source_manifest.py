@@ -6,6 +6,10 @@ import pytest
 from click.testing import CliRunner
 
 from gas_market_knowledge_base.cli import main
+from gas_market_knowledge_base.corpus_paths import (
+    CORPUS_ROOT_ENV_VAR,
+    default_generated_paths,
+)
 from gas_market_knowledge_base.source_manifest import (
     ManifestValidationError,
     build_source_manifest_rows,
@@ -61,7 +65,11 @@ def test_default_metadata_table_uri_uses_dev_energy_market_buckets() -> None:
     )
 
 
-def test_source_manifest_filters_counts_and_sorts_fixture_rows(tmp_path: Path) -> None:
+def test_source_manifest_filters_counts_and_sorts_fixture_rows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(CORPUS_ROOT_ENV_VAR, str(tmp_path / "corpora"))
     output_path = tmp_path / "source_manifest.jsonl"
     rows = [
         _metadata_row(
@@ -116,16 +124,9 @@ def test_source_manifest_filters_counts_and_sorts_fixture_rows(tmp_path: Path) -
     assert isinstance(archive_uri, str)
     assert archive_uri.startswith("s3://dev-energy-market-archive/")
     assert manifest_rows[0]["content_length"] == 1234
-    assert manifest_rows[0]["generated_paths"] == {
-        "silver_document_markdown": (
-            f"generated/silver/documents/gbb/gbb-alpha-guide/sha256-{'a' * 64}.md"
-        ),
-        "silver_chunks": (
-            f"generated/silver/chunks/gbb/gbb-alpha-guide/sha256-{'a' * 64}"
-        ),
-        "silver_chunk_index": "generated/silver/index/chunks.jsonl",
-        "gold_context": (f"generated/gold/gbb/gbb-alpha-guide/sha256-{'a' * 64}.md"),
-    }
+    assert manifest_rows[0]["generated_paths"] == default_generated_paths(
+        f"gbb/gbb-alpha-guide/sha256-{'a' * 64}"
+    )
     assert result.summary.as_dict() == {
         "environment": "dev",
         "metadata_row_count": 6,
@@ -136,7 +137,11 @@ def test_source_manifest_filters_counts_and_sorts_fixture_rows(tmp_path: Path) -
     }
 
 
-def test_source_manifest_bounds_long_document_identity_path_parts() -> None:
+def test_source_manifest_bounds_long_document_identity_path_parts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(CORPUS_ROOT_ENV_VAR, str(tmp_path / "corpora"))
     long_family_id = (
         "dwgm__wholesale-market-operations-procedures-this-document-contains-"
         "the-accreditation-procedures-administered-pricing-procedures-capacity-"
@@ -151,14 +156,9 @@ def test_source_manifest_bounds_long_document_identity_path_parts() -> None:
     expected_digest = hashlib.sha256(long_family_id.encode("utf-8")).hexdigest()[:12]
     assert len(identity_parts[1]) == 96
     assert identity_parts[1].endswith(f"-{expected_digest}")
-    assert rows[0]["generated_paths"] == {
-        "silver_document_markdown": (
-            f"generated/silver/documents/{rows[0]['document_identity']}.md"
-        ),
-        "silver_chunks": f"generated/silver/chunks/{rows[0]['document_identity']}",
-        "silver_chunk_index": "generated/silver/index/chunks.jsonl",
-        "gold_context": f"generated/gold/{rows[0]['document_identity']}.md",
-    }
+    assert rows[0]["generated_paths"] == default_generated_paths(
+        str(rows[0]["document_identity"])
+    )
 
 
 def test_source_manifest_requires_metadata_contract_fields() -> None:
@@ -219,6 +219,23 @@ def test_sync_manifest_command_writes_fixture_manifest(tmp_path: Path) -> None:
     assert "wrote 1 manifest rows" in result.output
     assert "excluded_without_content_sha256=1" in result.output
     assert len(_jsonl_rows(output_path)) == 1
+
+
+def test_sync_manifest_explicit_output_path_overrides_corpus_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    corpus_root = tmp_path / "corpora"
+    output_path = tmp_path / "explicit" / "source_manifest.jsonl"
+    monkeypatch.setenv(CORPUS_ROOT_ENV_VAR, str(corpus_root))
+
+    result = sync_source_manifest([_metadata_row()], output_path=output_path)
+
+    assert result.output_path == output_path
+    assert output_path.exists()
+    assert not (
+        corpus_root / "gas-market" / "bronze" / "source_manifest.jsonl"
+    ).exists()
 
 
 def test_sync_manifest_command_reports_validation_errors(tmp_path: Path) -> None:

@@ -9,16 +9,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from gas_market_knowledge_base.corpus_paths import (
+    default_silver_documents_dir,
+    default_source_manifest_path,
+    display_path,
+)
 from gas_market_knowledge_base.pdf_cache import (
     default_pdf_cache_dir,
     pdf_cache_path,
 )
-from gas_market_knowledge_base.source_manifest import (
-    default_source_manifest_path,
-    subproject_root,
-)
 
-SILVER_DOCUMENTS_RELATIVE_PATH = Path("generated/silver/documents")
 EXTRACTION_SCHEMA_VERSION = 1
 EXTRACTION_TOOL = "docling"
 DEFAULT_MIN_TEXT_CHARS = 80
@@ -117,11 +117,6 @@ class SilverDocumentExtractionResult:
         return len(self.errors)
 
 
-def default_silver_documents_dir() -> Path:
-    """Return the default silver document Markdown output directory."""
-    return subproject_root() / SILVER_DOCUMENTS_RELATIVE_PATH
-
-
 def extraction_settings(*, min_text_chars: int) -> dict[str, object]:
     """Return deterministic extraction settings for silver document Markdown."""
     if min_text_chars < 1:
@@ -162,10 +157,12 @@ def silver_document_path(
 def load_source_document_manifest(
     path: Path,
     *,
-    cache_dir: Path = default_pdf_cache_dir(),
-    output_dir: Path = default_silver_documents_dir(),
+    cache_dir: Path | None = None,
+    output_dir: Path | None = None,
 ) -> SourceDocumentManifest:
     """Load extraction-ready document entries from a bronze source manifest."""
+    effective_cache_dir = cache_dir or default_pdf_cache_dir()
+    effective_output_dir = output_dir or default_silver_documents_dir()
     if not path.exists():
         raise SilverExtractionInputError(f"source manifest not found: {path}")
 
@@ -188,8 +185,8 @@ def load_source_document_manifest(
         entry, row_errors = _source_document_entry(
             payload,
             line_number=line_number,
-            cache_dir=cache_dir,
-            output_dir=output_dir,
+            cache_dir=effective_cache_dir,
+            output_dir=effective_output_dir,
         )
         if entry is not None:
             if entry.document_identity in seen_document_identities:
@@ -210,18 +207,21 @@ def load_source_document_manifest(
 def extract_silver_documents(
     *,
     extractor: MarkdownExtractor,
-    manifest_path: Path = default_source_manifest_path(),
-    cache_dir: Path = default_pdf_cache_dir(),
-    output_dir: Path = default_silver_documents_dir(),
+    manifest_path: Path | None = None,
+    cache_dir: Path | None = None,
+    output_dir: Path | None = None,
     min_text_chars: int = DEFAULT_MIN_TEXT_CHARS,
 ) -> SilverDocumentExtractionResult:
     """Convert cached PDFs from the bronze manifest into silver Markdown."""
+    effective_manifest_path = manifest_path or default_source_manifest_path()
+    effective_cache_dir = cache_dir or default_pdf_cache_dir()
+    effective_output_dir = output_dir or default_silver_documents_dir()
     settings = extraction_settings(min_text_chars=min_text_chars)
     settings_sha256 = extraction_settings_sha256(settings)
     manifest = load_source_document_manifest(
-        manifest_path,
-        cache_dir=cache_dir,
-        output_dir=output_dir,
+        effective_manifest_path,
+        cache_dir=effective_cache_dir,
+        output_dir=effective_output_dir,
     )
 
     errors = list(manifest.errors)
@@ -274,8 +274,8 @@ def extract_silver_documents(
 
     return SilverDocumentExtractionResult(
         manifest_path=manifest.path,
-        cache_dir=cache_dir,
-        output_dir=output_dir,
+        cache_dir=effective_cache_dir,
+        output_dir=effective_output_dir,
         manifest_row_count=manifest.row_count,
         extractable_row_count=len(manifest.entries),
         extracted_count=extracted_count,
@@ -511,11 +511,7 @@ def _frontmatter_value(value: object) -> object:
 
 
 def _display_path(path: Path) -> str:
-    resolved_path = path.resolve()
-    root = subproject_root().resolve()
-    if resolved_path.is_relative_to(root):
-        return resolved_path.relative_to(root).as_posix()
-    return path.as_posix()
+    return display_path(path)
 
 
 def _write_silver_document(path: Path, content: str) -> None:
