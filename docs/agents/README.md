@@ -23,8 +23,9 @@ Use this page as the agent documentation map. The imperative policy lives in
   **Ready issue refresh**, **Exploratory acceptance review**, **Promotion**, and
   **Post-promotion review**, including **Post-Promotion deployment
   classification**, source-table archive replay recovery, deploy-repair issue
-  creation after failed checkpointed deployment evidence, and checkpointed
-  Operator runs:
+  creation after failed checkpointed deployment evidence, adaptive Step size and
+  Stiffness ratio vocabulary, verified-only post-push metadata recovery, and
+  checkpointed Operator runs:
   [ralph-loop.md](ralph-loop.md)
 - GitHub Issue queue rules:
   [issue-tracker.md](issue-tracker.md)
@@ -32,6 +33,8 @@ Use this page as the agent documentation map. The imperative policy lives in
   [triage-labels.md](triage-labels.md)
 - Domain doc layout:
   [domain.md](domain.md)
+- Adaptive Ralph vocabulary and verified-only recovery boundary:
+  ADR [0011](../adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md)
 - **Gas market knowledge base** language and architecture:
   ADR [0010](../adr/0010-gas-market-knowledge-base.md) and the
   [Subproject README](../../tools/gas-market-knowledge-base/README.md).
@@ -110,6 +113,7 @@ Use this page as the agent documentation map. The imperative policy lives in
   - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
   - `docs/adr/0010-gas-market-knowledge-base.md`
+  - `docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

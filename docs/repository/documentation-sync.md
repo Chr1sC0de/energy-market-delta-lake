@@ -231,6 +231,13 @@ way:
   mutation runs, active Exploratory workers are allowed to finish, and
   **Ready issue refresh**, post-push metadata, or environment fatal stops record
   `drain_scheduler.fatal_stop` recovery evidence in child run manifests.
+- #283: Ralph adaptive vocabulary defines Step size, Stiffness ratio, Residual
+  work, `hard_stop`, `gated_retry`, and `residual_update` without exposing the
+  numerical ODE metaphor. The initial stiffness thresholds and verified-only
+  post-push metadata recovery boundary live in ADR
+  [0011](../adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md), with
+  operator-facing behavior in
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
 - #127: Successful **Promotion** verified issue closures may trigger **Ready
   issue refresh** before the next ready issue claim. The checkpointed Operator
   loop enables post-Promotion refresh by default, direct `--promote` requires
@@ -375,6 +382,7 @@ These commands support the intended flow:
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
   - `docs/adr/0010-gas-market-knowledge-base.md`
+  - `docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md`
   - `tests/test_documentation_qa_ratchet.py`
   - `.pre-commit-config.yaml`
   - `.gitleaksignore`

@@ -48,8 +48,8 @@ Subproject docs for detailed commands, defaults, diagrams, and behavior.
   **Issue completion review**, **Ready issue refresh**, **Exploratory
   acceptance review**, checkpointed Operator runs, **Promotion**,
   **Post-promotion review**, **Post-Promotion deployment classification**, and
-  source-table archive replay recovery and deploy-repair issue creation
-  behavior.
+  adaptive Ralph vocabulary, verified-only recovery, source-table archive replay
+  recovery, and deploy-repair issue creation behavior.
 
 ## Sync metadata
 
@@ -65,6 +65,7 @@ Subproject docs for detailed commands, defaults, diagrams, and behavior.
   - `docs/repository/workflow.md`
   - `docs/repository/documentation-sync.md`
   - `docs/adr/0010-gas-market-knowledge-base.md`
+  - `docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md`
   - `backend-services/README.md`
   - `backend-services/dagster-user/aemo-etl/README.md`
   - `infrastructure/aws-pulumi/README.md`

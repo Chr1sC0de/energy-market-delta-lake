@@ -181,6 +181,14 @@ the plan restores `ready-for-agent` without pushing an **Integration target** or
 creating a new **Local integration** commit. After that label restoration,
 normal queue scanning can claim the issue; no priority label or special
 scheduling path is needed.
+Post-push metadata recovery is verified-only. Ralph may repair issue comments,
+labels, body text, or closure only after it verifies that the recorded **Local
+integration**, Exploratory handoff, accepted Exploratory commit, or
+**Promotion** commit reached the expected **Integration target** or promoted
+range with recorded QA evidence. If that verification fails, recovery is a
+`hard_stop`: no automatic Codex retry runs, no per-issue attempt budget is
+consumed, and an operator must inspect the run before changing GitHub Issue
+metadata.
 When no integrated backlog is waiting, unblocked ready work uses the same
 parallel drain scheduler as plain `--drain`. A single Operator cycle may record
 multiple issue checkpoints from serial Gitflow or Trunk attempts and bounded
@@ -236,6 +244,10 @@ Use ADR
 [0005](../adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md)
 for the decision that keeps **Exploratory branches** outside automatic
 **Promotion** until human acceptance evidence reaches `dev`.
+Use ADR
+[0011](../adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md)
+for adaptive Ralph vocabulary, initial stiffness thresholds, and the
+verified-only recovery boundary.
 
 ## Sync metadata
 
@@ -258,6 +270,7 @@ for the decision that keeps **Exploratory branches** outside automatic
   - `docs/agents/triage-labels.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
+  - `docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md`
   - `scripts/ralph.py`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
   - `tools/ralph-loop/src/ralph_loop/state.py`

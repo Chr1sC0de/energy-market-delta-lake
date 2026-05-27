@@ -391,6 +391,13 @@ Use `$ralph-loop inspect failure` or `python3 scripts/ralph.py --inspect-run
 .ralph/runs/...` before changing state. Use recovery only after Ralph verifies
 the recorded published commit is reachable from the expected **Integration
 target**.
+ADR
+[0011](docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md)
+defines `gated_retry`, `hard_stop`, and `residual_update`. Post-push metadata
+recovery is a `residual_update` only after Ralph verifies the expected commit
+and QA evidence. If that verification fails, treat the run as `hard_stop`: do
+not start an automatic Codex retry, do not count a retry against the issue
+attempt budget, and inspect branch plus issue state first.
 
 For an open `agent-failed` issue that Operator status or rollup classifies as
 eligible for pre-push requeue, first run the Ralph-owned dry run:
@@ -494,6 +501,7 @@ Keep failed worktrees unless the maintainer asks for cleanup.
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
+  - `docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

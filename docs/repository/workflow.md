@@ -220,9 +220,9 @@ Ralph internals live in [docs/agents/ralph-loop.md](../agents/ralph-loop.md),
 including **Local integration**, **Delivery mode**, **Integration target**,
 **Issue completion review**, **Ready issue refresh**, **Exploratory acceptance
 review**, checkpointed Operator runs, **Promotion**, **Post-promotion review**,
-**Post-Promotion deployment classification**, source-table archive replay
-recovery guidance, and deploy-repair issue creation after failed checkpointed
-deployment evidence.
+**Post-Promotion deployment classification**, adaptive Ralph vocabulary,
+verified-only recovery, source-table archive replay recovery guidance, and
+deploy-repair issue creation after failed checkpointed deployment evidence.
 
 ## Where to work
 
@@ -319,6 +319,7 @@ and the required `git diff` to `rg` to QA flow, use
   - `infrastructure/aws-pulumi/code_locations.py`
   - `docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md`
   - `docs/adr/0010-gas-market-knowledge-base.md`
+  - `docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md`
   - `tools/gas-market-knowledge-base/README.md`
 - `sync.scope`: `behavior`
 - `sync.qa`:
