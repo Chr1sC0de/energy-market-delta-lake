@@ -58,6 +58,7 @@ MAX_SEARCH_TERMS = 24
 MAX_EVIDENCE_SNIPPETS_PER_FILE = 5
 MAX_SNIPPET_CHARS = 900
 MAX_FILE_READ_CHARS = 640_000
+MIN_SAFE_FEEDBACK_STEP = 0.25
 ASSESSOR_VERDICTS = frozenset({"pass", "weak", "fail"})
 IGNORED_DIRS = frozenset(
     {
@@ -170,6 +171,9 @@ class Thresholds:
     human_review_stiffness: int = 55
     split_stiffness: int = 70
     max_rg_candidate_files: int = DEFAULT_RG_CANDIDATE_FILES
+    ratio_medium: float = 1.5
+    ratio_high: float = 2.5
+    ratio_extreme: float = 4.0
 
 
 @dataclass(frozen=True)
@@ -258,6 +262,12 @@ class StiffnessResult:
     declared_level: str | None
     ignored_terms: tuple[str, ...]
     surface_areas: tuple[str, ...]
+    step_size: float = 1.0
+    safe_feedback_step: float = 1.0
+    hidden_coupling_pressure: float = 1.0
+    ratio: float = 1.0
+    ratio_level: str = "low"
+    recommended_action: str = "ready"
 
 
 def section_body(markdown: str, heading: str) -> str | None:
@@ -1102,10 +1112,225 @@ def stiffness_term_evidence(body: str) -> tuple[tuple[str, ...], tuple[str, ...]
     return tuple(sorted(matched_terms)), tuple(sorted(set(ignored_terms)))
 
 
+def has_expensive_test_lane(qa_text: str) -> bool:
+    return any(
+        term in qa_text
+        for term in ("integration", "end-to-end", "deployed", "push check")
+    )
+
+
+def safe_feedback_step(qa_text: str) -> tuple[float, tuple[str, ...]]:
+    reasons: list[str] = []
+    if qa_text.strip() == "":
+        reasons.append(
+            "safe feedback step lowered: no QA or Test lane anchor was declared"
+        )
+        return MIN_SAFE_FEEDBACK_STEP, tuple(reasons)
+
+    has_fast_lane = any(
+        term in qa_text
+        for term in (
+            "unit",
+            "fast check",
+            "fast-test",
+            "fast pytest",
+            "unittest",
+        )
+    )
+    has_commit_lane = any(
+        term in qa_text
+        for term in ("component", "commit check", "prek", "pre-commit")
+    )
+    has_expensive_lane = has_expensive_test_lane(qa_text)
+
+    if has_fast_lane and has_expensive_lane:
+        step = 1.1
+        reasons.append(
+            "safe feedback step constrained by expensive Test lane despite fast checks"
+        )
+    elif has_fast_lane:
+        step = 1.6
+        reasons.append(
+            "safe feedback step raised by local Unit test or Fast check evidence"
+        )
+    elif has_commit_lane:
+        step = 1.25
+        reasons.append(
+            "safe feedback step raised by Component test or Commit check evidence"
+        )
+    elif has_expensive_lane:
+        step = 0.75
+        reasons.append(
+            "safe feedback step lowered by expensive Test lane evidence"
+        )
+    else:
+        step = 1.0
+        reasons.append("safe feedback step uses generic QA evidence")
+
+    if any(term in qa_text for term in ("rollback", "revert")):
+        step += 0.25
+        reasons.append("safe feedback step raised by rollback or revert evidence")
+    if "manual" in qa_text and not has_fast_lane:
+        step -= 0.15
+        reasons.append("safe feedback step lowered by manual validation evidence")
+
+    return max(MIN_SAFE_FEEDBACK_STEP, round(step, 2)), tuple(reasons)
+
+
+def normalized_step_size(
+    *,
+    area_count: int,
+    criteria_count: int,
+    matched_term_count: int,
+    qa_text: str,
+    blocked_by_text: str,
+    context_text: str,
+    labels: frozenset[str],
+    has_docs_and_paths: bool,
+) -> tuple[float, tuple[str, ...]]:
+    size = 1.0
+    reasons: list[str] = []
+
+    if area_count > 1:
+        added = min(1.2, (area_count - 1) * 0.4)
+        size += added
+        reasons.append(f"step size raised by {area_count} repo areas")
+    if criteria_count > 7:
+        size += 1.0
+        reasons.append(f"step size raised by {criteria_count} acceptance criteria")
+    elif criteria_count > 4:
+        size += 0.5
+        reasons.append(f"step size raised by {criteria_count} acceptance criteria")
+    elif criteria_count > 2:
+        size += 0.2
+        reasons.append(f"step size raised by {criteria_count} acceptance criteria")
+
+    if matched_term_count > 0:
+        size += min(1.0, matched_term_count * 0.15)
+        reasons.append("step size raised by stiff boundary terminology")
+    if has_expensive_test_lane(qa_text):
+        size += 0.3
+        reasons.append("step size raised by expensive Test lane coverage")
+    if "delivery-gitflow" in labels:
+        size += 0.1
+        reasons.append("step size raised by Gitflow Delivery mode")
+    if "delivery-exploratory" in labels:
+        size += 0.3
+        reasons.append("step size raised by Exploratory delivery review")
+    if has_docs_and_paths:
+        size += 0.2
+        reasons.append("step size raised by combined docs and code anchors")
+    if blocked_by_text.strip() not in {"", "none - can start immediately."}:
+        size += 0.2
+        reasons.append("step size raised by blocker text")
+    if any(term in blocked_by_text for term in ("tbd", "unknown", "unclear")):
+        size += 0.3
+        reasons.append("step size raised by vague blockers")
+    if any(term in context_text for term in ("tbd", "unknown", "fill in", "todo")):
+        size += 0.4
+        reasons.append("step size raised by placeholder context")
+    if any(
+        term in qa_text
+        for term in ("unit", "fast check", "fast-test", "fast pytest", "unittest")
+    ):
+        size -= 0.2
+        reasons.append("step size lowered by a fast local feedback loop")
+
+    return max(0.5, round(size, 2)), tuple(reasons)
+
+
+def hidden_coupling_pressure(
+    *,
+    area_count: int,
+    criteria_count: int,
+    matched_terms: tuple[str, ...],
+    qa_text: str,
+    blocked_by_text: str,
+    context_text: str,
+    labels: frozenset[str],
+    has_docs_and_paths: bool,
+) -> tuple[float, tuple[str, ...]]:
+    pressure = 1.0
+    reasons: list[str] = ["hidden-coupling pressure starts at baseline 1.0"]
+
+    if area_count > 1:
+        added = min(2.4, (area_count - 1) * 0.65)
+        pressure += added
+        reasons.append(f"hidden-coupling pressure raised by {area_count} repo areas")
+    if matched_terms:
+        pressure += min(2.8, len(matched_terms) * 0.35)
+        reasons.append(
+            "hidden-coupling pressure raised by boundary terms: "
+            + ", ".join(matched_terms)
+        )
+        if len(matched_terms) >= 5:
+            pressure += 0.7
+            reasons.append("hidden-coupling pressure raised by many boundary terms")
+    if criteria_count > 7:
+        pressure += 0.8
+        reasons.append(
+            f"hidden-coupling pressure raised by {criteria_count} acceptance criteria"
+        )
+    elif criteria_count > 4:
+        pressure += 0.4
+        reasons.append(
+            f"hidden-coupling pressure raised by {criteria_count} acceptance criteria"
+        )
+    if has_expensive_test_lane(qa_text):
+        pressure += 0.8
+        reasons.append("hidden-coupling pressure raised by expensive Test lane")
+    if "delivery-gitflow" in labels:
+        pressure += 0.2
+        reasons.append("hidden-coupling pressure raised by Gitflow Delivery mode")
+    if "delivery-exploratory" in labels:
+        pressure += 0.5
+        reasons.append("hidden-coupling pressure raised by Exploratory delivery")
+    if has_docs_and_paths:
+        pressure += 0.35
+        reasons.append("hidden-coupling pressure raised by combined docs and code anchors")
+    if blocked_by_text.strip() not in {"", "none - can start immediately."}:
+        pressure += 0.3
+        reasons.append("hidden-coupling pressure raised by blocker text")
+    if any(term in blocked_by_text for term in ("tbd", "unknown", "unclear")):
+        pressure += 0.5
+        reasons.append("hidden-coupling pressure raised by vague blockers")
+    if any(term in context_text for term in ("tbd", "unknown", "fill in", "todo")):
+        pressure += 0.5
+        reasons.append("hidden-coupling pressure raised by placeholder context")
+
+    return max(0.0, round(pressure, 2)), tuple(reasons)
+
+
+def safe_ratio(hidden_pressure: float, feedback_step: float) -> float:
+    denominator = max(feedback_step, MIN_SAFE_FEEDBACK_STEP)
+    return round(max(hidden_pressure, 0.0) / denominator, 2)
+
+
+def stiffness_ratio_level(ratio: float, thresholds: Thresholds) -> str:
+    if ratio >= thresholds.ratio_extreme:
+        return "extreme"
+    if ratio >= thresholds.ratio_high:
+        return "high"
+    if ratio >= thresholds.ratio_medium:
+        return "medium"
+    return "low"
+
+
+def recommended_action_for_ratio(ratio_level: str) -> str:
+    if ratio_level == "extreme":
+        return "split"
+    if ratio_level == "high":
+        return "human-review"
+    if ratio_level == "medium":
+        return "keep-visible"
+    return "ready"
+
+
 def stiffness_score(
     issue: IssueDraft,
     anchors: AnchorSummary,
     context_paths: tuple[str, ...],
+    thresholds: Thresholds | None = None,
 ) -> StiffnessResult:
     reasons: list[str] = []
     score = 0
@@ -1113,12 +1338,21 @@ def stiffness_score(
         area_for_path(path)
         for path in [*anchors.paths, *anchors.docs, *context_paths[:3]]
     }
+    labels = frozenset(issue.labels)
+    qa_text = "\n".join([*anchors.qa, *anchors.test_lanes]).lower()
+    blocked_by = (section_body(issue.body, "Blocked by") or "").lower()
+    context = (section_body(issue.body, "Current context") or "").lower()
+    criteria_count = len(
+        CHECKBOX_PATTERN.findall(section_body(issue.body, "Acceptance criteria") or "")
+    )
+    matched_terms, ignored_terms = stiffness_term_evidence(issue.body)
+    has_docs_and_paths = bool(anchors.docs and anchors.paths)
+
     if len(area_values) > 1:
         added = min(30, (len(area_values) - 1) * 15)
         score += added
         reasons.append(f"spans {len(area_values)} repo areas")
 
-    matched_terms, ignored_terms = stiffness_term_evidence(issue.body)
     if matched_terms:
         added = min(40, len(matched_terms) * 8)
         score += added
@@ -1127,9 +1361,6 @@ def stiffness_score(
             score += 10
             reasons.append("mentions many stiff boundary terms")
 
-    criteria_count = len(
-        CHECKBOX_PATTERN.findall(section_body(issue.body, "Acceptance criteria") or "")
-    )
     if criteria_count > 7:
         score += 20
         reasons.append(f"has {criteria_count} acceptance criteria")
@@ -1137,27 +1368,66 @@ def stiffness_score(
         score += 10
         reasons.append(f"has {criteria_count} acceptance criteria")
 
-    qa_text = "\n".join([*anchors.qa, *anchors.test_lanes]).lower()
-    if any(term in qa_text for term in ("integration", "end-to-end", "deployed", "push check")):
+    if has_expensive_test_lane(qa_text):
         score += 15
         reasons.append("requires an expensive Test lane")
 
-    blocked_by = (section_body(issue.body, "Blocked by") or "").lower()
     if any(term in blocked_by for term in ("tbd", "unknown", "unclear")):
         score += 15
         reasons.append("has vague blockers")
 
-    context = (section_body(issue.body, "Current context") or "").lower()
     if any(term in context for term in ("tbd", "unknown", "fill in", "todo")):
         score += 10
         reasons.append("has placeholder context")
 
+    step_size, step_reasons = normalized_step_size(
+        area_count=len(area_values),
+        criteria_count=criteria_count,
+        matched_term_count=len(matched_terms),
+        qa_text=qa_text,
+        blocked_by_text=blocked_by,
+        context_text=context,
+        labels=labels,
+        has_docs_and_paths=has_docs_and_paths,
+    )
+    feedback_step, feedback_reasons = safe_feedback_step(qa_text)
+    coupling_pressure, pressure_reasons = hidden_coupling_pressure(
+        area_count=len(area_values),
+        criteria_count=criteria_count,
+        matched_terms=matched_terms,
+        qa_text=qa_text,
+        blocked_by_text=blocked_by,
+        context_text=context,
+        labels=labels,
+        has_docs_and_paths=has_docs_and_paths,
+    )
+    ratio = safe_ratio(coupling_pressure, feedback_step)
+    ratio_thresholds = thresholds or Thresholds()
+    ratio_level = stiffness_ratio_level(ratio, ratio_thresholds)
+    ratio_reasons = [
+        *step_reasons,
+        *feedback_reasons,
+        *pressure_reasons,
+        f"stiffness ratio computed as {coupling_pressure} / {feedback_step}",
+    ]
+
     return StiffnessResult(
         score=min(score, 100),
-        reasons=tuple(reasons or ["low explicit stiffness signals"]),
+        reasons=tuple(
+            [
+                *(reasons or ["low explicit stiffness signals"]),
+                *ratio_reasons,
+            ]
+        ),
         declared_level=declared_stiffness_level(issue.body),
         ignored_terms=ignored_terms,
         surface_areas=tuple(sorted(area_values)),
+        step_size=step_size,
+        safe_feedback_step=feedback_step,
+        hidden_coupling_pressure=coupling_pressure,
+        ratio=ratio,
+        ratio_level=ratio_level,
+        recommended_action=recommended_action_for_ratio(ratio_level),
     )
 
 
@@ -1258,7 +1528,7 @@ def evaluate_bundle(
         validation_reasons.extend(issue_context_validation_reasons(context_assessment))
 
         context_paths = tuple(document.path for document in corpus.documents)
-        stiffness = stiffness_score(issue, anchors, context_paths)
+        stiffness = stiffness_score(issue, anchors, context_paths, thresholds)
         stiffness_level_value = stiffness_level(stiffness.score, thresholds)
         declared_mismatch = declared_stiffness_mismatch(
             stiffness.declared_level,
@@ -1301,6 +1571,12 @@ def evaluate_bundle(
                 "stiffness": {
                     "score": stiffness.score,
                     "level": stiffness_level_value,
+                    "step_size": stiffness.step_size,
+                    "safe_feedback_step": stiffness.safe_feedback_step,
+                    "hidden_coupling_pressure": stiffness.hidden_coupling_pressure,
+                    "ratio": stiffness.ratio,
+                    "ratio_level": stiffness.ratio_level,
+                    "recommended_action": stiffness.recommended_action,
                     "declared_level": stiffness.declared_level,
                     "declared_mismatch": declared_mismatch,
                     "reasons": list(stiffness.reasons),
@@ -1317,6 +1593,9 @@ def evaluate_bundle(
             "human_review_stiffness": thresholds.human_review_stiffness,
             "split_stiffness": thresholds.split_stiffness,
             "max_rg_candidate_files": thresholds.max_rg_candidate_files,
+            "ratio_medium": thresholds.ratio_medium,
+            "ratio_high": thresholds.ratio_high,
+            "ratio_extreme": thresholds.ratio_extreme,
             "max_evidence_snippets_per_file": MAX_EVIDENCE_SNIPPETS_PER_FILE,
             "max_snippet_chars": MAX_SNIPPET_CHARS,
         },
@@ -1374,6 +1653,13 @@ def report_markdown(report: dict[str, Any]) -> str:
         "",
         f"- Human review stiffness: `{report['thresholds']['human_review_stiffness']}`",
         f"- Split stiffness: `{report['thresholds']['split_stiffness']}`",
+        (
+            "- Ratio bands: "
+            f"`low < {report['thresholds']['ratio_medium']}`, "
+            f"`medium < {report['thresholds']['ratio_high']}`, "
+            f"`high < {report['thresholds']['ratio_extreme']}`, "
+            f"`extreme >= {report['thresholds']['ratio_extreme']}`"
+        ),
         f"- Max rg candidate files: `{report['thresholds']['max_rg_candidate_files']}`",
         "",
         "## Issues",
@@ -1393,6 +1679,17 @@ def report_markdown(report: dict[str, Any]) -> str:
                 f"- Context confidence: `{context_assessment['confidence']}`",
                 f"- Context corpus digest: `{issue['context_corpus']['digest']}`",
                 f"- Stiffness: `{issue['stiffness']['score']}` ({issue['stiffness']['level']})",
+                (
+                    f"- Stiffness ratio: `{issue['stiffness']['ratio']}` "
+                    f"({issue['stiffness']['ratio_level']}; "
+                    f"recommended action: `{issue['stiffness']['recommended_action']}`)"
+                ),
+                f"- Step size: `{issue['stiffness']['step_size']}`",
+                f"- Safe feedback step: `{issue['stiffness']['safe_feedback_step']}`",
+                (
+                    "- Hidden-coupling pressure: "
+                    f"`{issue['stiffness']['hidden_coupling_pressure']}`"
+                ),
                 "- Stiffness surface areas: "
                 + ", ".join(f"`{area}`" for area in issue["stiffness"]["surface_areas"]),
             ]
@@ -1504,6 +1801,11 @@ def draft_review_metadata_lines(
         f"- Blocked by draft ids: {blocked_by}",
         f"- Gate action: `{report_issue['action']}`",
         f"- Stiffness summary: `{stiffness['score']}` ({stiffness['level']})",
+        (
+            f"- Stiffness ratio: `{stiffness['ratio']}` "
+            f"({stiffness['ratio_level']}; "
+            f"recommended action: `{stiffness['recommended_action']}`)"
+        ),
         (
             "- Issue context assessor: "
             f"`{context_assessment['verdict']}` "
@@ -1691,6 +1993,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--context-assessor-name", default=DEFAULT_CONTEXT_ASSESSOR_PROVIDER)
     parser.add_argument("--human-review-stiffness", type=int, default=55)
     parser.add_argument("--split-stiffness", type=int, default=70)
+    parser.add_argument("--ratio-medium", type=float, default=1.5)
+    parser.add_argument("--ratio-high", type=float, default=2.5)
+    parser.add_argument("--ratio-extreme", type=float, default=4.0)
     parser.add_argument(
         "--max-rg-candidate-files",
         type=int,
@@ -1708,6 +2013,9 @@ def main() -> None:
         human_review_stiffness=args.human_review_stiffness,
         split_stiffness=args.split_stiffness,
         max_rg_candidate_files=args.max_rg_candidate_files,
+        ratio_medium=args.ratio_medium,
+        ratio_high=args.ratio_high,
+        ratio_extreme=args.ratio_extreme,
     )
     try:
         bundle = parse_bundle(args.bundle)
