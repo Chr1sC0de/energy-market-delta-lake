@@ -94,16 +94,17 @@ review after each repair. If the budget is exhausted, Ralph marks the issue
 **Integration target**. This gate is not human `dev` review, **Ready issue
 refresh**, or **Post-promotion review**.
 
-For **Gitflow delivery**, Ralph then generates and validates a **Review
-package** before **Local integration**, the `dev` push, completion comments, or
-`agent-integrated`. The artifact is an ignored local `review-package.html` in
-the run directory, built from the final changed files, QA evidence, issue
-contract, and any **Issue completion review** result. Validation accepts only
-bounded offline static HTML with required review sections and rejects scripts,
-external URLs or assets, inline JavaScript, absolute local file reads, missing
-issue or changed-file evidence, and oversized output. Generation or validation
-failure marks the issue `agent-failed`, preserves logs and worktrees, and does
-not update an **Integration target**.
+For **Gitflow delivery** and **Trunk delivery**, Ralph then generates and
+validates a **Review package** before **Local integration**, the `dev` or `main`
+push, completion comments, `agent-integrated`, `agent-merged`, or Trunk issue
+closure. The artifact is an ignored local `review-package.html` in the run
+directory, built from the final changed files, QA evidence, issue contract, and
+any **Issue completion review** result. Validation accepts only bounded offline
+static HTML with required review sections and rejects scripts, external URLs or
+assets, inline JavaScript, absolute local file reads, missing issue or
+changed-file evidence, and oversized output. Generation or validation failure
+marks the issue `agent-failed`, preserves logs and worktrees, and does not
+update an **Integration target**.
 
 `$shape-issues` v2 may create new GitHub Issues only after explicit Operator
 confirmation of a passing gate report and pre-publication review Markdown:

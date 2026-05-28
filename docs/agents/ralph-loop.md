@@ -10,8 +10,9 @@ Issues as the queue, Codex as the implementation and triage worker, repo
 Exploratory handoff, plus **Promotion** as the success paths after QA.
 Risky implementation paths also pass an automated **Issue completion review**
 before Ralph updates an **Integration target** or publishes an Exploratory
-handoff. Gitflow delivery also generates and validates a local **Review
-package** before **Local integration** or the `dev` push. Promotion records a
+handoff. Gitflow and Trunk delivery also generate and validate a local
+**Review package** before **Local integration** or an **Integration target**
+push. Promotion records a
 deterministic **Post-Promotion deployment
 classification** from the promoted changed-file inventory and source-table
 archive replay recovery guidance when a Promotion changes existing source-table
@@ -49,7 +50,7 @@ Ralph drains agent-ready GitHub issues through a guarded local loop:
 4. Run `codex exec` to implement each claimed issue.
 5. Run deterministic local QA.
 6. Run **Issue completion review** when risk triggers require it.
-7. For Gitflow delivery, generate and validate the **Review package**.
+7. For Gitflow or Trunk delivery, generate and validate the **Review package**.
 8. For Gitflow or Trunk delivery, squash-merge validated work onto the latest
    **Integration target** locally.
 9. In **Gitflow delivery**, push `dev`, comment evidence, mark
@@ -154,10 +155,9 @@ flowchart TD
   REVIEWGATE -->|Pass| DONE
   REVIEWGATE -->|Fail with attempts left| CODEX
   REVIEWGATE -->|Fail exhausted| FAIL
-  DONE -->|Gitflow| REVIEWPACKAGE[Generate and validate Review package]
+  DONE -->|Gitflow or Trunk| REVIEWPACKAGE[Generate and validate Review package]
   REVIEWPACKAGE -->|Pass| INTEGRATE[Run Local integration]
   REVIEWPACKAGE -->|Fail| FAIL
-  DONE -->|Trunk| INTEGRATE
   INTEGRATE --> DONE2{Delivery mode?}
   DONE -->|Exploratory| HANDOFF[Push Exploratory branch]
   HANDOFF --> SMOKE{Operator smoke requested?}
@@ -768,11 +768,11 @@ Key fields for inspection:
   high-stiffness evidence, structured Stiffness ratio evidence, review log and
   Markdown artifact paths, per-review attempt results, repair attempts, and
   failure state for implementation runs.
-- `review_package`: Gitflow **Review package** state for implementation runs,
+- `review_package`: Gitflow and Trunk **Review package** state for implementation runs,
   including status, local HTML path, generator log path, structured summary,
-  validation status, and failure reason. A successful Gitflow run records
+  validation status, and failure reason. A successful Gitflow or Trunk run records
   `status: passed` and `validation_status: passed` before any **Local
-  integration** commit or `dev` push.
+  integration** commit or **Integration target** push.
 - `post_promotion_followups`: enabled state, created issue URLs, duplicate
   source-marker skips, validation downgrades to `needs-triage`, warning-only
   creation failures, and recovery guidance for **Promotion** follow-ups.
@@ -1089,13 +1089,14 @@ It gets read-only GitHub Issue commands and writes
 implementation run directory.
 
 Passing **Issue completion review** allows the next delivery gate to continue.
-For Gitflow delivery, Ralph then generates a **Review package** at
+For Gitflow and Trunk delivery, Ralph then generates a **Review package** at
 `review-package.html` in the run directory. The generator receives the final
 changed-file inventory, QA evidence, issue contract, **Delivery mode**,
 **Integration target**, and run paths after all repair and rebase work is
 known. Ralph validates that artifact before it creates the integration
-worktree, runs `git merge --squash`, pushes `dev`, comments completion evidence,
-or applies `agent-integrated`.
+worktree, runs `git merge --squash`, pushes `dev` or `main`, comments
+completion evidence, applies `agent-integrated` or `agent-merged`, or closes a
+Trunk issue.
 
 The **Review package** validator accepts only bounded offline static HTML with
 the required review sections `Summary`, `Changed files`, `QA evidence`, and
@@ -1106,7 +1107,8 @@ oversized output. A generation failure, invalid HTML, or generator-created repo
 edit marks the issue `agent-failed`, records
 `review_package.status` and `failure_reason`, preserves logs and worktrees, and
 does not perform **Local integration**, push an **Integration target**, comment
-completion evidence, or apply `agent-integrated`.
+completion evidence, apply `agent-integrated` or `agent-merged`, or close the
+issue.
 
 Failing review findings become the next
 Codex repair prompt alongside the issue contract, changed files, and QA
@@ -1121,7 +1123,7 @@ For **Local integration**, Ralph creates a temporary detached integration
 worktree at latest target, runs `git merge --squash` from the issue branch,
 creates one integration commit, pushes it to the target, and posts completion
 evidence with the commit SHA, changed files, QA commands, run log path, and for
-Gitflow delivery the **Review package** path plus summary.
+Gitflow and Trunk delivery the **Review package** path plus summary.
 Trunk integration marks the issue `agent-merged` and closes it. Gitflow
 integration marks the issue `agent-integrated` and leaves it open for
 **Promotion**. Exploratory handoff skips the detached integration worktree and

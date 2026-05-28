@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import io
 import json
 import shutil
@@ -191,6 +192,41 @@ REVIEW_PACKAGE_HTML = """<!doctype html>
 </body>
 </html>
 """
+
+
+def review_package_html_for_prompt(prompt: str) -> str:
+    changed_section = prompt.split("- Changed files:", maxsplit=1)[1].split(
+        "- QA evidence:",
+        maxsplit=1,
+    )[0]
+    changed_files = [
+        line.split("`", maxsplit=2)[1]
+        for line in changed_section.splitlines()
+        if "`" in line
+    ]
+    issue_title = "Issue #42"
+    for line in prompt.splitlines():
+        if line.strip().startswith("- Issue: `#42 "):
+            issue_title = line.split("`", maxsplit=2)[1]
+            break
+    changed_items = "\n".join(f"<li>{html.escape(path)}</li>" for path in changed_files)
+    return f"""<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Review package for issue #42</title></head>
+<body>
+<h1>Review package for issue #42</h1>
+<h2>Summary</h2>
+<p>{html.escape(issue_title)} is ready for Local integration.</p>
+<h2>Changed files</h2>
+<ul>{changed_items}</ul>
+<h2>QA evidence</h2>
+<p>QA passed.</p>
+<h2>Issue completion review</h2>
+<p>Issue completion review passed.</p>
+</body>
+</html>
+"""
+
 
 DEPLOY_REPAIR_BODY = """## What to build
 Repair the failed deployed workflow command so the Operator deployment checkpoint can complete.
@@ -720,8 +756,13 @@ class FakeRunner:
                         "fake Review package failure",
                         log_path,
                     )
+                review_package_html = (
+                    review_package_html_for_prompt(input_text)
+                    if self.review_package_html == REVIEW_PACKAGE_HTML
+                    else self.review_package_html
+                )
                 return ralph.CompletedCommand(
-                    stdout=self.review_package_html,
+                    stdout=review_package_html,
                     stderr="",
                 )
             if "Run a Post-promotion review" in input_text:
@@ -1132,6 +1173,7 @@ def write_recovery_manifest(
     metadata_status: str = "failed",
     push_status: str = "pushed",
     commit_sha: str = "abc1234",
+    review_package: dict[str, Any] | None = None,
 ) -> Path:
     run_dir = tmp_path / "logs" / "issue-42-20260504T010203Z"
     run_dir.mkdir(parents=True)
@@ -1172,6 +1214,8 @@ def write_recovery_manifest(
         "failure": {"message": "Post-push issue metadata failed", "log_path": None},
         "events": [],
     }
+    if review_package is not None:
+        manifest["review_package"] = review_package
     (run_dir / "ralph-run.json").write_text(
         json.dumps(manifest, indent=2) + "\n",
         encoding="utf-8",
@@ -10682,7 +10726,22 @@ class RalphOperatorRunTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            run_dir = write_recovery_manifest(tmp_path)
+            review_package_path = (
+                tmp_path / "logs" / "issue-42-20260504T010203Z" / "review-package.html"
+            )
+            run_dir = write_recovery_manifest(
+                tmp_path,
+                review_package={
+                    "status": "passed",
+                    "validation_status": "passed",
+                    "html_path": str(review_package_path),
+                    "summary": {
+                        "title": "Review package for issue #42",
+                        "changed_file_count": 1,
+                        "qa_result_count": 1,
+                    },
+                },
+            )
             loop = make_loop(tmp_path, runner)
             output = io.StringIO()
 
@@ -10698,6 +10757,12 @@ class RalphOperatorRunTests(unittest.TestCase):
         commands = [call.args for call in runner.calls]
         self.assertIn("Ralph trunk integration completed.", comment)
         self.assertIn("Commit: `abc1234`", comment)
+        self.assertIn("## Review package", comment)
+        self.assertIn(f"- HTML: `{review_package_path}`", comment)
+        self.assertIn(
+            "- Summary: Review package for issue #42; 1 changed file(s); 1 QA result(s)",
+            comment,
+        )
         self.assertIn(
             (
                 "gh",
@@ -12054,10 +12119,33 @@ Build it.
                 and "Run an Issue completion review" in call.input_text
             )
             review_index = runner.calls.index(review_call)
+            package_call = next(
+                call
+                for call in runner.calls
+                if call.input_text is not None
+                and "Generate a Review package" in call.input_text
+            )
+            package_index = runner.calls.index(package_call)
             merge_index = commands.index(
                 ("git", "merge", "--squash", "agent/issue-42-implement-thing")
             )
+            push_index = commands.index(("git", "push", "origin", "HEAD:main"))
+            close_index = commands.index(
+                (
+                    "gh",
+                    "issue",
+                    "close",
+                    "42",
+                    "-R",
+                    "example/repo",
+                    "--reason",
+                    "completed",
+                )
+            )
             self.assertLess(review_index, merge_index)
+            self.assertLess(package_index, merge_index)
+            self.assertLess(package_index, push_index)
+            self.assertLess(package_index, close_index)
             self.assertIn(
                 (
                     "gh",
@@ -12089,6 +12177,8 @@ Build it.
             manifest = load_run_manifest(Path(tmp))
             self.assertIn("Ralph trunk integration completed.", comment)
             self.assertIn("Commit: `merge-sha`", comment)
+            self.assertIn("## Review package", comment)
+            self.assertIn("review-package.html", comment)
             self.assertEqual(manifest["status"], "succeeded")
             self.assertEqual(manifest["issue"]["number"], 42)
             self.assertEqual(manifest["delivery_mode"], "trunk")
@@ -12117,6 +12207,102 @@ Build it.
                     )
                 ),
             )
+            package_path = next(
+                (Path(tmp) / "logs").glob("issue-42-*/review-package.html")
+            )
+            package_log = next(
+                (Path(tmp) / "logs").glob("issue-42-*/codex-review-package.jsonl")
+            )
+            self.assertEqual(manifest["review_package"]["status"], "passed")
+            self.assertEqual(manifest["review_package"]["validation_status"], "passed")
+            self.assertEqual(manifest["review_package"]["html_path"], str(package_path))
+            self.assertEqual(
+                manifest["review_package"]["generator_log_path"],
+                str(package_log),
+            )
+            self.assertEqual(
+                manifest["review_package"]["summary"]["changed_file_count"],
+                1,
+            )
+
+    def test_trunk_review_package_validation_failure_stops_before_main_push(
+        self,
+    ) -> None:
+        invalid_html = REVIEW_PACKAGE_HTML.replace(
+            "<h2>QA evidence</h2>",
+            '<script src="https://example.com/app.js"></script><h2>QA evidence</h2>',
+        )
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            review_package_html=invalid_html,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                manifest_obj = loop._handle_implementation(issue)
+
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertIsNotNone(manifest_obj)
+        self.assertFalse(
+            any(command[:3] == ("git", "merge", "--squash") for command in commands)
+        )
+        self.assertNotIn(("git", "push", "origin", "HEAD:main"), commands)
+        self.assertFalse(
+            any(
+                command[:4] == ("gh", "issue", "edit", "42")
+                and "--add-label" in command
+                and command[command.index("--add-label") + 1] == "agent-merged"
+                for command in commands
+            )
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "close") for command in commands)
+        )
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["review_package"]["status"], "validation_failed")
+        self.assertEqual(manifest["review_package"]["validation_status"], "failed")
+        self.assertIn("script tag", manifest["review_package"]["failure_reason"])
+
+    def test_trunk_review_package_generation_failure_stops_before_main_push(
+        self,
+    ) -> None:
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            fail_review_package=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._handle_implementation(issue)
+
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(
+            any(command[:3] == ("git", "merge", "--squash") for command in commands)
+        )
+        self.assertNotIn(("git", "push", "origin", "HEAD:main"), commands)
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "close") for command in commands)
+        )
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["review_package"]["status"], "failed")
+        self.assertIn(
+            "Review package generation failed",
+            manifest["review_package"]["failure_reason"],
+        )
 
     def test_issue_completion_review_failure_repairs_reruns_qa_and_review(
         self,
