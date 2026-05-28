@@ -273,6 +273,12 @@ AEMO_ETL_STTM_SOURCE_TABLE_MANIFEST_PATH = (
     f"{AEMO_ETL_RAW_SOURCE_TABLE_PREFIX}sttm/source_tables.json"
 )
 MARIMO_PREFIX = "backend-services/marimo/"
+MARIMO_NOTEBOOKS_PREFIX = f"{MARIMO_PREFIX}notebooks/"
+MARIMO_REVIEW_SCRIPT_PATH = f"{MARIMO_PREFIX}scripts/review_promoted_dashboards.py"
+MARIMO_REVIEW_MEDIA_BASE_URL_ENV = "RALPH_MARIMO_REVIEW_BASE_URL"
+MARIMO_REVIEW_MEDIA_DEFAULT_BASE_URL = "http://127.0.0.1:8000"
+MARIMO_REVIEW_MEDIA_BROWSER_SETUP_TIMEOUT_SECONDS = 600
+MARIMO_REVIEW_MEDIA_TIMEOUT_SECONDS = 180
 RALPH_LOOP_PREFIX = "tools/ralph-loop/"
 INTEGRATION_TARGET_BASELINE_GUARD_CHANGED_FILES = (
     f"{RALPH_LOOP_PREFIX}src/ralph_loop/cli.py",
@@ -4032,6 +4038,28 @@ def has_marimo_runtime_change(changed_files: list[str]) -> bool:
     )
 
 
+def marimo_notebook_route_from_changed_file(changed_file: str) -> str | None:
+    normalized_path = changed_file.strip().removeprefix("./")
+    if not normalized_path.startswith(MARIMO_NOTEBOOKS_PREFIX):
+        return None
+    relative_path = normalized_path.removeprefix(MARIMO_NOTEBOOKS_PREFIX)
+    if "/" in relative_path or not relative_path.endswith(".py"):
+        return None
+    notebook_name = relative_path.removesuffix(".py")
+    if notebook_name == "" or notebook_name.startswith("_"):
+        return None
+    return f"/marimo/{notebook_name}/"
+
+
+def changed_marimo_notebook_routes(changed_files: list[str]) -> tuple[str, ...]:
+    routes: list[str] = []
+    for changed_file in normalized_changed_file_inventory(changed_files):
+        route = marimo_notebook_route_from_changed_file(changed_file)
+        if route is not None and route not in routes:
+            routes.append(route)
+    return tuple(routes)
+
+
 def has_gas_market_knowledge_base_change(changed_files: list[str]) -> bool:
     return any(
         path.startswith(GAS_MARKET_KNOWLEDGE_BASE_PREFIX) for path in changed_files
@@ -4720,7 +4748,13 @@ class ReviewPackageHTMLParser(html.parser.HTMLParser):
                 )
                 continue
             if attr in REVIEW_PACKAGE_URL_ATTRIBUTES:
-                problem = review_package_url_problem(attr_value)
+                problem = (
+                    None
+                    if normalized_tag == "a"
+                    and attr == "href"
+                    and review_package_media_href_allowed(attr_value)
+                    else review_package_url_problem(attr_value)
+                )
                 if problem is not None:
                     self.rejected.append(f"{attr}={attr_value!r}: {problem}")
             if attr == "content" and is_meta_refresh(normalized_tag, attrs):
@@ -4801,6 +4835,18 @@ def review_package_url_problem(value: str) -> str | None:
     if value.startswith(("/", "\\")):
         return "absolute local file reads are not allowed"
     return "relative URLs or embedded assets are not allowed"
+
+
+def review_package_media_href_allowed(value: str) -> bool:
+    if value == "":
+        return False
+    path = Path(value)
+    return (
+        path.name == value
+        and path.suffix.lower() == ".webm"
+        and ".." not in path.parts
+        and not value.startswith(("/", "\\"))
+    )
 
 
 def review_package_embedded_url_problem(value: str) -> str | None:
@@ -4959,6 +5005,7 @@ def review_package_markdown_lines(review_package: dict[str, Any] | None) -> list
         return []
     html_path = review_package.get("html_path")
     summary = review_package.get("summary")
+    media = review_package.get("media")
     summary_text = ""
     if isinstance(summary, dict):
         title = str(summary.get("title") or "").strip()
@@ -4975,14 +5022,28 @@ def review_package_markdown_lines(review_package: dict[str, Any] | None) -> list
         ]
         summary_text = "; ".join(summary_parts)
     if summary_text == "":
-        summary_text = "Review package generated and validated."
-    return [
+        if isinstance(media, list) and media:
+            summary_text = "Review package media captured."
+        else:
+            summary_text = "Review package generated and validated."
+    lines = [
         "## Review package",
         "",
-        f"- HTML: `{html_path}`",
         f"- Summary: {summary_text}",
-        "",
     ]
+    if html_path:
+        lines.insert(2, f"- HTML: `{html_path}`")
+    if isinstance(media, list) and media:
+        lines.append("- Media:")
+        for item in media:
+            if not isinstance(item, dict):
+                continue
+            route = item.get("route")
+            viewport = item.get("viewport")
+            path = item.get("path")
+            lines.append(f"  - `{route}` {viewport}: `{path}`")
+    lines.append("")
+    return lines
 
 
 def operator_smoke_markdown_lines(

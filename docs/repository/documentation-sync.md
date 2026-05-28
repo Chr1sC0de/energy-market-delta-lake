@@ -331,6 +331,16 @@ way:
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md), and ADR
   [0012](../adr/0012-ralph-gitflow-review-package-gate.md) now records that
   Gitflow and Trunk share the static HTML validation boundary.
+- #293: Ralph Review package media recipes can record sibling artifacts before
+  publication. Changed configured Marimo notebook routes record desktop and
+  narrow `.webm` files in the issue run directory, link them from the Review
+  package for Gitflow and Trunk delivery, record media-only handoff evidence for
+  Exploratory delivery, and fail before **Local integration**, **Integration
+  target** push, or Exploratory handoff when capture fails. The contract lives in
+  [docs/agents/issue-tracker.md](../agents/issue-tracker.md),
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md), ADR
+  [0012](../adr/0012-ralph-gitflow-review-package-gate.md), and the
+  [Marimo dashboard standard](../../backend-services/marimo/docs/dashboard-standard.md).
 - #166: Checkpointed Operator runs record valid deploy-repair issues in
   `deploy_repair.target_issue`, select that issue before unrelated ready work,
   clear the target after a successful deployment retry, and stop after two

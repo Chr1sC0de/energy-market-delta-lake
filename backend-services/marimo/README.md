@@ -1486,6 +1486,13 @@ uv run --with playwright python scripts/review_promoted_dashboards.py \
   --artifact-dir /tmp/marimo-dashboard-review
 ```
 
+Video recording is also off by default. Ralph enables `--videos` only for
+configured Review package media recipes, such as a changed curated notebook
+route that maps to a configured or registry-backed `/marimo/<notebook>/`
+dashboard route. Those `.webm` files are durable run-directory artifacts for the
+Review package; ordinary development-review screenshots stay temporary unless
+an issue or Operator asks for durable artifacts.
+
 ## Validation
 
 From this Subproject, run the Marimo **Component test** lane:

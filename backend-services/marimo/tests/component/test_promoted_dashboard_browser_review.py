@@ -79,6 +79,27 @@ def test_review_plan_covers_promoted_routes_and_viewports(tmp_path: Path) -> Non
     assert all(run.url.startswith("http://example.test:8000/") for run in runs)
     assert all(run.screenshot_path is not None for run in runs)
     assert all(str(run.screenshot_path).startswith(str(tmp_path)) for run in runs)
+    assert all(run.video_path is None for run in runs)
+
+
+def test_review_plan_can_plan_webm_videos_for_registry_route(tmp_path: Path) -> None:
+    review = _load_review_script()
+
+    runs = review.build_review_plan(
+        "http://example.test:8000",
+        tmp_path,
+        videos=True,
+        routes=("/marimo/sample_energy_market/",),
+    )
+
+    assert [(run.viewport.name, run.required_texts) for run in runs] == [
+        ("desktop", ()),
+        ("narrow", ()),
+    ]
+    assert [run.video_path for run in runs] == [
+        tmp_path / "marimo__sample_energy_market__desktop.webm",
+        tmp_path / "marimo__sample_energy_market__narrow.webm",
+    ]
 
 
 def test_review_plan_rejects_routes_outside_promoted_set(tmp_path: Path) -> None:
@@ -91,7 +112,7 @@ def test_review_plan_rejects_routes_outside_promoted_set(tmp_path: Path) -> None
             routes=("/marimo/unreviewed_dashboard/",),
         )
     except ValueError as error:
-        assert "unsupported promoted dashboard route" in str(error)
+        assert "unsupported configured or registry-backed dashboard route" in str(error)
     else:
         raise AssertionError("expected unsupported route to fail")
 
@@ -168,6 +189,7 @@ def test_print_plan_cli_outputs_json_without_playwright_dependency() -> None:
     ]
     assert len(payload["runs"]) == 72
     assert all(run["screenshot_path"] is None for run in payload["runs"])
+    assert all(run["video_path"] is None for run in payload["runs"])
 
 
 def test_issue_256_batch_declares_browser_review_surface(tmp_path: Path) -> None:

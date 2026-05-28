@@ -131,6 +131,13 @@ viewports reviewed, controls exercised, and visual or interaction fixes made.
 Do not store screenshot artifacts by default; save them only when an issue or
 Operator explicitly asks for durable artifacts.
 
+Ralph Review package videos are a separate durable artifact path. They are
+recorded only when Ralph has a configured Review package media recipe, such as
+a changed curated notebook route under `backend-services/marimo/notebooks/`
+that maps to a configured or registry-backed `/marimo/<notebook>/` dashboard
+route. Ordinary development-review screenshots remain temporary unless an
+issue or Operator explicitly asks for durable artifacts.
+
 ## Future shared primitives
 
 When a dashboard change needs repeated custom layout, implement shared helpers
@@ -180,6 +187,7 @@ Mixed maintained-doc and runtime dashboard changes also run the root
   - `backend-services/compose.yaml`
   - `backend-services/marimo/research-workspace/AGENTS.md`
   - `backend-services/marimo/src/marimoserver/main.py`
+  - `backend-services/marimo/scripts/review_promoted_dashboards.py`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`
   - `backend-services/marimo/src/marimoserver/bounded_read_diagnostics.py`
   - `backend-services/marimo/src/marimoserver/gas_model_loader.py`

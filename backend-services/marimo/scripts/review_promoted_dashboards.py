@@ -2,6 +2,7 @@
 """Open promoted Marimo dashboards for repeatable browser review."""
 
 import argparse
+import ast
 import importlib
 import json
 import os
@@ -119,6 +120,7 @@ class DashboardReviewRun:
     required_texts: tuple[str, ...]
     control_probes: tuple[ControlProbe, ...]
     screenshot_path: Path | None
+    video_path: Path | None = None
 
 
 class BrowserPage(Protocol):
@@ -155,8 +157,21 @@ class Browser(Protocol):
     def new_page(self) -> BrowserPage:
         """Open a new browser page."""
 
+    def new_context(self, **kwargs: object) -> "BrowserContext":
+        """Open a new browser context."""
+
     def close(self) -> None:
         """Close the browser."""
+
+
+class BrowserContext(Protocol):
+    """Small structural subset of Playwright's BrowserContext API."""
+
+    def new_page(self) -> BrowserPage:
+        """Open a new browser page in the context."""
+
+    def close(self) -> None:
+        """Close the browser context."""
 
 
 class BrowserType(Protocol):
@@ -1087,21 +1102,29 @@ def build_review_plan(
     artifact_dir: Path,
     *,
     screenshots: bool = False,
+    videos: bool = False,
     routes: tuple[str, ...] = PROMOTED_DASHBOARD_ROUTES,
 ) -> tuple[DashboardReviewRun, ...]:
     """Return the concrete browser review runs for promoted dashboards."""
     spec_by_route = {spec.route: spec for spec in REVIEW_SPECS}
+    configured_routes = configured_dashboard_routes()
     runs: list[DashboardReviewRun] = []
     for route in routes:
-        if route not in spec_by_route:
-            raise ValueError(f"unsupported promoted dashboard route: {route}")
-        spec = spec_by_route[route]
+        if route not in configured_routes:
+            raise ValueError(
+                f"unsupported configured or registry-backed dashboard route: {route}"
+            )
+        spec = spec_by_route.get(
+            route,
+            DashboardReviewSpec(route=route, required_texts=(), control_probes=()),
+        )
         for viewport in VIEWPORTS:
             screenshot_path = (
                 artifact_dir / _screenshot_name(route, viewport)
                 if screenshots
                 else None
             )
+            video_path = artifact_dir / _video_name(route, viewport) if videos else None
             runs.append(
                 DashboardReviewRun(
                     route=route,
@@ -1110,9 +1133,97 @@ def build_review_plan(
                     required_texts=spec.required_texts,
                     control_probes=spec.control_probes,
                     screenshot_path=screenshot_path,
+                    video_path=video_path,
                 )
             )
     return tuple(runs)
+
+
+def configured_dashboard_routes() -> frozenset[str]:
+    """Return promoted and registry-backed dashboard routes."""
+    return frozenset((*PROMOTED_DASHBOARD_ROUTES, *_registry_backed_routes()))
+
+
+def _registry_backed_routes() -> tuple[str, ...]:
+    try:
+        return _registry_backed_routes_from_module()
+    except Exception:
+        return _registry_backed_routes_from_source()
+
+
+def _registry_backed_routes_from_module() -> tuple[str, ...]:
+    src_path = Path(__file__).parents[1] / "src"
+    src_path_text = str(src_path)
+    if src_path_text not in sys.path:
+        sys.path.insert(0, src_path_text)
+    module = importlib.import_module("marimoserver.dashboard_registry")
+    return tuple(
+        route
+        for entry in module.dashboard_registry()
+        for route in (entry.notebook_route,)
+        if route is not None
+    )
+
+
+def _registry_backed_routes_from_source() -> tuple[str, ...]:
+    registry_path = (
+        Path(__file__).parents[1] / "src" / "marimoserver" / "dashboard_registry.py"
+    )
+    try:
+        module_ast = ast.parse(registry_path.read_text(encoding="utf-8"))
+    except OSError:
+        return ()
+    for node in module_ast.body:
+        value_node = _registry_records_value_node(node)
+        if value_node is None:
+            continue
+        if not isinstance(value_node, ast.Tuple):
+            return ()
+        return _routes_from_registry_records(value_node)
+    return ()
+
+
+def _registry_records_value_node(node: ast.stmt) -> ast.expr | None:
+    if isinstance(node, ast.Assign):
+        if any(
+            isinstance(target, ast.Name) and target.id == "DASHBOARD_REGISTRY_RECORDS"
+            for target in node.targets
+        ):
+            return node.value
+        return None
+    if (
+        isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == "DASHBOARD_REGISTRY_RECORDS"
+    ):
+        return node.value
+    return None
+
+
+def _routes_from_registry_records(records_node: ast.Tuple) -> tuple[str, ...]:
+    routes: list[str] = []
+    for record_node in records_node.elts:
+        if not isinstance(record_node, ast.Dict):
+            continue
+        record = _string_dict_from_ast(record_node)
+        if record.get("status") != "available":
+            continue
+        notebook_name = record.get("notebook_name")
+        if notebook_name:
+            routes.append(f"/marimo/{notebook_name}/")
+    return tuple(routes)
+
+
+def _string_dict_from_ast(node: ast.Dict) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for key_node, value_node in zip(node.keys, node.values, strict=True):
+        if not isinstance(key_node, ast.Constant) or not isinstance(
+            key_node.value, str
+        ):
+            continue
+        if isinstance(value_node, ast.Constant) and isinstance(value_node.value, str):
+            values[key_node.value] = value_node.value
+    return values
 
 
 def dashboard_url(base_url: str, route: str) -> str:
@@ -1150,6 +1261,7 @@ def review_plan_payload(runs: tuple[DashboardReviewRun, ...]) -> dict[str, objec
                 "screenshot_path": (
                     None if run.screenshot_path is None else str(run.screenshot_path)
                 ),
+                "video_path": None if run.video_path is None else str(run.video_path),
             }
             for run in runs
         ],
@@ -1168,10 +1280,49 @@ def run_browser_review(
     evidence: list[str] = []
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=headless)
-        page = browser.new_page()
+        shared_page: BrowserPage | None = None
         for run in runs:
-            evidence.extend(_review_one_run(page, run, timeout_ms=timeout_ms))
+            if run.video_path is None:
+                if shared_page is None:
+                    shared_page = browser.new_page()
+                evidence.extend(
+                    _review_one_run(shared_page, run, timeout_ms=timeout_ms)
+                )
+            else:
+                evidence.extend(
+                    _review_one_run_with_video(browser, run, timeout_ms=timeout_ms)
+                )
         browser.close()
+    return evidence
+
+
+def _review_one_run_with_video(
+    browser: Browser,
+    run: DashboardReviewRun,
+    *,
+    timeout_ms: int,
+) -> list[str]:
+    if run.video_path is None:
+        raise RuntimeError("video review run missing video_path")
+    run.video_path.parent.mkdir(parents=True, exist_ok=True)
+    context = browser.new_context(
+        record_video_dir=str(run.video_path.parent),
+        viewport={"width": run.viewport.width, "height": run.viewport.height},
+    )
+    page = context.new_page()
+    evidence = _review_one_run(page, run, timeout_ms=timeout_ms)
+    context.close()
+    video = getattr(page, "video", None)
+    if video is None:
+        raise RuntimeError(f"Playwright did not record video for {run.route}")
+    recorded_path = Path(video.path())
+    if recorded_path != run.video_path:
+        if run.video_path.exists():
+            run.video_path.unlink()
+        recorded_path.replace(run.video_path)
+    if not run.video_path.exists() or run.video_path.stat().st_size <= 0:
+        raise RuntimeError(f"video artifact was not created: {run.video_path}")
+    evidence.append(f"video: {run.video_path}")
     return evidence
 
 
@@ -1286,6 +1437,11 @@ def _screenshot_name(route: str, viewport: ViewportSpec) -> str:
     return f"{route_slug}__{viewport.name}.png"
 
 
+def _video_name(route: str, viewport: ViewportSpec) -> str:
+    route_slug = route.strip("/").replace("/", "__")
+    return f"{route_slug}__{viewport.name}.webm"
+
+
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -1307,13 +1463,20 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--route",
         action="append",
-        choices=PROMOTED_DASHBOARD_ROUTES,
-        help="Limit review to one promoted dashboard route; may be repeated.",
+        help=(
+            "Limit review to one configured or registry-backed dashboard route; "
+            "may be repeated."
+        ),
     )
     parser.add_argument(
         "--screenshots",
         action="store_true",
         help="Capture full-page screenshots into --artifact-dir.",
+    )
+    parser.add_argument(
+        "--videos",
+        action="store_true",
+        help="Capture Playwright .webm videos into --artifact-dir.",
     )
     parser.add_argument(
         "--headed",
@@ -1346,6 +1509,7 @@ def main(argv: list[str] | None = None) -> int:
         parsed_args.base_url,
         parsed_args.artifact_dir,
         screenshots=parsed_args.screenshots,
+        videos=parsed_args.videos,
         routes=routes,
     )
 

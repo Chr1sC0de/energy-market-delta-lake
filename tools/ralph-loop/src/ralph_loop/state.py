@@ -825,6 +825,7 @@ class RunManifest:
         html_path: Path | None = None,
         generator_log_path: Path | None = None,
         summary: dict[str, Any] | None = None,
+        media: list[dict[str, Any]] | None = None,
         validation_status: str | None = None,
         failure_reason: str | None = None,
     ) -> None:
@@ -838,6 +839,8 @@ class RunManifest:
             package["generator_log_path"] = path_text(generator_log_path)
         if summary is not None:
             package["summary"] = dict(summary)
+        if media is not None:
+            package["media"] = list(media)
         if validation_status is not None:
             package["validation_status"] = validation_status
         if failure_reason is not None:

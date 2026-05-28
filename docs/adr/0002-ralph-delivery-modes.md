@@ -61,11 +61,13 @@ delivery reconciles `agent-reviewing` and leaves the issue open for review.
 After selected QA passes, risky issue attempts run **Issue completion review**
 before **Local integration**, a Trunk push, or Exploratory handoff. That
 automated gate is separate from human `dev` review and from the later
-**Post-promotion review** path. Gitflow attempts also run a blocking
+**Post-promotion review** path. Gitflow and Trunk attempts also run a blocking
 **Review package** gate after final QA and review evidence are known and before
-**Local integration** updates `dev`; ADR
+**Local integration** updates the **Integration target**. Configured Review
+package media recipes also run before Exploratory handoff; ADR
 [0012](0012-ralph-gitflow-review-package-gate.md) records the static HTML
-contract and failure boundary. After each successful issue **Local
+contract, optional sibling media artifacts, and failure boundary. After each
+successful issue **Local
 integration** or Exploratory handoff, **Ready issue refresh** reconciles the
 open issue queue before Ralph schedules more issue attempts; a parallel drain
 still lets already active Exploratory workers finish. The current drain records

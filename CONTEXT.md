@@ -90,11 +90,13 @@ _Avoid_: Human dev review, Ready issue refresh, Post-promotion review
 
 **Review package**:
 The ignored local `review-package.html` artifact Ralph generates and validates
-after final changed files, QA evidence, and any required **Issue completion
-review** are known, and before Gitflow **Local integration**. The package is
-offline static HTML for human review of a single issue run; invalid generation
-or validation fails the issue before Ralph pushes an **Integration target** or
-marks it `agent-integrated`.
+after final changed files, QA evidence, any required **Issue completion
+review**, and any configured Review package media capture are complete. The
+package is offline static HTML for human review of a single issue run and may
+link sibling run artifacts such as recorded Marimo `.webm` videos; invalid
+media capture, generation, or validation fails the issue before Ralph performs
+**Local integration**, pushes an **Integration target**, or marks the issue
+integrated.
 _Avoid_: Pull request, deployment report, Promotion review
 
 **Ready issue refresh**:

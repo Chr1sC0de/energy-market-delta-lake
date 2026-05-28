@@ -78,8 +78,10 @@ reruns the review; exhausted findings fail the issue without **Local
 integration**. For Gitflow and Trunk delivery, Ralph also generates and
 validates the local **Review package** before **Local integration**, the `dev`
 or `main` push, completion comments, `agent-integrated`, `agent-merged`, or
-Trunk issue closure; generation or validation failure keeps the run pre-push
-with logs and worktrees preserved. After a successful
+Trunk issue closure. Configured Review package media recipes, such as changed
+Marimo notebook route videos, must record before publication; media capture,
+generation, or validation failure keeps the run pre-push with logs and
+worktrees preserved. After a successful
 **Local integration** or Exploratory handoff,
 **Ready issue refresh** reconciles the open issue queue before Ralph claims the
 next `ready-for-agent` issue.
@@ -207,8 +209,8 @@ Use this checklist:
   `agent-integrated`.
 - For Gitflow and Trunk work, open the run manifest and confirm
   `review_package.status` and `review_package.validation_status` are `passed`;
-  inspect the local `review-package.html` path from the completion comment when
-  the code diff needs closer review.
+  inspect the local `review-package.html` path and any `review_package.media`
+  entries from the completion comment when the code diff needs closer review.
 - For manually recovered Gitflow work, verify the issue has a parseable
   `Ralph Gitflow manual recovery completed.` comment with the recovered `dev`
   commit before Promotion.
