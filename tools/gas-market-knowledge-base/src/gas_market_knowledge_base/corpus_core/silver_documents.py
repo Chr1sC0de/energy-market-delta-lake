@@ -44,6 +44,9 @@ _SOURCE_FRONTMATTER_FIELDS = (
     "storage_uri",
     "target_s3_key",
     "content_length",
+    "include_decision",
+    "review_status",
+    "review_reason",
 )
 
 type DisplayPath = Callable[[Path], str]
@@ -306,6 +309,10 @@ def _source_document_entry(
     output_dir: Path,
 ) -> tuple[SourceDocumentEntry | None, tuple[str, ...]]:
     errors: list[str] = []
+    include_decision = _manifest_text(row, "include_decision")
+    if include_decision is not None and include_decision != "include":
+        return None, ()
+
     content_sha256 = _required_manifest_text(
         row, "content_sha256", line_number=line_number
     )
@@ -369,6 +376,14 @@ def _required_manifest_text(
     if not normalized:
         return None
     return normalized
+
+
+def _manifest_text(row: Mapping[str, object], key: str) -> str | None:
+    value = row.get(key)
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
 
 
 def _cache_validation_error(entry: SourceDocumentEntry) -> str | None:

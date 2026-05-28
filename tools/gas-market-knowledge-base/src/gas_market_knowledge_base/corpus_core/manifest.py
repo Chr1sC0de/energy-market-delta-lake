@@ -39,6 +39,9 @@ class SourceManifestRow:
     storage_uri: str | None = None
     target_s3_key: str | None = None
     content_length: int | None = None
+    include_decision: str = "include"
+    review_status: str = "ready"
+    review_reason: str | None = None
 
     def as_dict(self) -> dict[str, ManifestJsonValue]:
         """Return this row as deterministic JSON-ready manifest fields."""
@@ -64,6 +67,9 @@ class SourceManifestRow:
             "storage_uri": self.storage_uri,
             "target_s3_key": self.target_s3_key,
             "content_length": self.content_length,
+            "include_decision": self.include_decision,
+            "review_status": self.review_status,
+            "review_reason": self.review_reason,
             "generated_paths": dict(self.generated_paths),
         }
 

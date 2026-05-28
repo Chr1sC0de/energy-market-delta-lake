@@ -17,6 +17,13 @@ from gas_market_knowledge_base.aemo_publications.fixture_corpus import (
     build_fixture_manifest_rows,
     write_fixture_manifest,
 )
+from gas_market_knowledge_base.aemo_publications.source_manifest import (
+    build_aemo_publication_manifest_rows,
+    write_aemo_publication_manifest,
+)
+from gas_market_knowledge_base.corpus_core.silver_documents import (
+    load_source_document_manifest,
+)
 
 
 def _jsonl_rows(path: Path) -> list[Mapping[str, object]]:
@@ -31,6 +38,45 @@ def _frontmatter(path: Path) -> Mapping[str, object]:
     text = path.read_text(encoding="utf-8")
     end_index = text.find("\n---\n", len("---\n"))
     return cast(Mapping[str, object], json.loads(text[len("---\n") : end_index]))
+
+
+def _download_metadata_row(**overrides: object) -> dict[str, object]:
+    row: dict[str, object] = {
+        "archive_storage_uri": (
+            "s3://dev-energy-market-archive/bronze/aemo_major_publications/"
+            f"{'a' * 64}.pdf"
+        ),
+        "content_length": 1234,
+        "content_sha256": "a" * 64,
+        "content_type": "application/pdf",
+        "corpus_source": "major_publications",
+        "document_family_id": "integrated-system-plan",
+        "document_kind": "major-publication",
+        "document_title": "Integrated System Plan",
+        "document_version": "2026",
+        "document_version_id": "a" * 64,
+        "effective_date": "2026-01-15",
+        "exclude_reason": None,
+        "include_decision": "include",
+        "media_revision": "rev-a",
+        "published_date": "2026-01-15",
+        "resolved_url": "https://www.aemo.com.au/media/isp.pdf",
+        "source_content_hash": "row-a",
+        "source_link_text": "2026 Integrated System Plan",
+        "source_page_title": "Major publications",
+        "source_page_url": (
+            "https://www.aemo.com.au/energy-systems/major-publications/"
+            "integrated-system-plan-isp"
+        ),
+        "source_url": "https://www.aemo.com.au/media/isp.pdf",
+        "storage_uri": (
+            "s3://dev-energy-market-archive/bronze/aemo_major_publications/"
+            f"{'a' * 64}.pdf"
+        ),
+        "target_s3_key": f"bronze/aemo_major_publications/{'a' * 64}.pdf",
+    }
+    row.update(overrides)
+    return row
 
 
 def test_aemo_publications_defaults_use_configured_corpus_root(
@@ -114,6 +160,174 @@ def test_fixture_manifest_conversion_uses_shared_manifest_shape(
     assert rows[0]["generated_paths"] == paths.generated_paths(
         cast(str, rows[0]["document_identity"])
     )
+
+
+def test_aemo_publications_downloaded_metadata_converts_supported_hub_and_library_rows(
+    tmp_path: Path,
+) -> None:
+    paths = default_corpus_paths(artifact_root=tmp_path / "corpora")
+    library_hash = "b" * 64
+
+    rows, summary = build_aemo_publication_manifest_rows(
+        [
+            _download_metadata_row(),
+            _download_metadata_row(
+                content_sha256=library_hash,
+                document_family_id="electricity-statement-of-opportunities",
+                document_title="Electricity Statement of Opportunities",
+                source_page_url="https://www.aemo.com.au/library/major-publications",
+                source_url="https://www.aemo.com.au/media/esoo.pdf",
+                resolved_url="https://www.aemo.com.au/media/esoo.pdf",
+                archive_storage_uri=(
+                    "s3://dev-energy-market-archive/bronze/"
+                    f"aemo_major_publications/{library_hash}.pdf"
+                ),
+                storage_uri=(
+                    "s3://dev-energy-market-archive/bronze/"
+                    f"aemo_major_publications/{library_hash}.pdf"
+                ),
+                target_s3_key=f"bronze/aemo_major_publications/{library_hash}.pdf",
+            ),
+        ],
+        paths=paths,
+    )
+
+    assert summary.as_dict() == {
+        "metadata_row_count": 2,
+        "manifest_row_count": 2,
+        "included_row_count": 2,
+        "review_needed_row_count": 0,
+        "excluded_out_of_scope_count": 0,
+    }
+    assert {row["document_title"] for row in rows} == {
+        "Electricity Statement of Opportunities",
+        "Integrated System Plan",
+    }
+    assert rows[0]["include_decision"] == "include"
+    assert rows[0]["review_status"] == "ready"
+    assert rows[0]["source_page_url"]
+    assert rows[0]["source_url"]
+    assert rows[0]["content_sha256"] in {"a" * 64, library_hash}
+    assert rows[0]["storage_uri"] == rows[0]["archive_uri"]
+    assert rows[0]["generated_paths"] == paths.generated_paths(
+        cast(str, rows[0]["document_identity"])
+    )
+
+
+def test_aemo_publications_manifest_keeps_unsupported_and_failed_rows_for_review(
+    tmp_path: Path,
+) -> None:
+    paths = default_corpus_paths(artifact_root=tmp_path / "corpora")
+    rows, summary = build_aemo_publication_manifest_rows(
+        [
+            _download_metadata_row(
+                content_sha256="c" * 64,
+                content_type="application/vnd.ms-excel",
+                source_url="https://www.aemo.com.au/media/input-workbook.xlsx",
+                resolved_url="https://www.aemo.com.au/media/input-workbook.xlsx",
+            ),
+            _download_metadata_row(
+                content_sha256=None,
+                storage_uri=None,
+                archive_storage_uri=None,
+                exclude_reason="Download failed during materialization: timeout",
+            ),
+        ],
+        paths=paths,
+    )
+
+    assert summary.review_needed_row_count == 2
+    assert summary.included_row_count == 0
+    rows_by_status = {cast(str, row["review_status"]): row for row in rows}
+    assert rows_by_status["unsupported_media_type"]["include_decision"] == (
+        "needs_human_review"
+    )
+    assert rows_by_status["unsupported_media_type"]["content_sha256"] == "c" * 64
+    assert rows_by_status["unsupported_media_type"]["archive_uri"] is None
+    assert rows_by_status["download_failed"]["content_sha256"] is None
+    assert rows_by_status["download_failed"]["archive_uri"] is None
+    assert rows_by_status["download_failed"]["review_reason"] == (
+        "Download failed during materialization: timeout"
+    )
+
+
+def test_aemo_publications_manifest_keeps_duplicate_hash_and_missing_storage_auditable(
+    tmp_path: Path,
+) -> None:
+    paths = default_corpus_paths(artifact_root=tmp_path / "corpora")
+    rows, summary = build_aemo_publication_manifest_rows(
+        [
+            _download_metadata_row(),
+            _download_metadata_row(source_url="https://www.aemo.com.au/media/copy.pdf"),
+            _download_metadata_row(
+                content_sha256="d" * 64,
+                storage_uri=None,
+                archive_storage_uri=None,
+                source_url="https://www.aemo.com.au/media/no-storage.pdf",
+                resolved_url="https://www.aemo.com.au/media/no-storage.pdf",
+            ),
+        ],
+        paths=paths,
+    )
+
+    assert summary.included_row_count == 1
+    assert summary.review_needed_row_count == 2
+    rows_by_status = {cast(str, row["review_status"]): row for row in rows}
+    assert rows_by_status["ready"]["include_decision"] == "include"
+    assert rows_by_status["duplicate_content_hash"]["content_sha256"] == "a" * 64
+    assert rows_by_status["duplicate_content_hash"]["archive_uri"] is None
+    assert rows_by_status["missing_storage_uri"]["content_sha256"] == "d" * 64
+    assert rows_by_status["missing_storage_uri"]["archive_uri"] is None
+
+
+def test_aemo_publications_manifest_excludes_gsoo_rows_from_this_slice(
+    tmp_path: Path,
+) -> None:
+    rows, summary = build_aemo_publication_manifest_rows(
+        [
+            _download_metadata_row(
+                corpus_source="gsoo",
+                source_page_url=(
+                    "https://www.aemo.com.au/energy-systems/gas/"
+                    "gas-forecasting-and-planning/"
+                    "gas-statement-of-opportunities-gsoo"
+                ),
+            )
+        ],
+        paths=default_corpus_paths(artifact_root=tmp_path / "corpora"),
+    )
+
+    assert rows == []
+    assert summary.excluded_out_of_scope_count == 1
+
+
+def test_aemo_publications_review_rows_stay_visible_but_not_extractable(
+    tmp_path: Path,
+) -> None:
+    paths = default_corpus_paths(artifact_root=tmp_path / "corpora")
+    result = write_aemo_publication_manifest(
+        [
+            _download_metadata_row(),
+            _download_metadata_row(
+                content_sha256=None,
+                storage_uri=None,
+                archive_storage_uri=None,
+                exclude_reason="Download failed during materialization: timeout",
+            ),
+        ],
+        paths=paths,
+    )
+
+    manifest = load_source_document_manifest(
+        paths.source_manifest_path,
+        cache_dir=paths.source_cache_dir,
+        output_dir=paths.silver_documents_dir,
+    )
+
+    assert result.summary.manifest_row_count == 2
+    assert manifest.row_count == 2
+    assert len(manifest.entries) == 1
+    assert manifest.errors == ()
 
 
 def test_build_fixture_corpus_writes_silver_index_and_gold(
