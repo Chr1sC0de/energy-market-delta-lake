@@ -29,6 +29,9 @@ Marimo-local code constants. The registry carries planned and available
 dashboard metadata, including Market context IDs, source chunk IDs, silver
 chunk paths, and source hashes. Dashboards consume that parsed registry rather
 than opening generated Market context artifacts or silver chunk files directly.
+Generated Gas market corpus Markdown is external artifact output rather than a
+tracked runtime dependency, so dashboard deployment must continue to package
+only registry metadata and copied identifiers.
 
 The curated image includes an S3 Bucket Health dashboard for configured
 S3-compatible bucket reachability, object scans, truncation, bucket errors, and

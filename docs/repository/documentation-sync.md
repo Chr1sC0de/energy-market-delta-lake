@@ -122,11 +122,11 @@ secret-scan tooling through:
 prek run -a
 ```
 
-The root Markdown hooks keep explicitly tracked generated gold **Market
-context** Markdown lintable, but exclude
-`tools/gas-market-knowledge-base/generated/silver/**`. Silver artifacts are raw
-corpus extraction output, so `rumdl` and `rumdl-fmt` must not lint or rewrite
-them during the root **Commit check**.
+The root Markdown hooks do not carry generated corpus exclusions. Generated
+bronze, silver, and gold corpus files are external artifact output, the legacy
+`tools/gas-market-knowledge-base/generated/` tree is ignored, and the Gas
+market knowledge base **Commit check** rejects staged generated corpus
+artifacts before root Markdown linting needs to handle them.
 
 ## Documentation QA ratchets
 
@@ -338,8 +338,13 @@ way:
   bronze, silver, and gold corpus defaults under
   `$ENERGY_MARKET_CORPUS_ROOT/gas-market/{bronze,silver,gold}`, with an unset
   or empty environment variable falling back to
-  `~/energy-market-delta-lake-artifacts/corpora`. Existing repo
-  `generated/` artifacts remain corpus output, not maintained router docs.
+  `~/energy-market-delta-lake-artifacts/corpora`. Repo `generated/` paths
+  remain corpus output rather than maintained router docs when present.
+- #279: The **Gas market knowledge base** Subproject stopped tracking current
+  generated corpus files under `tools/gas-market-knowledge-base/generated/`.
+  The tree is ignored, the Subproject **Commit check** rejects staged generated
+  bronze, silver, and gold corpus artifacts, and any git-history purge remains
+  a separate guarded maintenance issue.
 
 ## Search commands
 

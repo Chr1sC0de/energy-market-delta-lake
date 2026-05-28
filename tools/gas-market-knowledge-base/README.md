@@ -7,7 +7,7 @@ Docling-based silver document extraction,
 Docling Hybrid silver chunk generation, retrieval index validation,
 gold **Market context** citation validation, generated-artifact policy, a shared
 corpus core for reusable bronze/silver/gold mechanics, seed gold glossary
-Markdown rendering helpers, seed gold glossary artifacts, and **Unit test**
+Markdown rendering helpers, external generated corpus roots, and **Unit test**
 lane.
 
 The CLI is available inside this Subproject with `uv run`:
@@ -196,19 +196,17 @@ Corpus text artifacts belong under these generated roots:
 - `$ENERGY_MARKET_CORPUS_ROOT/gas-market/gold`: cited, agent-authored
   **Market context** pages.
 
-New default runs write outside the repository. This change does not remove
-existing tracked files under `tools/gas-market-knowledge-base/generated/`, and
-explicit CLI paths may still target that tree when a future issue intentionally
-creates reviewable corpus artifact diffs. Generated silver document Markdown
-under `generated/silver/documents/**/*.md` may exceed the generic 500 KB
-large-file hook limit because it preserves full Docling Markdown extraction
-output for source document review. The Subproject **Commit check** exempts only
-those generated silver document Markdown files from `check-added-large-files`;
-generated chunks, generated gold pages, raw PDFs, binary artifacts, and
-unrelated large files remain subject to the generic limit. Raw PDFs are not
-tracked. Source PDF bytes stay in S3-compatible archive storage or in the
-ignored local `.cache/pdfs/` cache, and repository ignore rules keep `*.pdf`
-files out of this Subproject.
+Default runs write outside the repository, and current repo policy treats
+generated bronze, silver, and gold corpus files as external artifact output.
+The legacy `tools/gas-market-knowledge-base/generated/` tree is ignored, and
+the Subproject **Commit check** rejects staged generated corpus artifacts under
+that tree. Explicit CLI paths may still target repo paths for local inspection,
+but those generated files must not be committed. This current-tree cleanup does
+not purge prior generated corpus files from git history; dependent maintenance
+issues own any guarded history rewrite. Raw PDFs are not tracked. Source PDF
+bytes stay in S3-compatible archive storage or in the ignored local
+`.cache/pdfs/` cache, and repository ignore rules keep `*.pdf` files out of
+this Subproject.
 
 The repository **Documentation sync** workflow excludes any repo `generated/`
 path from maintained-doc discovery, and external corpus roots are outside the
@@ -239,9 +237,9 @@ artifact output rather than maintained router documentation.
 - `tests/unit/`: package import, command-surface, and manifest writer tests.
 - `tests/docling/`: real Docling adapter smoke tests that are intentionally
   outside the **Unit test** lane.
-- `generated/bronze`, `generated/silver`, `generated/gold`: existing and
-  explicit-review text artifact roots; default runs use the external corpus
-  root.
+- `generated/bronze`, `generated/silver`, `generated/gold`: ignored legacy
+  local artifact paths; default runs use the external corpus root, and
+  generated corpus files must not be committed from these paths.
 - `.pre-commit-config.yaml`: Subproject `prek` hook surface, with file-based
   `uv run` hooks serialized so fresh Promotion worktrees do not race while
   creating the Subproject environment.

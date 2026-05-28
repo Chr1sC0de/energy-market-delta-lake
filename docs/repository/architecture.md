@@ -238,8 +238,9 @@ Gas market knowledge base responsibility:
     source manifest command, archive-prefix completeness audit, archive PDF
     cache fetcher, Docling-based silver document extraction, Docling Hybrid
     retrieval chunks, silver chunk index validation, gold **Market context**
-    citation validation, seed glossary artifacts, generated text artifact roots,
-    raw-PDF ignore policy, unit tests, and **Commit check** surface. ADR
+    citation validation, seed glossary rendering helpers, external generated
+    corpus roots, raw-PDF ignore policy, unit tests, and **Commit check**
+    surface. ADR
     [0010](../adr/0010-gas-market-knowledge-base.md) records the corpus
     architecture and the generated Market context boundary.
 

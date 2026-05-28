@@ -11,13 +11,17 @@ repos:
       - id: check-yaml
       - id: check-added-large-files
         args: [--maxkb=500]
-        exclude: ^(tools/gas-market-knowledge-base/)?generated/silver/documents/.+\.md$
   - repo: https://github.com/tox-dev/pyproject-fmt
     rev: "v2.16.1"
     hooks:
       - id: pyproject-fmt
   - repo: local
     hooks:
+      - id: forbid-generated-corpus-artifacts
+        name: forbid generated corpus artifacts
+        language: system
+        entry: uv run python -c "raise SystemExit('Generated Gas market corpus artifacts belong under ENERGY_MARKET_CORPUS_ROOT, not git.')"
+        files: ^(tools/gas-market-knowledge-base/)?generated/(bronze|silver|gold)/.+$
       - id: ruff-check
         name: ruff check
         language: system
