@@ -163,6 +163,14 @@ class RunManifest:
                 "repair_attempts": [],
                 "failure": None,
             },
+            "review_package": {
+                "status": "not_required",
+                "html_path": None,
+                "generator_log_path": None,
+                "summary": None,
+                "validation_status": "not_started",
+                "failure_reason": None,
+            },
             "ready_issue_refresh": {
                 "enabled": config.ready_issue_refresh_enabled,
                 "status": "not_started",
@@ -809,6 +817,34 @@ class RunManifest:
                 repairs.append(entry)
 
         self.record_event(f"issue_completion_review_{status}", details=dict(review))
+
+    def record_review_package(
+        self,
+        status: str,
+        *,
+        html_path: Path | None = None,
+        generator_log_path: Path | None = None,
+        summary: dict[str, Any] | None = None,
+        validation_status: str | None = None,
+        failure_reason: str | None = None,
+    ) -> None:
+        package = self.data.setdefault("review_package", {})
+        if not isinstance(package, dict):
+            raise RalphError("Manifest review_package field is not an object.")
+        package["status"] = status
+        if html_path is not None or "html_path" not in package:
+            package["html_path"] = path_text(html_path)
+        if generator_log_path is not None or "generator_log_path" not in package:
+            package["generator_log_path"] = path_text(generator_log_path)
+        if summary is not None:
+            package["summary"] = dict(summary)
+        if validation_status is not None:
+            package["validation_status"] = validation_status
+        if failure_reason is not None:
+            package["failure_reason"] = failure_reason
+        elif status not in {"failed", "validation_failed"}:
+            package["failure_reason"] = None
+        self.record_event(f"review_package_{status}", details=dict(package))
 
     def record_post_promotion_followups(
         self,

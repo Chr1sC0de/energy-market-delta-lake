@@ -88,6 +88,15 @@ issue work. It triggers for deployable changed paths, **Agent workflow changes**
 Codex repair attempts from the same per-issue implementation budget.
 _Avoid_: Human dev review, Ready issue refresh, Post-promotion review
 
+**Review package**:
+The ignored local `review-package.html` artifact Ralph generates and validates
+after final changed files, QA evidence, and any required **Issue completion
+review** are known, and before Gitflow **Local integration**. The package is
+offline static HTML for human review of a single issue run; invalid generation
+or validation fails the issue before Ralph pushes an **Integration target** or
+marks it `agent-integrated`.
+_Avoid_: Pull request, deployment report, Promotion review
+
 **Ready issue refresh**:
 The Ralph queue-maintenance pass that reconciles open GitHub Issues after a
 successful **Local integration** or Exploratory handoff and before the next

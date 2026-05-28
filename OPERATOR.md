@@ -7,8 +7,8 @@ Use repo canonical terms from [CONTEXT.md](CONTEXT.md), especially
 **Subproject**, **Test lane**, **Fast check**, **Commit check**, **Push check**,
 **Local integration**, **Delivery mode**, **Integration target**,
 **Sandboxed issue access**, **Full-access implementation pass**,
-**Issue completion review**, **Ready issue refresh**, **Operator workflow**,
-**Documentation sync**, **Agent skill**, **Agent workflow change**,
+**Issue completion review**, **Review package**, **Ready issue refresh**,
+**Operator workflow**, **Documentation sync**, **Agent skill**, **Agent workflow change**,
 **Exploratory acceptance review**, **Promotion**,
 **Post-Promotion deployment classification**, and
 **AWS/Pulumi credential boundary**.
@@ -75,7 +75,11 @@ automated **Issue completion review** after QA and before any **Integration
 target** update or Exploratory handoff. If that review finds incomplete work,
 Ralph feeds the findings back into remaining Codex attempts, reruns QA, and
 reruns the review; exhausted findings fail the issue without **Local
-integration**. After a successful **Local integration** or Exploratory handoff,
+integration**. For Gitflow delivery, Ralph also generates and validates the
+local **Review package** before **Local integration**, the `dev` push,
+completion comments, or `agent-integrated`; generation or validation failure
+keeps the run pre-push with logs and worktrees preserved. After a successful
+**Local integration** or Exploratory handoff,
 **Ready issue refresh** reconciles the open issue queue before Ralph claims the
 next `ready-for-agent` issue.
 
@@ -200,6 +204,10 @@ Use this checklist:
 - Inspect changed files with `git diff --stat origin/main..origin/dev` and `git diff --name-only origin/main..origin/dev`.
 - Match each included issue to its Ralph evidence and verify it is marked
   `agent-integrated`.
+- For Gitflow work, open the run manifest and confirm `review_package.status`
+  and `review_package.validation_status` are `passed`; inspect the local
+  `review-package.html` path from the completion comment when the code diff
+  needs closer review.
 - For manually recovered Gitflow work, verify the issue has a parseable
   `Ralph Gitflow manual recovery completed.` comment with the recovered `dev`
   commit before Promotion.
@@ -502,6 +510,7 @@ Keep failed worktrees unless the maintainer asks for cleanup.
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md`
+  - `docs/adr/0012-ralph-gitflow-review-package-gate.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

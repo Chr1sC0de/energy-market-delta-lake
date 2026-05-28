@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import errno
+import html.parser
 import json
 import os
 import re
@@ -26,6 +27,50 @@ READY_ISSUE_REFRESH_MUTATIONS_KEY = "ready_issue_refresh_mutations"
 DEPLOY_FAILURE_ANALYSIS_ARTIFACT_NAME = "deploy-failure-analysis.md"
 ISSUE_COMPLETION_REVIEW_ARTIFACT_NAME = "issue-completion-review.md"
 ISSUE_COMPLETION_REVIEW_FAILURE_TYPE = "issue_completion_review_failed"
+REVIEW_PACKAGE_ARTIFACT_NAME = "review-package.html"
+REVIEW_PACKAGE_FAILURE_TYPE = "review_package_failed"
+REVIEW_PACKAGE_MAX_BYTES = 512_000
+REVIEW_PACKAGE_REQUIRED_SECTIONS = (
+    "summary",
+    "changed files",
+    "qa evidence",
+    "issue completion review",
+)
+REVIEW_PACKAGE_CSS_IMPORT_PATTERN = re.compile(r"@import\b", re.IGNORECASE)
+REVIEW_PACKAGE_CSS_JAVASCRIPT_PATTERN = re.compile(
+    r"(?:expression\s*\(|javascript\s*:)", re.IGNORECASE
+)
+REVIEW_PACKAGE_CSS_URL_PATTERN = re.compile(r"url\s*\(", re.IGNORECASE)
+REVIEW_PACKAGE_EMBEDDED_URL_PATTERN = re.compile(
+    r"(?:\b[a-z][a-z0-9+.-]*:|//|(?:^|[\s\"'=])[/\\])",
+    re.IGNORECASE,
+)
+REVIEW_PACKAGE_ASSET_ATTRIBUTES = frozenset(
+    {
+        "archive",
+        "background",
+        "classid",
+        "codebase",
+        "data",
+        "imagesrcset",
+        "longdesc",
+        "poster",
+        "profile",
+        "src",
+        "srcset",
+        "usemap",
+    }
+)
+REVIEW_PACKAGE_URL_ATTRIBUTES = frozenset(
+    {
+        "action",
+        "cite",
+        "formaction",
+        "href",
+        "manifest",
+        "ping",
+    }
+)
 HIGH_STIFFNESS_SCORE_THRESHOLD = 70
 MEDIUM_STIFFNESS_RATIO_THRESHOLD = 1.5
 HIGH_STIFFNESS_RATIO_THRESHOLD = 2.5
@@ -535,6 +580,29 @@ class IssueCompletionReviewFailure(IssueFailure):
                 "Inspect the preserved implementation worktree, review artifact, "
                 "and QA logs, then rerun Ralph for the issue after repairing the "
                 "incomplete work."
+            ),
+        )
+
+
+class ReviewPackageFailure(IssueFailure):
+    """Review package generation or validation failed before Local integration."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        log_path: Path | None = None,
+        recovery_guidance: str | None = None,
+    ) -> None:
+        super().__init__(
+            message,
+            log_path=log_path,
+            failure_type=REVIEW_PACKAGE_FAILURE_TYPE,
+            recovery_guidance=(
+                recovery_guidance
+                or "Inspect the Review package generator log and preserved "
+                "implementation worktree, then rerun Ralph for the issue after "
+                "the package can be generated as valid offline static HTML."
             ),
         )
 
@@ -1151,6 +1219,26 @@ class QAResult:
     command: QACommand
     log_path: Path | None
     run_manifest_evidence: QARunManifestEvidence | None = None
+
+
+@dataclass(frozen=True)
+class ReviewPackageSummary:
+    title: str
+    sections: tuple[str, ...]
+    issue_number: int | None
+    changed_file_count: int
+    qa_result_count: int
+    byte_count: int
+
+    def to_manifest(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "sections": list(self.sections),
+            "issue_number": self.issue_number,
+            "changed_file_count": self.changed_file_count,
+            "qa_result_count": self.qa_result_count,
+            "byte_count": self.byte_count,
+        }
 
 
 @dataclass(frozen=True)
@@ -4597,6 +4685,217 @@ def completion_comment_title(delivery_mode: str) -> str:
     raise ValueError(f"Unsupported delivery mode: {delivery_mode}")
 
 
+class ReviewPackageHTMLParser(html.parser.HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.title_parts: list[str] = []
+        self.heading_parts: list[str] = []
+        self.current_heading: str | None = None
+        self.current_heading_level: str | None = None
+        self.in_title = False
+        self.in_style = False
+        self.rejected: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        normalized_tag = tag.lower()
+        if normalized_tag == "script":
+            self.rejected.append("script tag is not allowed")
+        if normalized_tag == "title":
+            self.in_title = True
+        if normalized_tag == "style":
+            self.in_style = True
+        if normalized_tag in {"h1", "h2", "h3"}:
+            self.current_heading = ""
+            self.current_heading_level = normalized_tag
+        for name, value in attrs:
+            attr = name.lower()
+            attr_value = (value or "").strip()
+            if attr.startswith("on"):
+                self.rejected.append(
+                    f"inline JavaScript attribute `{name}` is not allowed"
+                )
+            if attr in REVIEW_PACKAGE_ASSET_ATTRIBUTES and attr_value != "":
+                self.rejected.append(
+                    f"{attr}={attr_value!r}: embedded assets are not allowed"
+                )
+                continue
+            if attr in REVIEW_PACKAGE_URL_ATTRIBUTES:
+                problem = review_package_url_problem(attr_value)
+                if problem is not None:
+                    self.rejected.append(f"{attr}={attr_value!r}: {problem}")
+            if attr == "content" and is_meta_refresh(normalized_tag, attrs):
+                problem = review_package_embedded_url_problem(attr_value)
+                if problem is not None:
+                    self.rejected.append(f"content={attr_value!r}: {problem}")
+            if attr == "srcdoc":
+                self.rejected.extend(review_package_srcdoc_problems(attr_value))
+            if attr == "style":
+                problem = review_package_css_problem(attr_value)
+                if problem is not None:
+                    self.rejected.append(f"style={attr_value!r}: {problem}")
+                continue
+            if (
+                attr
+                not in REVIEW_PACKAGE_ASSET_ATTRIBUTES | REVIEW_PACKAGE_URL_ATTRIBUTES
+            ):
+                problem = review_package_embedded_url_problem(attr_value)
+                if problem is not None:
+                    self.rejected.append(f"{attr}={attr_value!r}: {problem}")
+
+    def handle_endtag(self, tag: str) -> None:
+        normalized_tag = tag.lower()
+        if normalized_tag == "title":
+            self.in_title = False
+        if normalized_tag == "style":
+            self.in_style = False
+        if (
+            self.current_heading is not None
+            and normalized_tag == self.current_heading_level
+        ):
+            text = normalize_review_package_heading(self.current_heading)
+            if text != "":
+                self.heading_parts.append(text)
+            self.current_heading = None
+            self.current_heading_level = None
+
+    def handle_data(self, data: str) -> None:
+        if self.in_title:
+            self.title_parts.append(data)
+        if self.in_style:
+            problem = review_package_css_problem(data)
+            if problem is not None:
+                self.rejected.append(f"style tag: {problem}")
+        if self.current_heading is not None:
+            self.current_heading += data
+
+    @property
+    def title(self) -> str:
+        return " ".join("".join(self.title_parts).split())
+
+
+def normalize_review_package_heading(text: str) -> str:
+    return re.sub(r"\s+", " ", text.strip().lower())
+
+
+def is_meta_refresh(tag: str, attrs: list[tuple[str, str | None]]) -> bool:
+    if tag != "meta":
+        return False
+    return any(
+        name.lower() == "http-equiv" and (value or "").strip().lower() == "refresh"
+        for name, value in attrs
+    )
+
+
+def review_package_url_problem(value: str) -> str | None:
+    lowered = value.lower()
+    if lowered == "" or lowered.startswith("#"):
+        return None
+    if re.match(r"^[a-z][a-z0-9+.-]*:", lowered):
+        if lowered.startswith("file:"):
+            return "absolute local file reads are not allowed"
+        if lowered.startswith("javascript:"):
+            return "inline JavaScript URLs are not allowed"
+        return "external URLs or embedded assets are not allowed"
+    if lowered.startswith("//"):
+        return "external URLs or embedded assets are not allowed"
+    if value.startswith(("/", "\\")):
+        return "absolute local file reads are not allowed"
+    return "relative URLs or embedded assets are not allowed"
+
+
+def review_package_embedded_url_problem(value: str) -> str | None:
+    lowered = value.lower()
+    if lowered == "":
+        return None
+    if "javascript:" in lowered:
+        return "inline JavaScript URLs are not allowed"
+    if "file:" in lowered or REVIEW_PACKAGE_EMBEDDED_URL_PATTERN.search(value):
+        return "external URLs or embedded assets are not allowed"
+    return None
+
+
+def review_package_css_problem(value: str) -> str | None:
+    if REVIEW_PACKAGE_CSS_URL_PATTERN.search(value) is not None:
+        return "CSS url() assets are not allowed"
+    if REVIEW_PACKAGE_CSS_IMPORT_PATTERN.search(value) is not None:
+        return "CSS @import assets are not allowed"
+    if REVIEW_PACKAGE_CSS_JAVASCRIPT_PATTERN.search(value) is not None:
+        return "inline JavaScript CSS is not allowed"
+    return None
+
+
+def review_package_srcdoc_problems(value: str) -> list[str]:
+    if value == "":
+        return []
+    parser = ReviewPackageHTMLParser()
+    try:
+        parser.feed(html.unescape(value))
+        parser.close()
+    except html.parser.HTMLParseError as error:
+        return [f"srcdoc HTML is malformed: {error}"]
+    return [f"srcdoc: {problem}" for problem in parser.rejected]
+
+
+def validate_review_package_html(
+    html_path: Path,
+    *,
+    issue_number: int,
+    changed_files: list[str],
+    qa_results: list[QAResult],
+    max_bytes: int = REVIEW_PACKAGE_MAX_BYTES,
+) -> ReviewPackageSummary:
+    if not html_path.exists():
+        raise ReviewPackageFailure(f"Review package was not created: {html_path}")
+    byte_count = html_path.stat().st_size
+    if byte_count <= 0:
+        raise ReviewPackageFailure(f"Review package is empty: {html_path}")
+    if byte_count > max_bytes:
+        raise ReviewPackageFailure(
+            f"Review package is too large: {byte_count} bytes exceeds {max_bytes}."
+        )
+    html_text = html_path.read_text(encoding="utf-8")
+    parser = ReviewPackageHTMLParser()
+    try:
+        parser.feed(html_text)
+        parser.close()
+    except html.parser.HTMLParseError as error:
+        raise ReviewPackageFailure(
+            f"Review package HTML is malformed: {error}"
+        ) from error
+    if parser.rejected:
+        problems = "; ".join(parser.rejected[:5])
+        raise ReviewPackageFailure(f"Review package validation failed: {problems}.")
+    sections = tuple(parser.heading_parts)
+    missing = [
+        section
+        for section in REVIEW_PACKAGE_REQUIRED_SECTIONS
+        if section not in sections
+    ]
+    if missing:
+        raise ReviewPackageFailure(
+            "Review package is missing required section heading(s): "
+            + ", ".join(missing)
+        )
+    text = re.sub(r"\s+", " ", html_text)
+    if f"#{issue_number}" not in text and f"Issue {issue_number}" not in text:
+        raise ReviewPackageFailure(
+            f"Review package must identify GitHub issue #{issue_number}."
+        )
+    for path in changed_files:
+        if path not in html_text:
+            raise ReviewPackageFailure(
+                f"Review package is missing changed file evidence for `{path}`."
+            )
+    return ReviewPackageSummary(
+        title=parser.title or f"Review package for issue #{issue_number}",
+        sections=sections,
+        issue_number=issue_number,
+        changed_file_count=len(changed_files),
+        qa_result_count=len(qa_results),
+        byte_count=byte_count,
+    )
+
+
 def build_completion_comment(
     issue: Issue,
     commit_sha: str,
@@ -4606,9 +4905,11 @@ def build_completion_comment(
     *,
     delivery_plan: DeliveryPlan,
     operator_smoke: OperatorSmokeResult | None = None,
+    review_package: dict[str, Any] | None = None,
 ) -> str:
     qa_lines = qa_result_markdown_lines(qa_results)
     smoke_lines = operator_smoke_markdown_lines(operator_smoke)
+    review_package_lines = review_package_markdown_lines(review_package)
     changed_lines = [f"- `{path}`" for path in changed_files]
     if delivery_plan.mode == TRUNK_MODE:
         title = completion_comment_title(delivery_plan.mode)
@@ -4643,6 +4944,7 @@ def build_completion_comment(
             "",
             *qa_lines,
             "",
+            *review_package_lines,
             *smoke_lines,
             f"Run logs: `{run_dir}`",
             "",
@@ -4650,6 +4952,37 @@ def build_completion_comment(
             "",
         ]
     )
+
+
+def review_package_markdown_lines(review_package: dict[str, Any] | None) -> list[str]:
+    if review_package is None:
+        return []
+    html_path = review_package.get("html_path")
+    summary = review_package.get("summary")
+    summary_text = ""
+    if isinstance(summary, dict):
+        title = str(summary.get("title") or "").strip()
+        changed_count = summary.get("changed_file_count")
+        qa_count = summary.get("qa_result_count")
+        summary_parts = [
+            part
+            for part in (
+                title,
+                f"{changed_count} changed file(s)",
+                f"{qa_count} QA result(s)",
+            )
+            if part
+        ]
+        summary_text = "; ".join(summary_parts)
+    if summary_text == "":
+        summary_text = "Review package generated and validated."
+    return [
+        "## Review package",
+        "",
+        f"- HTML: `{html_path}`",
+        f"- Summary: {summary_text}",
+        "",
+    ]
 
 
 def operator_smoke_markdown_lines(

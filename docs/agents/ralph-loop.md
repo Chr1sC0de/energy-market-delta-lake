@@ -10,7 +10,9 @@ Issues as the queue, Codex as the implementation and triage worker, repo
 Exploratory handoff, plus **Promotion** as the success paths after QA.
 Risky implementation paths also pass an automated **Issue completion review**
 before Ralph updates an **Integration target** or publishes an Exploratory
-handoff. Promotion records a deterministic **Post-Promotion deployment
+handoff. Gitflow delivery also generates and validates a local **Review
+package** before **Local integration** or the `dev` push. Promotion records a
+deterministic **Post-Promotion deployment
 classification** from the promoted changed-file inventory and source-table
 archive replay recovery guidance when a Promotion changes existing source-table
 `surrogate_key_sources`.
@@ -47,21 +49,22 @@ Ralph drains agent-ready GitHub issues through a guarded local loop:
 4. Run `codex exec` to implement each claimed issue.
 5. Run deterministic local QA.
 6. Run **Issue completion review** when risk triggers require it.
-7. For Gitflow or Trunk delivery, squash-merge validated work onto the latest
+7. For Gitflow delivery, generate and validate the **Review package**.
+8. For Gitflow or Trunk delivery, squash-merge validated work onto the latest
    **Integration target** locally.
-8. In **Gitflow delivery**, push `dev`, comment evidence, mark
+9. In **Gitflow delivery**, push `dev`, comment evidence, mark
    `agent-integrated`, and leave the issue open for **Promotion**.
-9. In **Trunk delivery**, push `main`, comment evidence, mark `agent-merged`,
-   and close the issue.
-10. In **Exploratory delivery**, push a durable **Exploratory branch** from
+10. In **Trunk delivery**, push `main`, comment evidence, mark `agent-merged`,
+    and close the issue.
+11. In **Exploratory delivery**, push a durable **Exploratory branch** from
     `origin/main`. If the issue requests an **Operator smoke**, run it from the
     Ralph-owned outer loop after the push. Then comment evidence, mark
     `agent-reviewing`, and leave the issue open for human review.
-11. Run **Ready issue refresh** when enabled under a scheduler claim gate after
+12. Run **Ready issue refresh** when enabled under a scheduler claim gate after
     each successful issue attempt. The gate pauses new claims while refresh
     analysis and metadata mutation run; already active Exploratory workers may
     finish.
-12. If no serial Gitflow or Trunk ready issue can be claimed, triage the next
+13. If no serial Gitflow or Trunk ready issue can be claimed, triage the next
     unblocked issue and rescan. In parallel drains, that triage pass may run
     while already active Exploratory workers continue.
 
@@ -151,7 +154,10 @@ flowchart TD
   REVIEWGATE -->|Pass| DONE
   REVIEWGATE -->|Fail with attempts left| CODEX
   REVIEWGATE -->|Fail exhausted| FAIL
-  DONE -->|Gitflow or Trunk| INTEGRATE[Run Local integration]
+  DONE -->|Gitflow| REVIEWPACKAGE[Generate and validate Review package]
+  REVIEWPACKAGE -->|Pass| INTEGRATE[Run Local integration]
+  REVIEWPACKAGE -->|Fail| FAIL
+  DONE -->|Trunk| INTEGRATE
   INTEGRATE --> DONE2{Delivery mode?}
   DONE -->|Exploratory| HANDOFF[Push Exploratory branch]
   HANDOFF --> SMOKE{Operator smoke requested?}
@@ -678,9 +684,11 @@ Ralph writes command logs while subprocesses are still running. Long Codex
 implementation attempts write to `codex-implementation-N.jsonl`, triage writes
 to `codex-triage.jsonl`, read-only **Ready issue refresh** analysis writes to
 `codex-ready-issue-refresh-analysis.jsonl`, **Issue completion review** writes
-to `codex-issue-completion-review.jsonl`, **Post-promotion review** writes to
-`codex-post-promotion-review.jsonl`, QA writes to `qa-*` logs, and Git
-operations write to their named `git-*` logs under the current
+to `codex-issue-completion-review.jsonl`, **Review package** generation writes
+to `codex-review-package.jsonl` and `review-package.html`,
+**Post-promotion review** writes to `codex-post-promotion-review.jsonl`, QA
+writes to `qa-*` logs, and Git operations write to their named `git-*` logs
+under the current
 `.ralph/runs/...` run directory.
 While a command is active, the log has `exit: running`; after the command
 finishes, Ralph rewrites the same log with the final exit status while
@@ -760,6 +768,11 @@ Key fields for inspection:
   high-stiffness evidence, structured Stiffness ratio evidence, review log and
   Markdown artifact paths, per-review attempt results, repair attempts, and
   failure state for implementation runs.
+- `review_package`: Gitflow **Review package** state for implementation runs,
+  including status, local HTML path, generator log path, structured summary,
+  validation status, and failure reason. A successful Gitflow run records
+  `status: passed` and `validation_status: passed` before any **Local
+  integration** commit or `dev` push.
 - `post_promotion_followups`: enabled state, created issue URLs, duplicate
   source-marker skips, validation downgrades to `needs-triage`, warning-only
   creation failures, and recovery guidance for **Promotion** follow-ups.
@@ -1075,8 +1088,27 @@ It gets read-only GitHub Issue commands and writes
 `issue-completion-review.md` plus `codex-issue-completion-review.jsonl` in the
 implementation run directory.
 
-Passing **Issue completion review** allows **Local integration**, Trunk closure,
-or Exploratory handoff to continue. Failing review findings become the next
+Passing **Issue completion review** allows the next delivery gate to continue.
+For Gitflow delivery, Ralph then generates a **Review package** at
+`review-package.html` in the run directory. The generator receives the final
+changed-file inventory, QA evidence, issue contract, **Delivery mode**,
+**Integration target**, and run paths after all repair and rebase work is
+known. Ralph validates that artifact before it creates the integration
+worktree, runs `git merge --squash`, pushes `dev`, comments completion evidence,
+or applies `agent-integrated`.
+
+The **Review package** validator accepts only bounded offline static HTML with
+the required review sections `Summary`, `Changed files`, `QA evidence`, and
+`Issue completion review`. It rejects script tags, external URLs or assets,
+inline JavaScript attributes, JavaScript URLs, `file:` URLs, absolute local
+paths, missing changed-file evidence, missing issue identity, empty output, and
+oversized output. A generation failure, invalid HTML, or generator-created repo
+edit marks the issue `agent-failed`, records
+`review_package.status` and `failure_reason`, preserves logs and worktrees, and
+does not perform **Local integration**, push an **Integration target**, comment
+completion evidence, or apply `agent-integrated`.
+
+Failing review findings become the next
 Codex repair prompt alongside the issue contract, changed files, and QA
 evidence. Each repair consumes the next remaining `--max-codex-attempts`
 attempt, reruns selected QA, commits repair changes to the issue branch, and
@@ -1088,7 +1120,8 @@ reruns review. If the attempt budget is exhausted, Ralph marks the issue
 For **Local integration**, Ralph creates a temporary detached integration
 worktree at latest target, runs `git merge --squash` from the issue branch,
 creates one integration commit, pushes it to the target, and posts completion
-evidence with the commit SHA, changed files, QA commands, and run log path.
+evidence with the commit SHA, changed files, QA commands, run log path, and for
+Gitflow delivery the **Review package** path plus summary.
 Trunk integration marks the issue `agent-merged` and closes it. Gitflow
 integration marks the issue `agent-integrated` and leaves it open for
 **Promotion**. Exploratory handoff skips the detached integration worktree and
@@ -2020,6 +2053,7 @@ ordinary issue failure or retryable QA failure.
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
   - `docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md`
+  - `docs/adr/0012-ralph-gitflow-review-package-gate.md`
   - `.agents/skills/shape-issues/SKILL.md`
   - `.agents/skills/shape-issues/scripts/shape_issue_gate.py`
   - `.agents/skills/shape-issues/scripts/codex_context_assessor.py`

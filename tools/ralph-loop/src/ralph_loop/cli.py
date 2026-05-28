@@ -5274,6 +5274,18 @@ class RalphLoop:
                 base_ref=f"origin/{base_branch}",
             )
 
+            review_package: dict[str, Any] | None = None
+            if delivery_plan.mode == GITFLOW_MODE:
+                review_package = self._run_review_package_gate(
+                    issue,
+                    delivery_plan=delivery_plan,
+                    changed_files=changed_files,
+                    qa_results=qa_results,
+                    worktree_path=worktree_path,
+                    run_dir=run_dir,
+                    manifest=manifest,
+                )
+
             if delivery_plan.mode == EXPLORATORY_MODE:
                 commit_sha = self.git.rev_parse("HEAD", cwd=worktree_path)
                 manifest.record_integration_commit(
@@ -5373,6 +5385,7 @@ class RalphLoop:
                     run_dir,
                     delivery_plan=delivery_plan,
                     operator_smoke=operator_smoke_result,
+                    review_package=review_package,
                 ),
                 run_dir=run_dir,
             )
@@ -5496,6 +5509,117 @@ class RalphLoop:
                 self._mark_issue_failed(issue, issue_error, run_dir, manifest=manifest)
             emit(f"Issue #{issue.number} failed: {error}", err=True)
             return manifest
+
+    def _run_review_package_gate(
+        self,
+        issue: Issue,
+        *,
+        delivery_plan: DeliveryPlan,
+        changed_files: list[str],
+        qa_results: list[QAResult],
+        worktree_path: Path,
+        run_dir: Path,
+        manifest: RunManifest,
+    ) -> dict[str, Any]:
+        html_path = run_dir / REVIEW_PACKAGE_ARTIFACT_NAME
+        log_path = run_dir / "codex-review-package.jsonl"
+        emit(f"#{issue.number}: generating Review package")
+        manifest.record_review_package(
+            "generating",
+            html_path=html_path,
+            generator_log_path=log_path,
+            validation_status="not_started",
+        )
+        try:
+            result = self._run_codex(
+                review_package_prompt(
+                    repo=self.config.repo,
+                    issue=issue,
+                    delivery_plan=delivery_plan,
+                    changed_files=changed_files,
+                    qa_results=qa_results,
+                    run_dir=run_dir,
+                ),
+                worktree_path,
+                log_path,
+                phase=f"#{issue.number}: Review package",
+                manifest=manifest,
+                allowed_issue_commands=SANDBOX_READ_ONLY_GH_ISSUE_COMMANDS,
+                output_last_message=html_path,
+            )
+        except CommandFailure as error:
+            failure = ReviewPackageFailure(
+                f"Review package generation failed for #{issue.number}: {error}",
+                log_path=error.log_path or log_path,
+            )
+            manifest.record_review_package(
+                "failed",
+                html_path=html_path,
+                generator_log_path=error.log_path or log_path,
+                validation_status="not_started",
+                failure_reason=str(failure),
+            )
+            raise failure from error
+
+        if not html_path.exists() and result.stdout.strip() != "":
+            html_path.write_text(result.stdout.strip() + "\n", encoding="utf-8")
+        if self.git.has_uncommitted_changes(cwd=worktree_path):
+            failure = ReviewPackageFailure(
+                "Review package generator modified the implementation worktree.",
+                log_path=log_path,
+                recovery_guidance=(
+                    "Inspect the preserved implementation worktree and generator "
+                    "log. The Review package must be an ignored local artifact only; "
+                    "repair any repo edits before rerunning Ralph."
+                ),
+            )
+            manifest.record_review_package(
+                "failed",
+                html_path=html_path,
+                generator_log_path=log_path,
+                validation_status="not_started",
+                failure_reason=str(failure),
+            )
+            raise failure
+
+        emit(f"#{issue.number}: validating Review package")
+        manifest.record_review_package(
+            "validating",
+            html_path=html_path,
+            generator_log_path=log_path,
+            validation_status="running",
+        )
+        try:
+            summary = validate_review_package_html(
+                html_path,
+                issue_number=issue.number,
+                changed_files=changed_files,
+                qa_results=qa_results,
+            )
+        except ReviewPackageFailure as error:
+            manifest.record_review_package(
+                "validation_failed",
+                html_path=html_path,
+                generator_log_path=log_path,
+                validation_status="failed",
+                failure_reason=str(error),
+            )
+            raise
+
+        summary_payload = summary.to_manifest()
+        manifest.record_review_package(
+            "passed",
+            html_path=html_path,
+            generator_log_path=log_path,
+            summary=summary_payload,
+            validation_status="passed",
+        )
+        return {
+            "html_path": str(html_path),
+            "generator_log_path": str(log_path),
+            "summary": summary_payload,
+            "validation_status": "passed",
+        }
 
     def _validate_issue_contract(
         self,
@@ -12646,6 +12770,56 @@ def issue_completion_review_prompt(
 
         QA evidence:
 
+        {qa_lines}
+
+        Issue body:
+
+        {issue.body}
+        """
+    ).strip()
+
+
+def review_package_prompt(
+    *,
+    repo: str,
+    issue: Issue,
+    delivery_plan: DeliveryPlan,
+    changed_files: list[str],
+    qa_results: list[QAResult],
+    run_dir: Path,
+) -> str:
+    changed_lines = "\n".join(f"- `{path}`" for path in changed_files)
+    qa_lines = ready_issue_refresh_qa_evidence_lines(qa_results)
+    return textwrap.dedent(
+        f"""
+        Generate a Review package for GitHub issue #{issue.number} in {repo}.
+
+        This is a blocking Gitflow delivery gate after QA and any required
+        Issue completion review, and before Local integration, pushing the
+        Integration target, completion comments, or `agent-integrated`.
+
+        Write one complete offline static HTML document only. Do not edit repo
+        files. Do not use scripts, inline JavaScript, event handler attributes,
+        external URLs, external assets, file URLs, absolute local paths, forms,
+        or network-dependent resources. Ralph will save your final response as
+        `{run_dir / REVIEW_PACKAGE_ARTIFACT_NAME}`.
+
+        Required visible sections as `h2` headings:
+
+        - Summary
+        - Changed files
+        - QA evidence
+        - Issue completion review
+
+        Include:
+
+        - Issue: `#{issue.number} {issue.title}`
+        - Delivery mode: `{delivery_plan.mode}`
+        - Integration target: `{delivery_plan.target_branch}`
+        - Run logs: `{run_dir}`
+        - Changed files:
+        {changed_lines}
+        - QA evidence:
         {qa_lines}
 
         Issue body:
