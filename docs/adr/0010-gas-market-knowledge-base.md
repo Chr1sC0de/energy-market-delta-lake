@@ -8,8 +8,11 @@ the bytes in S3-compatible storage. That path stops at media bytes and
 metadata. It does not extract text, build retrieval chunks, create wiki pages,
 write embeddings, or update a vector store.
 Observation-only configured source pages can still add `needs_human_review`
-metadata coverage, such as the AEMO energy-systems major publications hub,
-without landing publication bytes until a later approved slice expands scope.
+metadata coverage without landing publication bytes. A later approved AEMO ETL
+source-family asset, `bronze_aemo_major_publications_hub_downloads`, uses the
+same source-page discovery, direct-media landing/archive, and bronze metadata
+boundary for the AEMO energy-systems major publications hub without adding
+text extraction or corpus-generation side effects to AEMO ETL.
 When live source-page scraping is used outside the packaged manifest path,
 failed HTTP page loads remain auditable metadata-only source-page observations.
 
@@ -94,8 +97,10 @@ the shared core with their own layout and source metadata policy instead of
 copying the Gas market corpus wrappers.
 
 AEMO ETL must not grow Docling dependencies or extraction side effects under
-this decision. `bronze_aemo_gas_document_sources` remains the boundary for
-document discovery, raw media landing/archive, and source metadata.
+this decision. The AEMO document bronze metadata assets, including
+`bronze_aemo_gas_document_sources` and
+`bronze_aemo_major_publications_hub_downloads`, remain the boundary for document
+discovery, raw media landing/archive, and source metadata.
 
 The external corpus root and ignored repo `generated/` tree are intentionally
 separate from maintained repository docs. Future **Market context** pages are

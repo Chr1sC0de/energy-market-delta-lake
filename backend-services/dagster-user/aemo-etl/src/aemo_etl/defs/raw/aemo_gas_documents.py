@@ -3,11 +3,15 @@
 from dagster import Definitions, definitions
 
 from aemo_etl.factories.aemo_gas_documents.definitions import (
+    aemo_major_publications_hub_downloads_definitions_factory,
     aemo_gas_document_sources_definitions_factory,
 )
 
 
 @definitions
 def defs() -> Definitions:
-    """Register the AEMO gas document source metadata asset."""
-    return aemo_gas_document_sources_definitions_factory()
+    """Register the AEMO gas document source metadata assets."""
+    return Definitions.merge(
+        aemo_gas_document_sources_definitions_factory(),
+        aemo_major_publications_hub_downloads_definitions_factory(),
+    )

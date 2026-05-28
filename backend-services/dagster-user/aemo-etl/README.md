@@ -32,6 +32,15 @@ The project materializes Dagster assets defined under `src/aemo_etl/defs` to bui
   a previously downloadable direct-media request still fails during the daily
   materialization, the asset records that observation without media bytes and
   reports it through `failed_download_count`.
+- `bronze_aemo_major_publications_hub_downloads` runs live discovery from the
+  AEMO energy-systems major publications hub, downloads included public
+  `/-/media/...` publication links, writes metadata under
+  `bronze/aemo_major_publications`, lands bytes under
+  `LANDING_BUCKET/bronze/aemo_major_publications`, archives them under
+  `ARCHIVE_BUCKET/bronze/aemo_major_publications` after the metadata write, and
+  reports source-page, included-download, failed, and review-needed counts for
+  downstream corpus generation. Use `make component-test` for the AEMO ETL
+  **Component test** lane and `make run-prek` for its **Commit check**.
 - `download_vicgas_public_report_zip_files_job` and
   `download_sttm_day_zip_files_job` can be launched manually to bootstrap or
   backfill VicGas `PublicRptsNN.zip` and STTM `DAYNN.ZIP` bundles into landing
@@ -51,6 +60,7 @@ flowchart LR
         NEMWeb["AEMO / NEMWeb public files"]
         AEMODocs["Checked-in AEMO gas document media manifest"]
         AEMOMedia["AEMO gas direct media URLs"]
+        MajorPubs["AEMO major publications hub"]
     end
 
     subgraph Dagster
@@ -73,6 +83,7 @@ flowchart LR
     NEMWeb --> Schedules
     AEMODocs --> RawAssets
     AEMOMedia --> RawAssets
+    MajorPubs --> RawAssets
     Schedules --> Landing
     Landing --> UnzipSensors
     UnzipSensors --> Landing
@@ -117,7 +128,7 @@ flowchart TD
     Docs --> GasDocs["gas_model/"]
 ```
 
-- Raw ingestion: `factories/nemweb_public_files`, `factories/aemo_gas_documents`, `factories/unzipper`, and `factories/df_from_s3_keys` define separate roles: NEMWeb discovery/listing bronze assets, manifest-backed AEMO gas document source metadata, unzipper extraction assets, and source-table bronze/silver ingestion assets. Source-table bronze writes current-state Delta tables through explicit ingestion logic, parses headered CSVs or schema-ordered headerless CSVs, drops NUL-contaminated physical CSV lines before key generation, fails fast when latest-source rows contain distinct records for the same `surrogate_key`, archives processed files after a table write or when a zero-row processed batch requires no table change, deletes zero-byte landing objects, and reports skipped selected keys with a non-blocking WARN asset check; downstream silver assets and checks load bronze tables through a read-only Delta IO manager. The AEMO gas document asset also writes through explicit ingestion logic so included media bytes are archived only after `bronze_aemo_gas_document_sources` is written.
+- Raw ingestion: `factories/nemweb_public_files`, `factories/aemo_gas_documents`, `factories/unzipper`, and `factories/df_from_s3_keys` define separate roles: NEMWeb discovery/listing bronze assets, manifest-backed AEMO gas document source metadata, live major-publications hub download metadata, unzipper extraction assets, and source-table bronze/silver ingestion assets. Source-table bronze writes current-state Delta tables through explicit ingestion logic, parses headered CSVs or schema-ordered headerless CSVs, drops NUL-contaminated physical CSV lines before key generation, fails fast when latest-source rows contain distinct records for the same `surrogate_key`, archives processed files after a table write or when a zero-row processed batch requires no table change, deletes zero-byte landing objects, and reports skipped selected keys with a non-blocking WARN asset check; downstream silver assets and checks load bronze tables through a read-only Delta IO manager. The AEMO document assets also write through explicit ingestion logic so included media bytes are archived only after their metadata Delta tables are written.
 - Source-specific silver assets: `silver.gbb.*` and `silver.vicgas.*` assets deduplicate current source rows and expose consistent parquet snapshot datasets for downstream use.
 - Gas-model marts: `src/aemo_etl/defs/gas_model` builds cross-source dimensions and fact tables from the source-specific silver layer.
 - Storage: landing and archive buckets hold files; the AEMO bucket holds bronze Delta tables plus parquet snapshot datasets for source silver and `gas_model`; the IO manager bucket stores Dagster-managed intermediates.
@@ -169,7 +180,7 @@ Detailed sequence diagrams for GBB, VICGAS, STTM, and raw-to-silver behavior liv
 
 ## Data domains and asset layers
 
-- `raw`: scheduled discovery/listing assets plus source-table bronze ingestion assets that capture current source-table state from landing storage into Delta tables. `bronze_aemo_gas_document_sources` is also a raw bronze metadata table for the scoped AEMO gas source-page and media-link corpus. Source-table bronze stores bounded current state; append replay history remains in archive storage.
+- `raw`: scheduled discovery/listing assets plus source-table bronze ingestion assets that capture current source-table state from landing storage into Delta tables. `bronze_aemo_gas_document_sources` is also a raw bronze metadata table for the scoped AEMO gas source-page and media-link corpus, and `bronze_aemo_major_publications_hub_downloads` is the raw metadata table for the approved major-publications hub source family. Source-table bronze stores bounded current state; append replay history remains in archive storage.
 - `gbb`: source-specific silver assets for Gas Bulletin Board datasets such as flows, capacity, locations, linepack, and nomination data.
 - `vicgas`: source-specific silver assets for Victorian gas reports such as operational meter readings, allocations, prices, linepack, heating values, and settlements.
 - `sttm`: source-specific silver assets for Short Term Trading Market reports.
@@ -200,8 +211,9 @@ family values are `market`, `operations`, `settlement_retail`, `capacity`,
 `quality`, `reference`, and `notices`.
 
 Ingestion helper assets have their own visual groups:
-`gas_ingestion_discovery`, `gas_ingestion_unzip`, `gas_aemo_gas_documents`, and
-`gas_metadata`. Curated `silver/gas_model/*` assets use mart-specific visual
+`gas_ingestion_discovery`, `gas_ingestion_unzip`, `gas_aemo_gas_documents`,
+`gas_aemo_major_publications`, and `gas_metadata`. Curated
+`silver/gas_model/*` assets use mart-specific visual
 groups such as `gas_model_dimensions`, `gas_model_operations`,
 `gas_model_market`, `gas_model_capacity_settlement`, and
 `gas_model_quality_status`, and carry `aemo_etl_layer=gas_model` plus an
@@ -334,13 +346,13 @@ missing zip-domain coverage still fails.
 the AEMO gas document asset. It uses Playwright Chromium to visit configured
 source pages, writes the checked-in media manifest and discovery report, and
 validates direct media URLs with the same browser-compatible request headers
-used by the daily asset. Configured source pages include the AEMO
+used by the daily asset. The manifest-backed gas document source keeps the AEMO
 energy-systems major publications hub as observation-only `needs_human_review`
-coverage, so its hub links and public `/-/media/...` links can be reported
-without landing publication bytes until the scope is explicitly approved. The
-checked-in manifest is expected to be non-empty,
-and the discovery report records validation status, HTTP status code, content
-type, content length, resolved URL, and validation errors. Direct media rows
+coverage, while `bronze_aemo_major_publications_hub_downloads` is the approved
+live-discovery asset for landing that source family's public publication bytes.
+The checked-in manifest is expected to be non-empty, and the discovery report
+records validation status, HTTP status code, content type, content length,
+resolved URL, and validation errors. Direct media rows
 with failed validation are retained in the manifest
 with `should_download=false`; the daily asset path records their metadata rows
 without issuing media GETs or landing bytes, while rows with passing validation

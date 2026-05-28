@@ -418,10 +418,15 @@ browser-compatible request headers for AEMO media URLs. If a row marked
 records a metadata-only row with the failure reason and reports it through
 `failed_download_count`. Source-page discovery is refreshed manually with a
 Playwright-backed CLI so regular Dagster runs do not depend on source-page HTML
-availability. Observation-only configured source pages, including the AEMO
-energy-systems major publications hub, keep hub and public media-link coverage
-as `needs_human_review` metadata until a later approved slice enables
-publication byte landing.
+availability. The manifest-backed gas document source keeps the AEMO
+energy-systems major publications hub as observation-only `needs_human_review`
+metadata. `bronze_aemo_major_publications_hub_downloads` is the approved
+live-discovery source family for landing public major-publications bytes under
+`bronze/aemo_major_publications`; its materialization metadata reports target
+table URI, landing/archive roots, source page count, included download count,
+failed count, and review-needed count. Validate that source family with
+`make component-test` for the AEMO ETL **Component test** lane and
+`make run-prek` for the AEMO ETL **Commit check**.
 
 Run commands from this Subproject:
 
