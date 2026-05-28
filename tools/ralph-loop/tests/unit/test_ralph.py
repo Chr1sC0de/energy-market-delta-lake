@@ -175,6 +175,23 @@ fail
 The issue would be integrated incomplete.
 """
 
+REVIEW_PACKAGE_HTML = """<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Review package for issue #42</title></head>
+<body>
+<h1>Review package for issue #42</h1>
+<h2>Summary</h2>
+<p>Issue #42 is ready for Gitflow Local integration.</p>
+<h2>Changed files</h2>
+<ul><li>scripts/ralph.py</li></ul>
+<h2>QA evidence</h2>
+<p>QA passed.</p>
+<h2>Issue completion review</h2>
+<p>Issue completion review passed.</p>
+</body>
+</html>
+"""
+
 DEPLOY_REPAIR_BODY = """## What to build
 Repair the failed deployed workflow command so the Operator deployment checkpoint can complete.
 
@@ -534,6 +551,8 @@ class FakeRunner:
         | None = None,
         fail_post_promotion_review: bool = False,
         issue_completion_review_markdowns: list[str] | None = None,
+        review_package_html: str = REVIEW_PACKAGE_HTML,
+        fail_review_package: bool = False,
         fail_ready_issue_refresh_analysis: bool = False,
         ready_issue_refresh_analysis_markdown: str = READY_ISSUE_REFRESH_ANALYSIS_MARKDOWN,
         fail_deploy_failure_analysis: bool = False,
@@ -550,6 +569,8 @@ class FakeRunner:
         self.fail_command_attempts = fail_command_attempts or {}
         self.fail_post_promotion_review = fail_post_promotion_review
         self.issue_completion_review_markdowns = issue_completion_review_markdowns or []
+        self.review_package_html = review_package_html
+        self.fail_review_package = fail_review_package
         self.fail_ready_issue_refresh_analysis = fail_ready_issue_refresh_analysis
         self.ready_issue_refresh_analysis_markdown = (
             ready_issue_refresh_analysis_markdown
@@ -689,6 +710,20 @@ class FakeRunner:
                 and "Issue completion review" in input_text
             ):
                 return ralph.CompletedCommand(stdout="", stderr="")
+            if "Generate a Review package" in input_text:
+                if self.fail_review_package:
+                    raise ralph.CommandFailure(
+                        args,
+                        cwd,
+                        1,
+                        "",
+                        "fake Review package failure",
+                        log_path,
+                    )
+                return ralph.CompletedCommand(
+                    stdout=self.review_package_html,
+                    stderr="",
+                )
             if "Run a Post-promotion review" in input_text:
                 if self.fail_post_promotion_review:
                     raise ralph.CommandFailure(
@@ -2626,6 +2661,165 @@ class RalphHelperTests(unittest.TestCase):
         self.assertIs(ralph.parse_blockers, ralph_workflow.parse_blockers)
         self.assertIs(ralph.RunManifest, ralph_state.RunManifest)
         self.assertIs(ralph.OperatorRunManifest, ralph_state.OperatorRunManifest)
+
+    def test_review_package_validation_rejects_external_style_tag_url(
+        self,
+    ) -> None:
+        html = REVIEW_PACKAGE_HTML.replace(
+            "</head>",
+            "<style>body{background:url(https://example.com/leak.png)}</style></head>",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            html_path = Path(tmp) / "review-package.html"
+            html_path.write_text(html, encoding="utf-8")
+
+            with self.assertRaises(ralph.ReviewPackageFailure) as context:
+                ralph.validate_review_package_html(
+                    html_path,
+                    issue_number=42,
+                    changed_files=["scripts/ralph.py"],
+                    qa_results=[],
+                )
+
+        self.assertIn("CSS url() assets", str(context.exception))
+
+    def test_review_package_validation_rejects_external_style_attribute_url(
+        self,
+    ) -> None:
+        html = REVIEW_PACKAGE_HTML.replace(
+            "<body>",
+            '<body style="background-image:url(https://example.com/leak.png)">',
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            html_path = Path(tmp) / "review-package.html"
+            html_path.write_text(html, encoding="utf-8")
+
+            with self.assertRaises(ralph.ReviewPackageFailure) as context:
+                ralph.validate_review_package_html(
+                    html_path,
+                    issue_number=42,
+                    changed_files=["scripts/ralph.py"],
+                    qa_results=[],
+                )
+
+        self.assertIn("CSS url() assets", str(context.exception))
+
+    def test_review_package_validation_rejects_url_bearing_asset_attributes(
+        self,
+    ) -> None:
+        cases = {
+            "srcset": (
+                '<img srcset="https://example.com/leak.png 1x" alt="">',
+                "srcset",
+            ),
+            "object archive": (
+                '<object archive="https://example.com/a.jar"></object>',
+                "archive",
+            ),
+        }
+
+        for name, (snippet, expected) in cases.items():
+            with self.subTest(name=name):
+                html = REVIEW_PACKAGE_HTML.replace("</body>", f"{snippet}</body>")
+
+                with tempfile.TemporaryDirectory() as tmp:
+                    html_path = Path(tmp) / "review-package.html"
+                    html_path.write_text(html, encoding="utf-8")
+
+                    with self.assertRaises(ralph.ReviewPackageFailure) as context:
+                        ralph.validate_review_package_html(
+                            html_path,
+                            issue_number=42,
+                            changed_files=["scripts/ralph.py"],
+                            qa_results=[],
+                        )
+
+                self.assertIn(expected, str(context.exception))
+
+    def test_review_package_validation_rejects_relative_href_assets(
+        self,
+    ) -> None:
+        cases = {
+            "stylesheet": (
+                '<link rel="stylesheet" href="review.css">',
+                "relative URLs or embedded assets",
+            ),
+            "preload": (
+                '<link rel="preload" as="image" href="review.png">',
+                "relative URLs or embedded assets",
+            ),
+            "base": (
+                '<base href="assets/">',
+                "relative URLs or embedded assets",
+            ),
+        }
+
+        for name, (snippet, expected) in cases.items():
+            with self.subTest(name=name):
+                html = REVIEW_PACKAGE_HTML.replace("</head>", f"{snippet}</head>")
+
+                with tempfile.TemporaryDirectory() as tmp:
+                    html_path = Path(tmp) / "review-package.html"
+                    html_path.write_text(html, encoding="utf-8")
+
+                    with self.assertRaises(ralph.ReviewPackageFailure) as context:
+                        ralph.validate_review_package_html(
+                            html_path,
+                            issue_number=42,
+                            changed_files=["scripts/ralph.py"],
+                            qa_results=[],
+                        )
+
+                self.assertIn(expected, str(context.exception))
+
+    def test_review_package_validation_rejects_meta_refresh_content_url(
+        self,
+    ) -> None:
+        html = REVIEW_PACKAGE_HTML.replace(
+            "</head>",
+            (
+                '<meta http-equiv="refresh" '
+                'content="0; url=https://example.com/leak"></head>'
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            html_path = Path(tmp) / "review-package.html"
+            html_path.write_text(html, encoding="utf-8")
+
+            with self.assertRaises(ralph.ReviewPackageFailure) as context:
+                ralph.validate_review_package_html(
+                    html_path,
+                    issue_number=42,
+                    changed_files=["scripts/ralph.py"],
+                    qa_results=[],
+                )
+
+        self.assertIn("external URLs or embedded assets", str(context.exception))
+
+    def test_review_package_validation_rejects_srcdoc_script_content(
+        self,
+    ) -> None:
+        html = REVIEW_PACKAGE_HTML.replace(
+            "</body>",
+            '<iframe srcdoc="&lt;script&gt;alert(1)&lt;/script&gt;"></iframe></body>',
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            html_path = Path(tmp) / "review-package.html"
+            html_path.write_text(html, encoding="utf-8")
+
+            with self.assertRaises(ralph.ReviewPackageFailure) as context:
+                ralph.validate_review_package_html(
+                    html_path,
+                    issue_number=42,
+                    changed_files=["scripts/ralph.py"],
+                    qa_results=[],
+                )
+
+        self.assertIn("srcdoc: script tag is not allowed", str(context.exception))
 
     def test_issue_completion_review_prompt_keeps_small_changed_file_list(
         self,
@@ -13567,6 +13761,8 @@ Build it.
             comment = comment_path.read_text(encoding="utf-8")
             self.assertIn("Ralph Gitflow integration completed.", comment)
             self.assertIn("Target branch: `dev`", comment)
+            self.assertIn("## Review package", comment)
+            self.assertIn("review-package.html", comment)
             self.assertIn("will stay open until Ralph promotes `dev`", comment)
             manifest = load_run_manifest(tmp_path)
             review_artifact = next(
@@ -13591,6 +13787,129 @@ Build it.
                 manifest["issue_completion_review"]["log_path"],
                 str(review_log),
             )
+            package_path = next(
+                (tmp_path / "logs").glob("issue-42-*/review-package.html")
+            )
+            package_log = next(
+                (tmp_path / "logs").glob("issue-42-*/codex-review-package.jsonl")
+            )
+            self.assertEqual(manifest["review_package"]["status"], "passed")
+            self.assertEqual(manifest["review_package"]["validation_status"], "passed")
+            self.assertEqual(manifest["review_package"]["html_path"], str(package_path))
+            self.assertEqual(
+                manifest["review_package"]["generator_log_path"],
+                str(package_log),
+            )
+            self.assertEqual(
+                manifest["review_package"]["summary"]["changed_file_count"],
+                1,
+            )
+
+    def test_gitflow_review_package_validation_failure_stops_before_integration(
+        self,
+    ) -> None:
+        invalid_html = REVIEW_PACKAGE_HTML.replace(
+            "<h2>QA evidence</h2>",
+            '<script src="https://example.com/app.js"></script><h2>QA evidence</h2>',
+        )
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            review_package_html=invalid_html,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                manifest_obj = loop._handle_implementation(issue)
+
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertIsNotNone(manifest_obj)
+        self.assertFalse(
+            any(command[:3] == ("git", "merge", "--squash") for command in commands)
+        )
+        self.assertNotIn(("git", "push", "origin", "HEAD:dev"), commands)
+        self.assertFalse(
+            any(
+                command[:4] == ("gh", "issue", "edit", "42")
+                and "--add-label" in command
+                and command[command.index("--add-label") + 1] == "agent-integrated"
+                for command in commands
+            )
+        )
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["review_package"]["status"], "validation_failed")
+        self.assertEqual(manifest["review_package"]["validation_status"], "failed")
+        self.assertIn("script tag", manifest["review_package"]["failure_reason"])
+
+    def test_gitflow_review_package_generation_failure_stops_before_dev_push(
+        self,
+    ) -> None:
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            fail_review_package=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._handle_implementation(issue)
+
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(
+            any(command[:3] == ("git", "merge", "--squash") for command in commands)
+        )
+        self.assertNotIn(("git", "push", "origin", "HEAD:dev"), commands)
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["review_package"]["status"], "failed")
+        self.assertIn(
+            "Review package generation failed",
+            manifest["review_package"]["failure_reason"],
+        )
+
+    def test_gitflow_review_package_generator_repo_edits_fail_before_integration(
+        self,
+    ) -> None:
+        runner = FakeRunner(
+            status_outputs=[
+                " M scripts/ralph.py\n",
+                " M scripts/ralph.py\n",
+                " M CONTEXT.md\n",
+            ],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._handle_implementation(issue)
+
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(
+            any(command[:3] == ("git", "merge", "--squash") for command in commands)
+        )
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["review_package"]["status"], "failed")
+        self.assertIn(
+            "modified the implementation worktree",
+            manifest["review_package"]["failure_reason"],
+        )
 
     def test_exploratory_implementation_pushes_handoff_branch_and_marks_reviewing(
         self,

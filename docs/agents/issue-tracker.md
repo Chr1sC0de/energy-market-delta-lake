@@ -94,6 +94,17 @@ review after each repair. If the budget is exhausted, Ralph marks the issue
 **Integration target**. This gate is not human `dev` review, **Ready issue
 refresh**, or **Post-promotion review**.
 
+For **Gitflow delivery**, Ralph then generates and validates a **Review
+package** before **Local integration**, the `dev` push, completion comments, or
+`agent-integrated`. The artifact is an ignored local `review-package.html` in
+the run directory, built from the final changed files, QA evidence, issue
+contract, and any **Issue completion review** result. Validation accepts only
+bounded offline static HTML with required review sections and rejects scripts,
+external URLs or assets, inline JavaScript, absolute local file reads, missing
+issue or changed-file evidence, and oversized output. Generation or validation
+failure marks the issue `agent-failed`, preserves logs and worktrees, and does
+not update an **Integration target**.
+
 `$shape-issues` v2 may create new GitHub Issues only after explicit Operator
 confirmation of a passing gate report and pre-publication review Markdown:
 `issue-drafts.md` plus one `issue-drafts/*.md` file per draft. Those created
@@ -234,7 +245,8 @@ failures are warning-only after successful **Promotion**.
 
 Use [ralph-loop.md](ralph-loop.md) for Ralph internals, including
 **Delivery mode**, **Local integration**, **Integration target**, **Promotion**,
-**Issue completion review**, **Ready issue refresh**, checkpointed Operator
+**Issue completion review**, **Review package**, **Ready issue refresh**,
+checkpointed Operator
 runs, **Post-promotion review**, **Exploratory acceptance review**, run
 manifests, QA selection, and recovery behavior.
 Use [OPERATOR.md](../../OPERATOR.md) for the human **Operator workflow**.
@@ -271,6 +283,7 @@ verified-only recovery boundary.
   - `docs/adr/0005-ralph-exploratory-branches-stay-outside-automatic-promotion.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md`
+  - `docs/adr/0012-ralph-gitflow-review-package-gate.md`
   - `scripts/ralph.py`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
   - `tools/ralph-loop/src/ralph_loop/state.py`

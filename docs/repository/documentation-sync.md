@@ -314,6 +314,15 @@ way:
   the operational contract lives in [OPERATOR.md](../../OPERATOR.md),
   [docs/agents/issue-tracker.md](../agents/issue-tracker.md), and
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
+- #292: Ralph Gitflow delivery owns a blocking **Review package** gate after
+  final changed files, QA evidence, and any required **Issue completion
+  review** are known, and before **Local integration** updates `dev`. The
+  canonical term lives in [CONTEXT.md](../../CONTEXT.md), the operator contract
+  lives in [OPERATOR.md](../../OPERATOR.md),
+  [docs/agents/issue-tracker.md](../agents/issue-tracker.md), and
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md), and ADR
+  [0012](../adr/0012-ralph-gitflow-review-package-gate.md) records the static
+  HTML validation boundary.
 - #166: Checkpointed Operator runs record valid deploy-repair issues in
   `deploy_repair.target_issue`, select that issue before unrelated ready work,
   clear the target after a successful deployment retry, and stop after two
@@ -402,6 +411,7 @@ These commands support the intended flow:
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
   - `docs/adr/0010-gas-market-knowledge-base.md`
   - `docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md`
+  - `docs/adr/0012-ralph-gitflow-review-package-gate.md`
   - `tests/test_documentation_qa_ratchet.py`
   - `.pre-commit-config.yaml`
   - `.gitleaksignore`
