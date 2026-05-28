@@ -1104,11 +1104,30 @@ class StiffnessRatioEvidence:
 
 
 @dataclass(frozen=True)
+class SecurityDiffEvidence:
+    path: str
+    line_number: int | None
+    category: str
+    description: str
+    line: str
+
+    def to_manifest(self) -> dict[str, Any]:
+        return {
+            "path": self.path,
+            "line_number": self.line_number,
+            "category": self.category,
+            "description": self.description,
+            "line": self.line,
+        }
+
+
+@dataclass(frozen=True)
 class IssueCompletionReviewTrigger:
     required: bool
     reasons: tuple[str, ...]
     deployment_classification: PostPromotionDeploymentClassification
     security_sensitive_paths: tuple[str, ...]
+    security_diff_evidence: tuple[SecurityDiffEvidence, ...]
     high_stiffness_evidence: tuple[str, ...]
     stiffness_ratio_evidence: StiffnessRatioEvidence
 
@@ -1118,6 +1137,9 @@ class IssueCompletionReviewTrigger:
             "reasons": list(self.reasons),
             "deployment_classification": self.deployment_classification.to_manifest(),
             "security_sensitive_paths": list(self.security_sensitive_paths),
+            "security_diff_evidence": [
+                evidence.to_manifest() for evidence in self.security_diff_evidence
+            ],
             "high_stiffness_evidence": list(self.high_stiffness_evidence),
             "stiffness_ratio_evidence": self.stiffness_ratio_evidence.to_manifest(),
         }
@@ -3539,6 +3561,179 @@ def security_sensitive_changed_paths(changed_files: list[str]) -> tuple[str, ...
     )
 
 
+SECURITY_DIFF_EVIDENCE_LIMIT = 40
+SECURITY_DIFF_LINE_LIMIT = 240
+SECURITY_DIFF_HUNK_PATTERN = re.compile(
+    r"^@@ -(?P<old_start>\d+)(?:,\d+)? \+(?P<new_start>\d+)(?:,\d+)? @@"
+)
+SECURITY_DIFF_SECRET_NAME_PATTERN = re.compile(
+    r"(?i)\b("
+    r"AWS_(?:ACCESS_KEY_ID|SECRET_ACCESS_KEY|SESSION_TOKEN|SECURITY_TOKEN)|"
+    r"GITHUB_TOKEN|GH_TOKEN|OPENAI_API_KEY|ANTHROPIC_API_KEY|"
+    r"PULUMI_(?:ACCESS_TOKEN|CONFIG_PASSPHRASE)|"
+    r"(?:API[_-]?KEY|ACCESS[_-]?TOKEN|AUTH[_-]?TOKEN|CLIENT[_-]?SECRET|"
+    r"PRIVATE[_-]?KEY|PASSWORD|PASSWD|SECRET|TOKEN)"
+    r")\b"
+)
+SECURITY_DIFF_AWS_KEY_PATTERN = re.compile(
+    r"\b(?:A3T[A-Z0-9]|AKIA|ASIA)[A-Z0-9]{12,}\b"
+)
+SECURITY_DIFF_PRIVATE_KEY_PATTERN = re.compile(
+    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----", re.IGNORECASE
+)
+SECURITY_DIFF_SHELL_NETWORK_PATTERN = re.compile(
+    r"(?i)(?:\b(?:curl|wget|nc|ncat|telnet|ssh|scp|sftp)\b|"
+    r"\b(?:bash|sh|python|python3|node|npm|npx|pnpm|yarn|pip|uv|poetry)\b"
+    r".{0,80}(?:\|\s*(?:bash|sh)|-c\s+|exec|eval)|"
+    r"\b(?:subprocess|os\.system|exec\(|eval\()\b|https?://)"
+)
+SECURITY_DIFF_PERMISSION_PATTERN = re.compile(
+    r"(?i)\b("
+    r"iam|assume[_-]?role|policy|principal|permission|auth|oauth|jwt|"
+    r"cors(?:[_-]?[a-z0-9]+)*|"
+    r"security[_-]?group|ingress|egress|authorize|s3:|kms:|secretsmanager:|"
+    r"sts:|iam:|0\.0\.0\.0/0|\*"
+    r")\b"
+)
+
+
+def is_security_diff_dependency_path(path: str) -> bool:
+    return is_dependency_manifest_path(path) or path.endswith(
+        (
+            "requirements.txt",
+            "requirements-dev.txt",
+            "constraints.txt",
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+            "Pipfile.lock",
+            "poetry.lock",
+            "Cargo.lock",
+            "go.sum",
+        )
+    )
+
+
+def redact_security_diff_line(line: str) -> str:
+    redacted = SECURITY_DIFF_AWS_KEY_PATTERN.sub("[REDACTED_AWS_ACCESS_KEY]", line)
+    redacted = re.sub(
+        r"(?i)(\b(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|"
+        r"client[_-]?secret|private[_-]?key|[A-Z0-9_]*(?:TOKEN|SECRET|KEY|PASSWORD))"
+        r"\b\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s\"',}]+)",
+        r"\1[REDACTED]",
+        redacted,
+    )
+    redacted = re.sub(
+        r"(?i)([\"'](?:password|passwd|secret|token|api[_-]?key|access[_-]?key|"
+        r"client[_-]?secret|private[_-]?key|[A-Z0-9_]*(?:TOKEN|SECRET|KEY|PASSWORD))"
+        r"[\"']\s*:\s*[\"'])(.*?)([\"'])",
+        r"\1[REDACTED]\3",
+        redacted,
+    )
+    redacted = re.sub(
+        r"(?i)(\b(?:AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|GH_TOKEN|"
+        r"GITHUB_TOKEN|OPENAI_API_KEY|PULUMI_ACCESS_TOKEN)\b\s*[:=]\s*)"
+        r"(\"[^\"]*\"|'[^']*'|[^\s\"',}]+)",
+        r"\1[REDACTED]",
+        redacted,
+    )
+    if SECURITY_DIFF_PRIVATE_KEY_PATTERN.search(redacted):
+        return "[REDACTED_PRIVATE_KEY_MARKER]"
+    if len(redacted) > SECURITY_DIFF_LINE_LIMIT:
+        return f"{redacted[:SECURITY_DIFF_LINE_LIMIT]}..."
+    return redacted
+
+
+def security_diff_added_lines(diff_text: str) -> list[tuple[str, int | None, str]]:
+    path = ""
+    new_line_number: int | None = None
+    added_lines: list[tuple[str, int | None, str]] = []
+    for raw_line in diff_text.splitlines():
+        if raw_line.startswith("+++ "):
+            target = raw_line[4:].strip()
+            path = target.removeprefix("b/")
+            if target == "/dev/null":
+                path = ""
+            continue
+        hunk_match = SECURITY_DIFF_HUNK_PATTERN.match(raw_line)
+        if hunk_match is not None:
+            new_line_number = int(hunk_match.group("new_start"))
+            continue
+        if raw_line.startswith("+") and not raw_line.startswith("+++"):
+            if path:
+                added_lines.append((path, new_line_number, raw_line[1:]))
+            if new_line_number is not None:
+                new_line_number += 1
+            continue
+        if raw_line.startswith("-") and not raw_line.startswith("---"):
+            continue
+        if raw_line.startswith(" ") or raw_line == "":
+            if new_line_number is not None:
+                new_line_number += 1
+    return added_lines
+
+
+def security_diff_evidence_for_line(
+    *,
+    path: str,
+    line_number: int | None,
+    line: str,
+) -> SecurityDiffEvidence | None:
+    category = ""
+    description = ""
+    if SECURITY_DIFF_PRIVATE_KEY_PATTERN.search(
+        line
+    ) or SECURITY_DIFF_AWS_KEY_PATTERN.search(line):
+        category = "secret-like value"
+        description = "Added line contains a high-signal secret or private-key marker."
+    elif SECURITY_DIFF_SECRET_NAME_PATTERN.search(line):
+        category = "credential environment name"
+        description = "Added line references a credential, token, key, or secret name."
+    elif SECURITY_DIFF_SHELL_NETWORK_PATTERN.search(line):
+        category = "shell/network execution marker"
+        description = (
+            "Added line references shell, subprocess, network, or remote execution."
+        )
+    elif SECURITY_DIFF_PERMISSION_PATTERN.search(line):
+        category = "IAM/auth/CORS/security-group permission change"
+        description = (
+            "Added line references auth, CORS, IAM, or network permission surface."
+        )
+    elif is_security_diff_dependency_path(path):
+        category = "dependency or lockfile change"
+        description = "Added line changes a dependency manifest or lockfile."
+    if category == "":
+        return None
+    return SecurityDiffEvidence(
+        path=path,
+        line_number=line_number,
+        category=category,
+        description=description,
+        line=redact_security_diff_line(line),
+    )
+
+
+def collect_security_diff_evidence(diff_text: str) -> tuple[SecurityDiffEvidence, ...]:
+    evidence: list[SecurityDiffEvidence] = []
+    seen: set[tuple[str, int | None, str, str]] = set()
+    for path, line_number, line in security_diff_added_lines(diff_text):
+        item = security_diff_evidence_for_line(
+            path=path,
+            line_number=line_number,
+            line=line,
+        )
+        if item is None:
+            continue
+        key = (item.path, item.line_number, item.category, item.line)
+        if key in seen:
+            continue
+        seen.add(key)
+        evidence.append(item)
+        if len(evidence) >= SECURITY_DIFF_EVIDENCE_LIMIT:
+            break
+    return tuple(evidence)
+
+
 def is_deployed_aemo_etl_user_code_path(changed_file: str) -> bool:
     if not changed_file.startswith(AEMO_ETL_PREFIX):
         return False
@@ -4043,6 +4238,7 @@ def issue_completion_review_trigger(
     issue: Issue,
     delivery_plan: DeliveryPlan,
     changed_files: list[str],
+    security_diff_evidence: tuple[SecurityDiffEvidence, ...] = (),
 ) -> IssueCompletionReviewTrigger:
     classification = classify_post_promotion_deployment(changed_files)
     security_sensitive_paths = security_sensitive_changed_paths(changed_files)
@@ -4052,6 +4248,8 @@ def issue_completion_review_trigger(
     if classification.agent_workflow_paths:
         reasons.append("Agent workflow changes")
     if security_sensitive_paths:
+        reasons.append("Security-sensitive change")
+    if security_diff_evidence:
         reasons.append("Security-sensitive change")
     if delivery_plan.mode == TRUNK_MODE:
         reasons.append("Trunk delivery")
@@ -4066,6 +4264,7 @@ def issue_completion_review_trigger(
         reasons=tuple(dict.fromkeys(reasons)),
         deployment_classification=classification,
         security_sensitive_paths=security_sensitive_paths,
+        security_diff_evidence=security_diff_evidence,
         high_stiffness_evidence=high_stiffness_evidence,
         stiffness_ratio_evidence=ratio_evidence,
     )
