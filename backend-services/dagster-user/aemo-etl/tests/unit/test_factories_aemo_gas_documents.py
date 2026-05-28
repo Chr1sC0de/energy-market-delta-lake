@@ -32,6 +32,7 @@ from aemo_etl.factories.aemo_gas_documents.models import (
     AEMO_GSOO_URL,
     AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
     AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+    AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL,
     AEMO_WA_GSOO_CORPUS_SOURCE,
     AEMO_WA_GSOO_URL,
     AEMOGasDocumentSourcePage,
@@ -256,34 +257,24 @@ def test_default_source_pages_include_major_publications_hub_scope() -> None:
 def test_default_major_publications_download_source_pages_include_gsoo_bundles() -> (
     None
 ):
-    source_pages_by_source = {
-        source_page.corpus_source: source_page
-        for source_page in DEFAULT_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOAD_SOURCE_PAGES
-    }
+    source_pages = DEFAULT_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOAD_SOURCE_PAGES
 
-    assert list(source_pages_by_source) == [
+    assert [source_page.corpus_source for source_page in source_pages] == [
+        AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
         AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
         AEMO_GSOO_CORPUS_SOURCE,
         AEMO_WA_GSOO_CORPUS_SOURCE,
     ]
-    assert (
-        source_pages_by_source[AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE].source_page_url
-        == AEMO_MAJOR_PUBLICATIONS_HUB_URL
-    )
-    assert source_pages_by_source[AEMO_GSOO_CORPUS_SOURCE].source_page_url == (
-        AEMO_GSOO_URL
-    )
-    assert source_pages_by_source[AEMO_WA_GSOO_CORPUS_SOURCE].source_page_url == (
-        AEMO_WA_GSOO_URL
-    )
+    assert [source_page.source_page_url for source_page in source_pages] == [
+        AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+        AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL,
+        AEMO_GSOO_URL,
+        AEMO_WA_GSOO_URL,
+    ]
     assert all(
-        source_page.include_decision == "include"
-        for source_page in DEFAULT_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOAD_SOURCE_PAGES
+        source_page.include_decision == "include" for source_page in source_pages
     )
-    assert all(
-        source_page.discover_child_pages
-        for source_page in DEFAULT_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOAD_SOURCE_PAGES
-    )
+    assert all(source_page.discover_child_pages for source_page in source_pages)
 
 
 def test_major_publications_hub_discovers_review_source_pages_and_links() -> None:
@@ -1131,7 +1122,139 @@ def test_land_manifest_observations_downloads_included_hub_media_urls() -> None:
     assert len(result.records) == 3
 
 
+def test_land_observations_deduplicates_urls_and_byte_identical_media() -> None:
+    duplicate_url = (
+        "https://www.aemo.com.au/-/media/files/major-publications/isp/report.pdf"
+        "?rev=ABC&sc_lang=en"
+    )
+    duplicate_url_reordered = (
+        "https://www.aemo.com.au/-/MEDIA/files/major-publications/isp/report.pdf"
+        "?sc_lang=en&rev=ABC"
+    )
+    byte_duplicate_url = (
+        "https://www.aemo.com.au/-/media/files/major-publications/isp/report-copy.pdf"
+    )
+    distinct_url = (
+        "https://www.aemo.com.au/-/media/files/major-publications/isp/other.pdf"
+    )
+    distinct_bytes = b"%PDF distinct publication\n"
+    observations = observations_from_manifest_payload(
+        {
+            "schema_version": 1,
+            "generated_at": "2026-05-10T00:00:00Z",
+            "source_pages": [
+                {
+                    "corpus_source": AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+                    "source_page_url": AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+                    "source_page_title": "Major publications",
+                    "include_decision": "include",
+                },
+                {
+                    "corpus_source": AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+                    "source_page_url": AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL,
+                    "source_page_title": "Major publications",
+                    "include_decision": "include",
+                },
+            ],
+            "media_links": [
+                {
+                    "corpus_source": AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+                    "source_page_url": AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+                    "source_link_text": "Shared report",
+                    "source_url": duplicate_url,
+                    "include_decision": "include",
+                },
+                {
+                    "corpus_source": AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+                    "source_page_url": AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL,
+                    "source_link_text": "Shared report from library",
+                    "source_url": duplicate_url_reordered,
+                    "include_decision": "include",
+                },
+                {
+                    "corpus_source": AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+                    "source_page_url": AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL,
+                    "source_link_text": "Byte-identical report copy",
+                    "source_url": byte_duplicate_url,
+                    "include_decision": "include",
+                },
+                {
+                    "corpus_source": AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+                    "source_page_url": AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+                    "source_link_text": "Distinct report",
+                    "source_url": distinct_url,
+                    "include_decision": "include",
+                },
+            ],
+        },
+        observed_at=_OBSERVED_AT,
+    )
+    requested_urls: list[str] = []
+    s3_client = MagicMock()
+    s3_client.head_object.side_effect = ClientError(
+        {"Error": {"Code": "404"}},
+        "HeadObject",
+    )
+
+    def _get(url: str) -> Response:
+        requested_urls.append(url)
+        if url in {duplicate_url, byte_duplicate_url}:
+            return _response(
+                url=url,
+                content=_PDF_BYTES,
+                headers={"Content-Type": "application/pdf"},
+            )
+        if url == distinct_url:
+            return _response(
+                url=url,
+                content=distinct_bytes,
+                headers={"Content-Type": "application/pdf"},
+            )
+        raise AssertionError(f"unexpected media request: {url}")
+
+    result = land_aemo_gas_document_observations(
+        s3_client=s3_client,
+        observations=observations,
+        request_getter=_get,
+        landing_bucket="landing",
+        archive_bucket="archive",
+    )
+
+    media_records = [record for record in result.records if record.content_sha256]
+    shared_records = [
+        record
+        for record in media_records
+        if record.source_url in {duplicate_url, duplicate_url_reordered}
+    ]
+    byte_duplicate_record = next(
+        record for record in media_records if record.source_url == byte_duplicate_url
+    )
+    distinct_record = next(
+        record for record in media_records if record.source_url == distinct_url
+    )
+
+    assert requested_urls == [duplicate_url, byte_duplicate_url, distinct_url]
+    assert result.included_media_count == 4
+    assert len(result.landed_keys) == 2
+    assert s3_client.upload_fileobj.call_count == 2
+    assert {record.source_page_url for record in shared_records} == {
+        AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+        AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL,
+    }
+    assert {record.source_url for record in shared_records} == {
+        duplicate_url,
+        duplicate_url_reordered,
+    }
+    assert shared_records[0].target_s3_key == shared_records[1].target_s3_key
+    assert byte_duplicate_record.target_s3_key == shared_records[0].target_s3_key
+    assert distinct_record.target_s3_key != shared_records[0].target_s3_key
+
+
 def test_land_manifest_observations_records_runtime_download_failures() -> None:
+    duplicate_pdf_url = (
+        "https://www.aemo.com.au/-/MEDIA/files/gas/example/gas-guide-v2.1.pdf"
+        "?sc_lang=en&rev=ABC"
+    )
     observations = observations_from_manifest_payload(
         {
             "schema_version": 1,
@@ -1151,7 +1274,14 @@ def test_land_manifest_observations_records_runtime_download_failures() -> None:
                     "source_link_text": "Gas Guide v2.1",
                     "source_url": _PDF_URL,
                     "include_decision": "include",
-                }
+                },
+                {
+                    "corpus_source": "example",
+                    "source_page_url": _PAGE_URL,
+                    "source_link_text": "Gas Guide duplicate v2.1",
+                    "source_url": duplicate_pdf_url,
+                    "include_decision": "include",
+                },
             ],
         },
         observed_at=_OBSERVED_AT,
@@ -1175,17 +1305,22 @@ def test_land_manifest_observations_records_runtime_download_failures() -> None:
         logger=logger,
     )
 
-    failed_record = next(
+    failed_records = [
         record for record in result.records if record.source_url == _PDF_URL
-    )
+    ]
+    duplicate_failed_records = [
+        record for record in result.records if record.source_url == duplicate_pdf_url
+    ]
 
     assert requested_urls == [_PDF_URL]
-    assert result.failed_download_count == 1
+    assert result.failed_download_count == 2
     assert result.included_media_count == 0
     assert result.landed_keys == []
-    assert failed_record.content_sha256 is None
-    assert failed_record.target_s3_key is None
-    assert failed_record.exclude_reason == (
+    assert len(failed_records) == 1
+    assert len(duplicate_failed_records) == 1
+    assert failed_records[0].content_sha256 is None
+    assert failed_records[0].target_s3_key is None
+    assert failed_records[0].exclude_reason == (
         "Download failed during materialization: 403 Client Error: Forbidden for url"
     )
     logger.warning.assert_called_once()

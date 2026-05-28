@@ -11,9 +11,9 @@ Observation-only configured source pages can still add `needs_human_review`
 metadata coverage without landing publication bytes. A later approved AEMO ETL
 source-family asset, `bronze_aemo_major_publications_hub_downloads`, uses the
 same source-page discovery, direct-media landing/archive, and bronze metadata
-boundary for the AEMO energy-systems major publications hub plus GSOO and
-WA GSOO publication bundles without adding text extraction or corpus-generation
-side effects to AEMO ETL.
+boundary for the AEMO energy-systems major publications hub, the library major
+publications page, and GSOO and WA GSOO publication bundles without adding text
+extraction or corpus-generation side effects to AEMO ETL.
 When live source-page scraping is used outside the packaged manifest path,
 failed HTTP page loads remain auditable metadata-only source-page observations.
 

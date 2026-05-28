@@ -11,6 +11,9 @@ AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE = "major_publications"
 AEMO_MAJOR_PUBLICATIONS_HUB_URL = (
     "https://www.aemo.com.au/energy-systems/major-publications/"
 )
+AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL = (
+    "https://www.aemo.com.au/library/major-publications"
+)
 AEMO_GSOO_CORPUS_SOURCE = "gsoo"
 AEMO_GSOO_URL = (
     "https://www.aemo.com.au/energy-systems/gas/gas-forecasting-and-planning/"

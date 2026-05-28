@@ -33,11 +33,13 @@ from aemo_etl.factories.aemo_gas_documents.models import (
     AEMO_GSOO_URL,
     AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
     AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+    AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL,
     AEMO_WA_GSOO_CORPUS_SOURCE,
     AEMO_WA_GSOO_URL,
     AEMOGasDocumentPendingObservation,
     AEMOGasDocumentSourcePage,
 )
+from aemo_etl.factories.aemo_gas_documents.scraper import normalize_source_url
 
 _PAGE_URL = "https://www.aemo.com.au/energy-systems/gas/component"
 _PDF_URL = "https://www.aemo.com.au/-/media/files/gas/component-guide.pdf"
@@ -418,6 +420,108 @@ def test_major_publications_definitions_register_asset_job_and_materialize_fixtu
     assert result.metadata["archived_media_count"] == 1
 
 
+def test_major_publications_default_sources_retain_hub_and_library_rows(
+    mocker: MockerFixture,
+) -> None:
+    hub_media_url = (
+        "https://www.aemo.com.au/-/media/files/major-publications/isp/report.pdf"
+        "?rev=ABC&sc_lang=en"
+    )
+    library_media_url = (
+        "https://www.aemo.com.au/-/MEDIA/files/major-publications/isp/report.pdf"
+        "?sc_lang=en&rev=ABC"
+    )
+    html_by_url = {
+        AEMO_MAJOR_PUBLICATIONS_HUB_URL: f"""
+        <html><body>
+          <h1>Major publications</h1>
+          <a href="{hub_media_url}">Shared publication</a>
+        </body></html>
+        """,
+        AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL: f"""
+        <html><body>
+          <h1>Major publications library</h1>
+          <a href="{library_media_url}">Shared publication in library</a>
+        </body></html>
+        """,
+        AEMO_GSOO_URL: "<html><body><h1>GSOO</h1></body></html>",
+        AEMO_WA_GSOO_URL: "<html><body><h1>WA GSOO</h1></body></html>",
+    }
+    requested_media_urls: list[str] = []
+    captured_rows: list[dict[str, object]] = []
+
+    def _get(url: str) -> Response:
+        if url in html_by_url:
+            return _response(url=url, text=html_by_url[url])
+        requested_media_urls.append(url)
+        if url == hub_media_url:
+            return _response(url=url, content=_PDF_BYTES)
+        raise AssertionError(f"unexpected media request: {url}")
+
+    def _write(
+        batch: pl.LazyFrame, **_kwargs: object
+    ) -> AEMOGasDocumentSourceWriteResult:
+        captured_rows.extend(batch.collect().to_dicts())
+        return AEMOGasDocumentSourceWriteResult(
+            row_count=len(captured_rows),
+            target_exists_before_write=True,
+            wrote_table=True,
+            write_mode="merge",
+        )
+
+    mocker.patch(
+        "aemo_etl.factories.aemo_gas_documents.assets.write_aemo_gas_document_sources_batch",
+        side_effect=_write,
+    )
+    defs = aemo_major_publications_hub_downloads_definitions_factory(
+        request_getter=_get,
+        landing_bucket="landing",
+        archive_bucket="archive",
+        aemo_bucket="aemo",
+        process_retry=1,
+    )
+    asset_def = next(
+        asset for asset in defs.assets or [] if isinstance(asset, AssetsDefinition)
+    )
+    asset_key = asset_def.key
+    context, s3, s3_client = _context_and_s3(mocker)
+
+    fn = asset_def.op.compute_fn.decorated_fn  # type: ignore[attr-defined, union-attr]
+    result = fn(context, s3=s3)
+
+    media_rows = [row for row in captured_rows if row["content_sha256"] is not None]
+
+    assert isinstance(result, MaterializeResult)
+    assert asset_def.metadata_by_key[asset_key]["configured_source_page_count"] == 4
+    assert requested_media_urls == [hub_media_url]
+    assert result.metadata is not None
+    assert result.metadata["source_page_count"] == 4
+    assert result.metadata["included_media_count"] == 2
+    assert result.metadata["landed_media_count"] == 1
+    assert result.metadata["archived_media_count"] == 1
+    assert {
+        row["source_url"]
+        for row in captured_rows
+        if row["observation_type"] == "source_page"
+    } == {
+        AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+        AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL,
+        AEMO_GSOO_URL,
+        AEMO_WA_GSOO_URL,
+    }
+    assert {row["source_page_url"] for row in media_rows} == {
+        AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+        AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL,
+    }
+    assert {row["source_url"] for row in media_rows} == {
+        hub_media_url,
+        library_media_url,
+    }
+    assert len({row["target_s3_key"] for row in media_rows}) == 1
+    s3_client.upload_fileobj.assert_called_once()
+    s3_client.copy_object.assert_called_once()
+
+
 def test_major_publications_defaults_materialize_gsoo_and_wa_gsoo_bundle_media(
     mocker: MockerFixture,
 ) -> None:
@@ -447,6 +551,9 @@ def test_major_publications_defaults_materialize_gsoo_and_wa_gsoo_bundle_media(
     html_by_url = {
         AEMO_MAJOR_PUBLICATIONS_HUB_URL: """
         <html><body><h1>Major publications</h1></body></html>
+        """,
+        AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL: """
+        <html><body><h1>Major publications library</h1></body></html>
         """,
         AEMO_GSOO_URL: f"""
         <html>
@@ -529,9 +636,10 @@ def test_major_publications_defaults_materialize_gsoo_and_wa_gsoo_bundle_media(
     downloaded_rows = [row for row in captured_rows if row["source_url"] in media_urls]
 
     assert isinstance(result, MaterializeResult)
-    assert asset_def.metadata_by_key[asset_key]["configured_source_page_count"] == 3
+    assert asset_def.metadata_by_key[asset_key]["configured_source_page_count"] == 4
     assert requested_pages == [
         AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+        AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL,
         AEMO_GSOO_URL,
         AEMO_WA_GSOO_URL,
         gsoo_child_url,
@@ -546,13 +654,13 @@ def test_major_publications_defaults_materialize_gsoo_and_wa_gsoo_bundle_media(
         for row in downloaded_rows
     )
     assert result.metadata is not None
-    assert result.metadata["source_page_count"] == 4
+    assert result.metadata["source_page_count"] == 5
     assert result.metadata["included_media_count"] == len(media_urls)
     assert result.metadata["landed_media_count"] == len(media_urls)
     assert result.metadata["archived_media_count"] == len(media_urls)
     assert s3_client.upload_fileobj.call_count == len(media_urls)
     assert s3_client.copy_object.call_count == len(media_urls)
-    assert len(DEFAULT_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOAD_SOURCE_PAGES) == 3
+    assert len(DEFAULT_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOAD_SOURCE_PAGES) == 4
 
 
 def test_definitions_factory_default_getter_uses_retrying_request_get(
@@ -707,6 +815,14 @@ def test_definitions_factory_default_asset_uses_packaged_manifest_media_only(
         if media_link["source_url"] in failed_urls
         and media_link["should_download"] is False
     ]
+    downloadable_urls = [
+        str(media_link["source_url"])
+        for media_link in manifest["media_links"]
+        if media_link["should_download"] is True
+    ]
+    downloadable_normalized_urls = {
+        normalize_source_url(source_url)[0] for source_url in downloadable_urls
+    }
     later_downloadable_url = next(
         media_link["source_url"]
         for index, media_link in enumerate(manifest["media_links"])
@@ -750,7 +866,8 @@ def test_definitions_factory_default_asset_uses_packaged_manifest_media_only(
     assert requested_urls
     assert later_downloadable_url in requested_urls
     assert result.metadata is not None
-    assert result.metadata["included_media_count"] == len(requested_urls)
+    assert result.metadata["included_media_count"] == len(downloadable_urls)
+    assert len(requested_urls) == len(downloadable_normalized_urls)
     s3_client.copy_object.assert_not_called()
 
 

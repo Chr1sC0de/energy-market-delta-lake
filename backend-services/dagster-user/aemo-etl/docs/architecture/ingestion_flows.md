@@ -197,7 +197,7 @@ sequenceDiagram
     autonumber
     participant Discovery as aemo-refresh-gas-document-media-manifest
     participant Manifest as Checked-in media manifest
-    participant MajorPages as AEMO major publications, GSOO, and WA GSOO pages
+    participant MajorPages as AEMO major publications, library, GSOO, and WA GSOO pages
     participant AEMO as AEMO direct media URLs
     participant Schedule as bronze_aemo_gas_document_sources_job_schedule
     participant Docs as bronze_aemo_gas_document_sources
@@ -223,6 +223,7 @@ sequenceDiagram
     MajorSchedule->>MajorDocs: Run daily after manifest-backed asset window
     MajorDocs->>MajorPages: Discover configured source pages and child publication pages live
     MajorDocs->>AEMO: Download included public publication media
+    MajorDocs->>MajorDocs: Dedupe normalized URLs and content hashes while retaining observations
     MajorDocs->>MajorDocs: Count source pages, included downloads, failures, review-needed rows
     MajorDocs->>MajorLanding: Write included media bytes by content_sha256 and safe suffix
     MajorDocs->>MajorDelta: Merge bronze_aemo_major_publications_hub_downloads metadata rows
@@ -248,19 +249,25 @@ Trigger and output notes:
   the AEMO energy-systems major publications hub as observation-only
   `needs_human_review` metadata; `bronze_aemo_major_publications_hub_downloads`
   is the approved live-discovery source family for landing public
-  major-publications, GSOO, and WA GSOO bytes under
+  major-publications, library, GSOO, and WA GSOO bytes under
   `bronze/aemo_major_publications`.
 - The major-publications asset key is
   `bronze/aemo_major_publications/bronze_aemo_major_publications_hub_downloads`
   and its visual group is `gas_aemo_major_publications`. Its materialization
   metadata includes target table URI, landing/archive roots, source page count,
-  included download count, failed count, and review-needed count. Validate this
-  source family with `make component-test` for the AEMO ETL **Component test**
-  lane and `make run-prek` for the AEMO ETL **Commit check**.
+  included download count, failed count, and review-needed count. The configured
+  source pages include
+  `https://www.aemo.com.au/energy-systems/major-publications/`,
+  `https://www.aemo.com.au/library/major-publications`, GSOO, and WA GSOO.
+  Validate this source family with `make component-test` for the AEMO ETL
+  **Component test** lane and `make run-prek` for the AEMO ETL **Commit check**.
 - Included media links produce content-addressed objects with safe URL or
   content-type suffixes, plus metadata rows with source URL, resolved URL,
   source page, include decision, `content_sha256`, content type, content length,
   target key, document family/version fields, and archive `storage_uri`.
+  Duplicate normalized source URLs share one media GET during a materialization,
+  and byte-identical responses from different source URLs share the same
+  content-addressed landing/archive key while preserving each metadata row.
 - Excluded and `needs_human_review` source-page or source-link observations,
   plus failed direct-media validation source-link observations, are retained in
   their metadata Delta tables without landing media bytes. Failed validation
