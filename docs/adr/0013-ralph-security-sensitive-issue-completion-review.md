@@ -3,9 +3,10 @@
 Ralph already runs **Issue completion review** after implementation QA and
 before **Local integration**, Trunk push, or Exploratory handoff when risk
 triggers require another automated pass. Prior work added the path-based
-trigger shape and manifest fields for security-sensitive paths. This ADR records
-why that trigger extends the existing gate instead of adding a separate
-security gate or hard-blocking scanner.
+trigger shape and manifest fields for security-sensitive paths. Ralph now also
+collects redacted added-line diff evidence for high-signal security review
+signals. This ADR records why that evidence extends the existing gate instead
+of adding a separate security gate or hard-blocking scanner.
 
 Security-sensitive paths exclude ordinary maintained Markdown docs before
 matching security-relevant surfaces, but they can include canonical and operator
@@ -13,8 +14,9 @@ files such as `AGENTS.md`, `CONTEXT.md`, `OPERATOR.md`, Agent workflow docs,
 Ralph loop files, and other changed files that can affect credentials,
 automation authority, dependency execution, containers, GitHub workflow
 execution, infrastructure, authentication, Ralph behavior, or other
-security-relevant operator surfaces. The classification is intentionally based
-on paths and evidence, not on content scanning or secret detection.
+security-relevant operator surfaces. The classification combines path evidence
+with deterministic added-line diff evidence. It does not try to prove that a
+change is secure or insecure.
 
 ## Decision
 
@@ -30,6 +32,17 @@ changed-file evidence when the changed-file inventory is large. The review
 agent checks the completed implementation after QA, with the issue contract,
 changed files, QA evidence, **Delivery mode**, **Integration target**, run
 manifest path, and trigger reasons available as review evidence.
+
+Ralph also scans the implementation diff against `origin/<base>...HEAD` before
+review. It considers added lines only, ignoring deleted lines and unchanged
+context lines, and records redacted evidence in
+`issue_completion_review.security_diff_evidence`. Evidence patterns cover
+secret or private-key markers, credential environment names, shell or network
+execution markers, IAM, auth, CORS, security-group or permission changes, and
+dependency or lockfile changes. Matched diff evidence can add
+`Security-sensitive change` to the review reasons even when the changed path is
+otherwise ordinary. After any **Issue completion review** repair, Ralph refreshes
+the diff evidence from the repaired branch before rerunning the review prompt.
 
 Failing findings do not hard-block through a separate scanner. They feed the
 same **Issue completion review** repair loop as other review findings and
@@ -49,9 +62,9 @@ Issue metadata mutation allowed by other phases.
   completion review** placement, reporting, retry, and manifest semantics while
   making operators reason about two pre-integration review gates.
 - Add a hard-blocking scanner: this would sound stronger but would create false
-  confidence because the current trigger is path evidence, not content or
-  secret scanning. It would also add a new failure class without a repair-loop
-  boundary.
+  confidence because the current trigger is evidence collection for review, not
+  proof that a change is secure or insecure. It would also add a new failure
+  class without a repair-loop boundary.
 - Reuse **Issue completion review** with a **Security-sensitive change** trigger:
   this keeps one automated pre-integration review gate and makes security-relevant
   paths discoverable in the manifest and review prompt.
@@ -61,14 +74,15 @@ Issue metadata mutation allowed by other phases.
 Operators have one place to inspect risky issue review outcomes:
 `issue-completion-review.md`, `codex-issue-completion-review.jsonl`, and the
 `issue_completion_review` section in `ralph-run.json`. Security-sensitive paths
-are evidence for why the gate ran, not a new **Delivery mode**, label, CLI flag,
-or GitHub Issue permission.
+and redacted diff matches are evidence for why the gate ran, not a new
+**Delivery mode**, label, CLI flag, or GitHub Issue permission.
 
-The path trigger can produce conservative review coverage for automation and
-infrastructure-adjacent changes without granting the review agent new authority.
-The tradeoff is that path-based classification does not prove a change is
-secure; it only forces the existing **Issue completion review** to inspect
-security-relevant scope before Ralph publishes the work.
+The evidence trigger can produce conservative review coverage for automation,
+credentials, dependency, and infrastructure-adjacent changes without granting
+the review agent new authority. The tradeoff is that evidence classification
+does not prove a change is secure; it only forces the existing **Issue
+completion review** to inspect security-relevant scope before Ralph publishes
+the work.
 
 Future changes to the path list, prompt evidence, manifest fields, or read-only
 review access must update this ADR, `CONTEXT.md`, Ralph docs, and issue-tracker

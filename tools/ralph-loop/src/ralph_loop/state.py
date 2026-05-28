@@ -156,6 +156,7 @@ class RunManifest:
                 "reasons": [],
                 "deployment_classification": None,
                 "security_sensitive_paths": [],
+                "security_diff_evidence": [],
                 "high_stiffness_evidence": [],
                 "stiffness_ratio_evidence": None,
                 "log_path": None,
@@ -746,6 +747,7 @@ class RunManifest:
             review["security_sensitive_paths"] = trigger_payload[
                 "security_sensitive_paths"
             ]
+            review["security_diff_evidence"] = trigger_payload["security_diff_evidence"]
             review["high_stiffness_evidence"] = trigger_payload[
                 "high_stiffness_evidence"
             ]
