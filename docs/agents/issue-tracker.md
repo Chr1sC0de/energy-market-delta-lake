@@ -85,14 +85,26 @@ after the body; normal comments and triage comments are not included.
 
 After implementation QA passes, Ralph runs **Issue completion review** before
 **Local integration**, Trunk push, or Exploratory handoff when the changed files
-include deployable paths, **Agent workflow changes**, when the issue uses
-**Trunk delivery**, or when high-stiffness issue evidence is present. Passing
-review lets the normal delivery path continue. Failing review findings become a
-repair prompt for remaining `--max-codex-attempts` attempts; Ralph reruns QA and
-review after each repair. If the budget is exhausted, Ralph marks the issue
-`agent-failed`, preserves worktrees and logs, and does not update an
+include deployable paths, **Agent workflow changes**, a **Security-sensitive
+change**, when the issue uses **Trunk delivery**, or when high-stiffness issue
+evidence is present. A **Security-sensitive change** is a changed-file inventory
+with paths under security-relevant operator surfaces. Ralph excludes ordinary
+maintained Markdown docs before matching this trigger, but canonical and
+operator files such as `CONTEXT.md`, `AGENTS.md`, and `OPERATOR.md`, Agent
+workflow docs, and Ralph loop files can still be security-sensitive path
+evidence. Other matched surfaces include dependency manifests, container inputs,
+broad automation files, GitHub workflow or action definitions, scripts,
+authentication, infrastructure, and Ralph loop code. Ralph records the trigger
+reason and path evidence in the run manifest and keeps those paths visible in
+the review prompt even when the changed-file inventory is grouped and sampled.
+Passing review lets the normal delivery path continue. Failing review findings
+become a repair prompt for remaining `--max-codex-attempts` attempts; Ralph
+reruns QA and review after each repair. If the budget is exhausted, Ralph marks
+the issue `agent-failed`, preserves worktrees and logs, and does not update an
 **Integration target**. This gate is not human `dev` review, **Ready issue
-refresh**, or **Post-promotion review**.
+refresh**, or **Post-promotion review**. The security-sensitive trigger does not
+add a separate security gate, hard-blocking scanner, label, **Delivery mode**,
+CLI flag, or GitHub Issue mutation permission.
 
 Ralph then runs configured Review package media recipes before **Local
 integration**, Trunk push, or Exploratory handoff. Media recipes may add sibling
@@ -270,6 +282,10 @@ Use ADR
 [0011](../adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md)
 for adaptive Ralph vocabulary, initial stiffness thresholds, and the
 verified-only recovery boundary.
+Use ADR
+[0013](../adr/0013-ralph-security-sensitive-issue-completion-review.md)
+for the decision to model **Security-sensitive change** as an **Issue completion
+review** trigger rather than a separate security gate.
 
 ## Sync metadata
 
@@ -294,6 +310,7 @@ verified-only recovery boundary.
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
   - `docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md`
   - `docs/adr/0012-ralph-gitflow-review-package-gate.md`
+  - `docs/adr/0013-ralph-security-sensitive-issue-completion-review.md`
   - `scripts/ralph.py`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
   - `tools/ralph-loop/src/ralph_loop/state.py`

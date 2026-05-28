@@ -10,7 +10,10 @@ Issues as the queue, Codex as the implementation and triage worker, repo
 Exploratory handoff, plus **Promotion** as the success paths after QA.
 Risky implementation paths also pass an automated **Issue completion review**
 before Ralph updates an **Integration target** or publishes an Exploratory
-handoff. Gitflow and Trunk delivery also generate and validate a local
+handoff. A **Security-sensitive change** is one trigger reason for that existing
+gate; it is not a separate security gate, scanner block, label, **Delivery
+mode**, or issue-mutation permission. Gitflow and Trunk delivery also generate
+and validate a local
 **Review package** before **Local integration** or an **Integration target**
 push, and any configured Review package media recipe runs before Gitflow,
 Trunk, or Exploratory publication. Promotion records a
@@ -771,9 +774,9 @@ Key fields for inspection:
 - `post_promotion_review`: enabled state, skip reason, warning-only review
   status, review log path, and Markdown artifact path for **Promotion** runs.
 - `issue_completion_review`: trigger reasons, deployment classifier snapshot,
-  high-stiffness evidence, structured Stiffness ratio evidence, review log and
-  Markdown artifact paths, per-review attempt results, repair attempts, and
-  failure state for implementation runs.
+  security-sensitive path evidence, high-stiffness evidence, structured
+  Stiffness ratio evidence, review log and Markdown artifact paths, per-review
+  attempt results, repair attempts, and failure state for implementation runs.
 - `review_package`: **Review package** state for implementation runs, including
   status, local HTML path, generator log path, structured summary, optional
   media metadata, validation status, and failure reason. A successful Gitflow
@@ -1079,8 +1082,20 @@ again before **Local integration** or Exploratory handoff continues.
 After QA passes and the branch is current with its base, Ralph evaluates the
 **Issue completion review** triggers. Review runs when the final changed-file
 inventory includes deployable paths from the deployment classifier,
-**Agent workflow changes**, when the issue uses **Trunk delivery**, or when the
-issue body contains high-stiffness evidence. Ralph reads both legacy
+**Agent workflow changes**, a **Security-sensitive change**, when the issue uses
+**Trunk delivery**, or when the issue body contains high-stiffness evidence.
+Security-sensitive paths exclude ordinary maintained Markdown docs before Ralph
+matches security-relevant operator surfaces, but canonical and operator files
+such as `CONTEXT.md`, `AGENTS.md`, and `OPERATOR.md`, Agent workflow docs, and
+Ralph loop files can still be security-sensitive path evidence. Other matched
+surfaces include dependency manifests, container inputs, broad automation files,
+GitHub workflow or action definitions, scripts, authentication, infrastructure,
+and Ralph loop code. Ralph records the trigger as `Security-sensitive change`
+and stores the path evidence in
+`issue_completion_review.security_sensitive_paths`; this path evidence only
+decides whether the existing review gate runs. It does not run a scanner, add a
+new hard-blocking gate, grant GitHub Issue mutation, or create a new **Delivery
+mode**. Ralph reads both legacy
 `Stiffness: <score> (<level>)` evidence and the structured
 `## Stiffness estimate` fields emitted by issue shaping: `Stiffness ratio`,
 `Ratio level`, `Recommended routing action`, and `Operator override`. A high or
@@ -1090,13 +1105,19 @@ recorded in `ralph-run.json`. The review agent receives the issue contract, a
 bounded changed-file inventory summary, QA evidence,
 **Delivery mode**, **Integration target**, run manifest path, and trigger
 reasons. Small inventories are listed verbatim. Large inventories are grouped
-and sampled while risk-relevant deployable and **Agent workflow changes** stay
-verbatim; the full final changed-file inventory remains in `ralph-run.json`.
-It gets read-only GitHub Issue commands and writes
+and sampled while risk-relevant deployable, **Agent workflow**, and
+security-sensitive changed paths stay verbatim; the full final changed-file
+inventory remains in `ralph-run.json`. It gets read-only GitHub Issue commands
+and writes
 `issue-completion-review.md` plus `codex-issue-completion-review.jsonl` in the
 implementation run directory.
 
 Passing **Issue completion review** allows the next delivery gate to continue.
+Failing findings become repair prompts for remaining per-issue implementation
+attempts. Those repair attempts share the same `--max-codex-attempts` budget as
+ordinary implementation, Codex, and QA retries; after each repair Ralph reruns
+selected QA and **Issue completion review** before **Local integration**, Trunk
+push, or Exploratory handoff can proceed.
 Ralph then runs any configured Review package media recipes. Changed curated
 Marimo notebook files under
 `backend-services/marimo/notebooks/<name>.py` map to `/marimo/<name>/` when that
@@ -2088,6 +2109,7 @@ ordinary issue failure or retryable QA failure.
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
   - `docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md`
   - `docs/adr/0012-ralph-gitflow-review-package-gate.md`
+  - `docs/adr/0013-ralph-security-sensitive-issue-completion-review.md`
   - `.agents/skills/shape-issues/SKILL.md`
   - `.agents/skills/shape-issues/scripts/shape_issue_gate.py`
   - `.agents/skills/shape-issues/scripts/codex_context_assessor.py`

@@ -84,9 +84,19 @@ _Avoid_: Agent auto-escalation, unrestricted agent drain
 The automated Ralph review gate that runs after implementation QA has passed
 and before **Local integration**, Trunk push, or Exploratory handoff for risky
 issue work. It triggers for deployable changed paths, **Agent workflow changes**,
-**Trunk delivery**, and high-stiffness issue evidence; failing findings feed
-Codex repair attempts from the same per-issue implementation budget.
+**Security-sensitive changes**, **Trunk delivery**, and high-stiffness issue
+evidence; failing findings feed Codex repair attempts from the same per-issue
+implementation budget.
 _Avoid_: Human dev review, Ready issue refresh, Post-promotion review
+
+**Security-sensitive change**:
+A changed-file inventory that touches repo paths where mistakes can affect
+credentials, automation authority, dependency execution, containers, GitHub
+workflow execution, infrastructure, authentication, Ralph behavior, or other
+security-relevant operator surfaces. Ralph treats this as a trigger reason for
+**Issue completion review**; it is not a separate gate, label, **Delivery
+mode**, CLI flag, or GitHub Issue permission.
+_Avoid_: Security gate, scanner block, security label
 
 **Review package**:
 The ignored local `review-package.html` artifact Ralph generates and validates
@@ -299,6 +309,9 @@ _Avoid_: Dashboard type, user persona
 - **Issue completion review** is a pre-**Local integration** automated gate on a
   single implemented issue. It is not human `dev` review, it is not **Ready
   issue refresh**, and it is not **Post-promotion review**.
+- A **Security-sensitive change** is one reason Ralph may require **Issue
+  completion review**. It does not rename the gate and does not add a separate
+  GitHub Issue mutation path.
 - A checkpointed **Operator workflow** drain uses the same lane-aware scheduler
   as plain drain: Gitflow and Trunk attempts stay serial, eligible
   **Exploratory delivery** attempts use the configured worker pool, and one
@@ -397,6 +410,13 @@ _Avoid_: Dashboard type, user persona
 > non-triggering context for **Post-Promotion deployment classification**.
 > Ralph records and prints `no_deployment` unless deployable AWS or AEMO ETL
 > user-code runtime paths are also in the changed-file inventory."
+>
+> **Dev:** "Does a **Security-sensitive change** go through a separate security
+> gate?"
+> **Domain expert:** "No. Ralph records it as a reason to run **Issue
+> completion review** before **Local integration**, Trunk push, or Exploratory
+> handoff. The review agent has read-only GitHub Issue access, and any blocking
+> findings consume the same implementation repair budget."
 
 ## Flagged ambiguities
 
@@ -437,6 +457,9 @@ _Avoid_: Dashboard type, user persona
 - "completion review" could be confused with the human review of `dev` before
   **Promotion**. Resolved: use **Issue completion review** only for Ralph's
   automated pre-**Local integration** gate on risky issue work.
+- "security review" could imply a separate gate, scanner, label, **Delivery
+  mode**, or issue mutation permission. Resolved: use **Security-sensitive
+  change** for the path-trigger reason that extends **Issue completion review**.
 - "post-Promotion deploy" could imply that direct `$ralph-loop promote` owns
   AWS credentials and runs deployment commands. Resolved: use
   **Post-Promotion deployment classification** for the report-only decision and

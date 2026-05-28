@@ -314,6 +314,17 @@ way:
   the operational contract lives in [OPERATOR.md](../../OPERATOR.md),
   [docs/agents/issue-tracker.md](../agents/issue-tracker.md), and
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
+- #301: **Security-sensitive change** is canonical repo language for
+  security-relevant changed-file inventories that trigger **Issue completion
+  review**. It extends the existing pre-**Local integration** review gate, keeps
+  read-only issue access and the same repair-loop budget, and does not add a
+  separate security gate, scanner block, label, **Delivery mode**, CLI flag, or
+  GitHub Issue mutation permission. The canonical term lives in
+  [CONTEXT.md](../../CONTEXT.md), the operational contract lives in
+  [docs/agents/issue-tracker.md](../agents/issue-tracker.md) and
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md), and ADR
+  [0013](../adr/0013-ralph-security-sensitive-issue-completion-review.md)
+  records the decision.
 - #292: Ralph Gitflow delivery owns a blocking **Review package** gate after
   final changed files, QA evidence, and any required **Issue completion
   review** are known, and before **Local integration** updates `dev`. The
@@ -430,6 +441,7 @@ These commands support the intended flow:
   - `docs/adr/0010-gas-market-knowledge-base.md`
   - `docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md`
   - `docs/adr/0012-ralph-gitflow-review-package-gate.md`
+  - `docs/adr/0013-ralph-security-sensitive-issue-completion-review.md`
   - `tests/test_documentation_qa_ratchet.py`
   - `.pre-commit-config.yaml`
   - `.gitleaksignore`
