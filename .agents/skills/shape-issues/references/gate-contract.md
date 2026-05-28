@@ -115,4 +115,8 @@ GitHub CLI when `gh` auth preflight passes. If the preflight fails, it writes a
 create-only `connector-publish-plan.json` for Codex to execute through the
 installed GitHub connector. The connector fallback must preserve source marker
 dedupe, blocker ordering, and `needs-triage` labels, and it must not edit,
-comment on, close, reopen, or relabel existing issues.
+comment on, close, reopen, or relabel existing issues. Plan entries without
+blockers carry final `body_path` files. Blocked dependent entries carry
+`body_template_path` files and a render contract; connector execution must
+replace each `{{created_issue_url:<draft-id>}}` placeholder with the created
+blocker issue URL or `#N` reference before creating the dependent issue.

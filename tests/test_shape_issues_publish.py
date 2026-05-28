@@ -635,9 +635,24 @@ class ShapeIssuesPublishTests(unittest.TestCase):
             [issue["id"] for issue in plan["issues"]],
             ["blocker", "dependent"],
         )
-        self.assertEqual(plan["issues"][1]["blocked_by"], ["blocker"])
-        body = Path(plan["issues"][0]["body_path"]).read_text(encoding="utf-8")
-        self.assertIn("shape-issues-source", body)
+        blocker_entry = plan["issues"][0]
+        dependent_entry = plan["issues"][1]
+        self.assertIn("body_path", blocker_entry)
+        self.assertNotIn("body_template_path", blocker_entry)
+        self.assertEqual(dependent_entry["blocked_by"], ["blocker"])
+        self.assertNotIn("body_path", dependent_entry)
+        self.assertIn("body_template_path", dependent_entry)
+        self.assertEqual(
+            dependent_entry["render_contract"]["blocked_by_draft_ids"],
+            ["blocker"],
+        )
+        blocker_body = Path(blocker_entry["body_path"]).read_text(encoding="utf-8")
+        dependent_template = Path(dependent_entry["body_template_path"]).read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("shape-issues-source", blocker_body)
+        self.assertIn("{{created_issue_url:blocker}}", dependent_template)
+        self.assertNotIn("None - can start immediately.", dependent_template)
 
     def test_connector_plan_backend_does_not_preflight_gh(self) -> None:
         bundle_path, report_path = write_bundle_and_report(
@@ -660,6 +675,42 @@ class ShapeIssuesPublishTests(unittest.TestCase):
         self.assertEqual(FakeGithubClient.preflight_calls, 0)
         self.assertEqual(manifest["issues"][0]["state"], "connector-plan")
         self.assertTrue((self.tmp_path / "connector-publish-plan.json").exists())
+
+    def test_connector_plan_preserves_fixture_provenance_in_body_templates(self) -> None:
+        bundle_path, report_path = write_bundle_and_report(
+            self.tmp_path,
+            issues=[
+                issue_payload("dependent", "Dependent issue", blocked_by=["blocker"]),
+                issue_payload("blocker", "Blocker issue"),
+            ],
+            actions={"dependent": "ready", "blocker": "ready"},
+            assessor_provider="fixture",
+        )
+
+        publisher.publish(
+            publish_config(
+                self.tmp_path,
+                bundle_path,
+                report_path,
+                dry_run=False,
+                allow_fixture_publish=True,
+                publish_backend=publisher.PUBLISH_BACKEND_CONNECTOR_PLAN,
+            )
+        )
+
+        plan = json.loads(
+            (self.tmp_path / "connector-publish-plan.json").read_text(encoding="utf-8")
+        )
+        blocker_body = Path(plan["issues"][0]["body_path"]).read_text(encoding="utf-8")
+        dependent_template = Path(plan["issues"][1]["body_template_path"]).read_text(
+            encoding="utf-8"
+        )
+        for body in (blocker_body, dependent_template):
+            self.assertIn("Issue context assessor provider: `fixture`", body)
+            self.assertIn(
+                "Fixture publish policy: published with `--allow-fixture-publish`",
+                body,
+            )
 
     def test_duplicate_search_failure_records_github_diagnostics(self) -> None:
         bundle_path, report_path = write_bundle_and_report(

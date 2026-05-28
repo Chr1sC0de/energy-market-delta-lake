@@ -282,10 +282,14 @@ override.
 Use `--publish-backend auto` for Codex-owned publication. It first tries the
 GitHub CLI path. If non-dry-run `gh` preflight fails, the publisher writes
 `connector-publish-plan.json` with source markers, blocker order, labels, and
-body paths so Codex can create the missing `needs-triage` issues through the
-installed GitHub connector. The connector fallback is create-only: search by
-source marker, create missing issues, and do not edit, comment on, close,
-reopen, or relabel existing GitHub Issues.
+issue body paths so Codex can create the missing `needs-triage` issues through
+the installed GitHub connector. Unblocked plan entries use final `body_path`
+files. Blocked dependent entries use `body_template_path` files with
+`{{created_issue_url:<draft-id>}}` placeholders plus a render contract; Codex
+must create blocker issues first, render those placeholders to created issue
+URLs or `#N` references, then create the dependent issue. The connector fallback
+is create-only: search by source marker, create missing issues, and do not edit,
+comment on, close, reopen, or relabel existing GitHub Issues.
 
 The publisher:
 
@@ -302,7 +306,8 @@ The publisher:
 - never mutates existing issues
 - can write a create-only connector publish plan when `--publish-backend auto`
   cannot use local `gh` auth
-- writes `publish-manifest.json` and final issue bodies under the run directory
+- writes `publish-manifest.json`, final issue bodies, and connector-only body
+  templates under the run directory
 - adds deterministic source markers, searches for duplicates before create,
   and skips duplicates
 - publishes blockers first and rewrites `## Blocked by` to real `#N` or
