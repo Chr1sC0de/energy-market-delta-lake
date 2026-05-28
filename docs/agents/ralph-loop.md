@@ -904,10 +904,15 @@ target**, verifies the recorded commit is reachable from
 `origin/<integration-target>`, confirms the manifest records a pushed target and
 passed QA evidence, then reuses the metadata recovery path. Successful recovery
 records a `residual_update`, a reachability event, a recovered drain-scheduler
-fatal-stop marker when the child had recorded one, an Operator
-`issue_metadata_recovered` checkpoint, and marks the child run succeeded.
-Unverified commits, missing pushed-target evidence, or missing passed QA
-evidence remain hard stops and do not mutate GitHub Issue metadata.
+fatal-stop marker when the child had recorded one, and an Operator
+`issue_metadata_recovered` checkpoint. Before the Operator can resume ready
+issue claims, Ralph marks **Ready issue refresh** pending on the recovered child
+manifest, runs the existing refresh analysis and mutation path under the claim
+gate, then records `metadata_recovery_resume_allowed` only after refresh
+completes or the Operator explicitly disabled refresh. Refresh failure leaves
+the resume decision blocked with recovery guidance; unverified commits, missing
+pushed-target evidence, or missing passed QA evidence remain hard stops and do
+not mutate GitHub Issue metadata.
 
 Exploratory acceptance merge conflicts pause with run status
 `acceptance_conflict` before push or GitHub Issue metadata mutation. Ralph
@@ -1511,10 +1516,11 @@ the ready queue.
 After each successful drain-mode **Local integration** or Exploratory handoff,
 Ralph computes and applies **Ready issue refresh** by default. The checkpointed
 Operator loop also computes and applies **Ready issue refresh** after a
-successful **Promotion** that closes verified issues. Operators can disable the
-drain or Operator refresh with `--skip-ready-issue-refresh`; targeted `--issue`
-runs and direct `--promote` runs do not refresh unless the operator passes
-`--ready-issue-refresh`.
+successful **Promotion** that closes verified issues, and after same-run
+verified post-push metadata recovery before the next ready issue claim.
+Operators can disable the drain or Operator refresh with
+`--skip-ready-issue-refresh`; targeted `--issue` runs and direct `--promote`
+runs do not refresh unless the operator passes `--ready-issue-refresh`.
 Ralph first computes a bounded candidate set from open GitHub Issues returned by
 the existing `--issue-limit` scan. Candidate selection includes
 `ready-for-agent` issues that are unblocked in queue order and excludes issues

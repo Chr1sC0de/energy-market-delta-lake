@@ -7749,11 +7749,12 @@ class RalphOperatorRunTests(unittest.TestCase):
             any(command[:3] == ("gh", "issue", "close") for command in commands)
         )
         self.assertEqual(child_manifest["status"], "succeeded")
-        self.assertEqual(child_manifest["stage"], "verified_metadata_recovered")
+        self.assertEqual(child_manifest["stage"], "metadata_recovery_resume_decision")
         self.assertEqual(
             child_manifest["github_metadata"]["status"],
             "marked_integrated",
         )
+        self.assertEqual(child_manifest["ready_issue_refresh"]["status"], "completed")
         self.assertEqual(
             child_manifest["adaptive_events"][-1]["event_type"],
             "residual_update",
@@ -7763,8 +7764,25 @@ class RalphOperatorRunTests(unittest.TestCase):
         checkpoints = [
             checkpoint["checkpoint"] for checkpoint in operator_manifest["checkpoints"]
         ]
-        self.assertIn("issue_metadata_recovered", checkpoints)
-        self.assertIn("issue_succeeded", checkpoints)
+        self.assertLess(
+            checkpoints.index("issue_metadata_recovered"),
+            checkpoints.index("metadata_recovery_resume_allowed"),
+        )
+        self.assertLess(
+            checkpoints.index("metadata_recovery_resume_allowed"),
+            checkpoints.index("issue_succeeded"),
+        )
+        recovery_events = [event["stage"] for event in child_manifest["events"]]
+        self.assertLess(
+            recovery_events.index("verified_metadata_recovered"),
+            recovery_events.index(
+                "ready_issue_refresh_pending_after_metadata_recovery"
+            ),
+        )
+        self.assertLess(
+            recovery_events.index("ready_issue_refresh_completed"),
+            recovery_events.index("metadata_recovery_resume_decision"),
+        )
         self.assertIn(
             "Operator verified post-push metadata recovery", output.getvalue()
         )
@@ -7817,8 +7835,9 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertEqual(child_manifest["status"], "succeeded")
         self.assertEqual(
             child_manifest["stage"],
-            "verified_metadata_recovery_already_complete",
+            "metadata_recovery_resume_decision",
         )
+        self.assertEqual(child_manifest["ready_issue_refresh"]["status"], "completed")
         self.assertEqual(
             child_manifest["github_metadata"]["status"],
             "marked_integrated",
@@ -7826,6 +7845,75 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertEqual(
             child_manifest["adaptive_events"][-1]["event_type"],
             "residual_update",
+        )
+
+    def test_operator_metadata_recovery_blocks_resume_when_refresh_pending_fails(
+        self,
+    ) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                issue_view_command(42): [
+                    issue_view_output(labels=[ralph.AGENT_RUNNING_LABEL])
+                ],
+                issue_comments_command(42): [json.dumps({"comments": []})],
+                issue_state_command(42): [json.dumps({"state": "OPEN"})],
+            },
+            fail_ready_issue_refresh_analysis=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                drain=True,
+                delivery_mode=ralph.GITFLOW_MODE,
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = ralph.RalphOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=1,
+            )
+            recovery_loop = PostPushMetadataRecoveryLoop(loop.config, runner)
+            operator.loop = recovery_loop
+            operator.github = recovery_loop.github
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                with self.assertRaises(ralph.ReadyIssueRefreshFailure):
+                    operator._run_drain_scheduler_checkpoint()
+
+            child_manifest = json.loads(
+                recovery_loop.manifest_path.read_text(encoding="utf-8")
+            )
+            operator_manifest = json.loads(
+                (run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text(encoding="utf-8")
+            )
+
+        checkpoints = [
+            checkpoint["checkpoint"] for checkpoint in operator_manifest["checkpoints"]
+        ]
+        self.assertIn("issue_metadata_recovered", checkpoints)
+        self.assertNotIn("metadata_recovery_resume_allowed", checkpoints)
+        self.assertNotIn("issue_succeeded", checkpoints)
+        self.assertEqual(child_manifest["status"], "failed")
+        self.assertEqual(child_manifest["ready_issue_refresh"]["status"], "failed")
+        recovery_events = [event["stage"] for event in child_manifest["events"]]
+        self.assertLess(
+            recovery_events.index("verified_metadata_recovered"),
+            recovery_events.index(
+                "ready_issue_refresh_pending_after_metadata_recovery"
+            ),
+        )
+        self.assertIn("metadata_recovery_resume_decision", recovery_events)
+        resume_event = next(
+            event
+            for event in child_manifest["events"]
+            if event["stage"] == "metadata_recovery_resume_decision"
+        )
+        self.assertEqual(
+            resume_event["details"]["resume_decision"],
+            "blocked_ready_issue_refresh",
         )
 
     def test_operator_metadata_recovery_refuses_unverified_commit(self) -> None:

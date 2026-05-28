@@ -168,8 +168,18 @@ policy into the shared core instead of copying the Gas market wrappers.
 ## AEMO Major Publications Fixture
 
 The `aemo-publications-corpus` CLI is the AEMO major publications corpus tool
-surface. The current command surface is fixture-only and does not consume live
-AEMO ETL metadata from `bronze_aemo_major_publications_hub_downloads`.
+surface. Fixture builds keep a deterministic local corpus available, while
+`src/gas_market_knowledge_base/aemo_publications/source_manifest.py` converts
+downloaded hub and library metadata rows from AEMO ETL
+`bronze_aemo_major_publications_hub_downloads` into the shared
+`SourceManifestRow` shape.
+
+The metadata converter only includes AEMO major-publications hub and library
+rows in this slice. Supported PDF media rows become extraction-ready manifest
+rows. Unsupported media, failed downloads, missing storage URIs, and duplicate
+content hashes stay in the bronze source manifest as `needs_human_review`
+audit rows with `review_status` and `review_reason`, so validation can report
+them without treating them as silver extraction inputs.
 
 Build the local fixture corpus:
 
@@ -289,6 +299,8 @@ artifact output rather than maintained router documentation.
   extraction planning, validation, frontmatter, and write behavior.
 - `src/gas_market_knowledge_base/source_manifest.py`: bronze source manifest
   writer for AEMO gas document metadata rows.
+- `src/gas_market_knowledge_base/aemo_publications/source_manifest.py`: AEMO
+  major publications metadata converter for downloaded hub and library rows.
 - `tests/unit/`: package import, command-surface, and manifest writer tests.
 - `tests/unit/test_aemo_publications.py`: AEMO major publications corpus
   fixture **Unit test** lane.
@@ -317,6 +329,7 @@ artifact output rather than maintained router documentation.
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/cli.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/corpus_paths.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/fixture_corpus.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/source_manifest.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/__init__.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/gold_context.py`

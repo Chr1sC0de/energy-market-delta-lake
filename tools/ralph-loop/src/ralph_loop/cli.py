@@ -7588,19 +7588,131 @@ class RalphOperatorRun:
                 manifest,
                 mark_success=True,
             )
+            metadata_details = {
+                "metadata_status": metadata_status_value(manifest),
+                "integration_target": manifest_integration_target(manifest),
+                "integration_commit": manifest_integration_commit(manifest)[0],
+            }
             self.manifest.record_checkpoint(
                 "issue_metadata_recovered",
                 message=f"Issue #{issue_number} post-push metadata recovered.",
                 child_manifest_path=manifest.path,
                 issue_payload=child_manifest_issue_payload(manifest.path),
+                details=metadata_details,
+            )
+            self._run_ready_issue_refresh_after_metadata_recovery(
+                manifest,
+                issue_number=issue_number,
+            )
+            refresh_status = ready_issue_refresh_status_value(manifest)
+            self.manifest.record_checkpoint(
+                "metadata_recovery_resume_allowed",
+                message=(
+                    f"Issue #{issue_number} metadata recovery resume allowed after "
+                    f"Ready issue refresh status {refresh_status}."
+                ),
+                child_manifest_path=manifest.path,
+                issue_payload=child_manifest_issue_payload(manifest.path),
                 details={
-                    "metadata_status": metadata_status_value(manifest),
-                    "integration_target": manifest_integration_target(manifest),
-                    "integration_commit": manifest_integration_commit(manifest)[0],
+                    **metadata_details,
+                    "ready_issue_refresh_status": refresh_status,
+                    "resume_decision": "allowed",
                 },
             )
             recovered = True
         return recovered
+
+    def _run_ready_issue_refresh_after_metadata_recovery(
+        self,
+        manifest: RunManifest,
+        *,
+        issue_number: int,
+    ) -> None:
+        existing_status = ready_issue_refresh_status_value(manifest)
+        if not self.config.ready_issue_refresh_enabled:
+            manifest.record_ready_issue_refresh(
+                "skipped_disabled",
+                enabled=False,
+                reason=(
+                    "Ready issue refresh is disabled by Operator configuration after "
+                    "verified metadata recovery."
+                ),
+            )
+            manifest.record_event(
+                "metadata_recovery_resume_decision",
+                details={
+                    "issue_number": issue_number,
+                    "ready_issue_refresh_status": "skipped_disabled",
+                    "resume_decision": "allowed_operator_disabled",
+                },
+            )
+            return
+        if existing_status == "completed":
+            manifest.record_event(
+                "metadata_recovery_resume_decision",
+                details={
+                    "issue_number": issue_number,
+                    "ready_issue_refresh_status": existing_status,
+                    "resume_decision": "allowed_existing_refresh_completed",
+                },
+            )
+            return
+
+        run_dir = manifest_run_dir(manifest)
+        manifest.record_ready_issue_refresh(
+            "pending_after_metadata_recovery",
+            enabled=True,
+            reason=(
+                "Verified metadata recovery completed; Ready issue refresh must "
+                "finish before the Operator resumes ready issue claims."
+            ),
+        )
+        integrated_issue = issue_from_manifest(manifest)
+        delivery_mode = manifest_delivery_mode(manifest)
+        delivery_plan = DeliveryPlan(
+            mode=delivery_mode,
+            target_branch=manifest_integration_target(manifest),
+            label=delivery_label_for_mode(delivery_mode),
+            add_labels=(),
+            remove_labels=(),
+        )
+        commit_sha, _ = manifest_integration_commit(manifest)
+        try:
+            self.loop._run_with_ready_issue_refresh_claim_gate(
+                integrated_issue,
+                lambda: self.loop._run_ready_issue_refresh_analysis(
+                    integrated_issue,
+                    delivery_plan=delivery_plan,
+                    commit_sha=commit_sha,
+                    changed_files=manifest_changed_files(manifest.data),
+                    qa_results=qa_results_from_manifest(manifest),
+                    analysis_path=self.config.repo_root,
+                    run_dir=run_dir,
+                    manifest=manifest,
+                ),
+            )
+        except ReadyIssueRefreshFailure:
+            manifest.record_event(
+                "metadata_recovery_resume_decision",
+                details={
+                    "issue_number": issue_number,
+                    "ready_issue_refresh_status": ready_issue_refresh_status_value(
+                        manifest
+                    ),
+                    "resume_decision": "blocked_ready_issue_refresh",
+                },
+            )
+            raise
+        manifest.record_event(
+            "metadata_recovery_resume_decision",
+            details={
+                "issue_number": issue_number,
+                "ready_issue_refresh_status": ready_issue_refresh_status_value(
+                    manifest
+                ),
+                "resume_decision": "allowed",
+            },
+        )
 
     def _load_post_push_recovery_candidate(
         self,

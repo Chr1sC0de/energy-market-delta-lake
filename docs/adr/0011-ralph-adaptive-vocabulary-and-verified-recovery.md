@@ -53,7 +53,11 @@ body text, or issue closure only after it verifies that the recorded **Local
 integration**, Exploratory handoff, accepted Exploratory commit, or
 **Promotion** commit is reachable from the expected **Integration target** or
 promoted range and that the run manifest still carries the recorded QA evidence.
-If Ralph cannot verify that boundary, it must stop as `hard_stop` and require
+Same-run Operator recovery then treats **Ready issue refresh** as residual queue
+work: after metadata recovery it records refresh as pending, uses the existing
+refresh analysis and mutation path under the claim gate, and records claim
+resume only after refresh completes or the Operator explicitly disabled it. If
+Ralph cannot verify the boundary, it must stop as `hard_stop` and require
 operator inspection before any manual metadata change.
 
 Runtime feedback is queue-local unless an Operator changes policy. Ralph may use

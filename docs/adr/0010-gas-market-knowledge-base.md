@@ -71,8 +71,13 @@ The same Subproject also hosts the AEMO major publications corpus fixture
 surface. Its `aemo-publications-corpus build-fixture` command writes deterministic
 fixture bronze, silver, silver index, and gold outputs under
 `$ENERGY_MARKET_CORPUS_ROOT/aemo-major-publications/{bronze,silver,gold}` by
-default while reusing the shared core. This first AEMO-wide corpus slice does
-not consume live `bronze_aemo_major_publications_hub_downloads` metadata.
+default while reusing the shared core. The corpus source manifest converter can
+also consume downloaded AEMO ETL hub and library metadata from
+`bronze_aemo_major_publications_hub_downloads`: supported PDF rows become
+extraction-ready source manifest rows, while unsupported media, failed
+downloads, missing storage URIs, and duplicate content hashes remain auditable
+`needs_human_review` manifest rows. GSOO publication coverage remains outside
+this slice.
 
 ## Considered Options
 
@@ -144,6 +149,7 @@ its own ADR.
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/cli.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/corpus_paths.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/fixture_corpus.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/source_manifest.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/__init__.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/gold_context.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/manifest.py`
