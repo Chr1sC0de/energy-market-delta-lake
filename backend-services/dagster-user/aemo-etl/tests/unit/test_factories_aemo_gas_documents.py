@@ -17,6 +17,7 @@ from aemo_etl.factories.aemo_gas_documents.assets import (
     AEMO_GAS_DOCUMENT_REQUEST_TIMEOUT_SECONDS,
     DELTA_MERGE_OPTIONS,
     AEMOGasDocumentSourceWriteResult,
+    DEFAULT_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOAD_SOURCE_PAGES,
     _land_media_once,
     _media_key,
     land_aemo_gas_document_observations,
@@ -27,8 +28,12 @@ from aemo_etl.factories.aemo_gas_documents.assets import (
     write_aemo_gas_document_sources_batch,
 )
 from aemo_etl.factories.aemo_gas_documents.models import (
+    AEMO_GSOO_CORPUS_SOURCE,
+    AEMO_GSOO_URL,
     AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
     AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+    AEMO_WA_GSOO_CORPUS_SOURCE,
+    AEMO_WA_GSOO_URL,
     AEMOGasDocumentSourcePage,
     DEFAULT_AEMO_GAS_DOCUMENT_SOURCE_PAGES,
 )
@@ -248,6 +253,39 @@ def test_default_source_pages_include_major_publications_hub_scope() -> None:
     assert source_pages[0].fetch_links is True
 
 
+def test_default_major_publications_download_source_pages_include_gsoo_bundles() -> (
+    None
+):
+    source_pages_by_source = {
+        source_page.corpus_source: source_page
+        for source_page in DEFAULT_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOAD_SOURCE_PAGES
+    }
+
+    assert list(source_pages_by_source) == [
+        AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+        AEMO_GSOO_CORPUS_SOURCE,
+        AEMO_WA_GSOO_CORPUS_SOURCE,
+    ]
+    assert (
+        source_pages_by_source[AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE].source_page_url
+        == AEMO_MAJOR_PUBLICATIONS_HUB_URL
+    )
+    assert source_pages_by_source[AEMO_GSOO_CORPUS_SOURCE].source_page_url == (
+        AEMO_GSOO_URL
+    )
+    assert source_pages_by_source[AEMO_WA_GSOO_CORPUS_SOURCE].source_page_url == (
+        AEMO_WA_GSOO_URL
+    )
+    assert all(
+        source_page.include_decision == "include"
+        for source_page in DEFAULT_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOAD_SOURCE_PAGES
+    )
+    assert all(
+        source_page.discover_child_pages
+        for source_page in DEFAULT_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOAD_SOURCE_PAGES
+    )
+
+
 def test_major_publications_hub_discovers_review_source_pages_and_links() -> None:
     child_url = f"{AEMO_MAJOR_PUBLICATIONS_HUB_URL}integrated-system-plan-isp"
     hub_media_url = (
@@ -336,6 +374,117 @@ def test_major_publications_hub_discovers_review_source_pages_and_links() -> Non
         if item.source_url == "https://example.com/isp.pdf"
     )
     assert external_observation.include_decision == "exclude"
+
+
+def test_gsoo_and_wa_gsoo_pages_discover_publication_bundle_media_and_audit_links() -> (
+    None
+):
+    gsoo_child_url = f"{AEMO_GSOO_URL}/2025-gas-statement-of-opportunities"
+    gsoo_report_url = (
+        "https://www.aemo.com.au/-/media/files/gas/national-planning-and-"
+        "forecasting/gsoo/2026/2026-gas-statement-of-opportunities.pdf?rev=GSOO"
+    )
+    gsoo_data_url = (
+        "https://www.aemo.com.au/-/media/files/gas/national-planning-and-"
+        "forecasting/gsoo/2026/2026-gsoo-report-figures-and-data.xlsx"
+    )
+    gsoo_child_report_url = (
+        "https://www.aemo.com.au/-/media/files/gas/national-planning-and-"
+        "forecasting/gsoo/2025/2025-gas-statement-of-opportunities.pdf"
+    )
+    gas_forecasting_portal_url = "https://forecasting.aemo.com.au/Gas"
+    wa_report_url = (
+        "https://www.aemo.com.au/-/media/files/gas/wa-gsoo/2025/"
+        "2025-wa-gas-statement-of-opportunities.pdf?rev=WAGSOO"
+    )
+    wa_data_url = (
+        "https://www.aemo.com.au/-/media/files/gas/wa-gsoo/2025/"
+        "2025-wa-gsoo-data-register.xlsx"
+    )
+    wa_media_release_url = "https://www.aemo.com.au/newsroom/media-release/wa-gsoo-2025"
+    gsoo_html = f"""
+    <html>
+      <body>
+        <h1>Gas Statement of Opportunities</h1>
+        <h2>2026 GSOO report</h2>
+        <a href="{gsoo_report_url}">26/03/2026 2026 Gas Statement of Opportunities</a>
+        <h2>Supporting material</h2>
+        <a href="{gas_forecasting_portal_url}">View the Gas forecasting data portal</a>
+        <a href="{gsoo_data_url}">26/03/2026 2026 GSOO report figures and data</a>
+        <h2>Previous GSOO reports</h2>
+        <a href="{gsoo_child_url}">2025 Gas Statement of Opportunities</a>
+      </body>
+    </html>
+    """
+    gsoo_child_html = f"""
+    <html>
+      <body>
+        <h1>2025 Gas Statement of Opportunities</h1>
+        <a href="{gsoo_child_report_url}">2025 Gas Statement of Opportunities</a>
+      </body>
+    </html>
+    """
+    wa_html = f"""
+    <html>
+      <body>
+        <h1>WA Gas Statement of Opportunities</h1>
+        <h2>WA Gas Statement of Opportunities - December 2025</h2>
+        <a href="{wa_report_url}">19/12/2025 2025 WA Gas Statement of Opportunities</a>
+        <h2>Supporting documents</h2>
+        <a href="{wa_data_url}">19/12/2025 2025 WA GSOO Data Register - Figures</a>
+        <a href="{wa_media_release_url}">Media release: WA domestic gas market</a>
+      </body>
+    </html>
+    """
+    source_pages = tuple(
+        source_page
+        for source_page in DEFAULT_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOAD_SOURCE_PAGES
+        if source_page.corpus_source
+        in {AEMO_GSOO_CORPUS_SOURCE, AEMO_WA_GSOO_CORPUS_SOURCE}
+    )
+
+    observations = discover_aemo_gas_document_observations(
+        source_pages=source_pages,
+        request_getter=_request_getter(
+            {
+                AEMO_GSOO_URL: _response(url=AEMO_GSOO_URL, text=gsoo_html),
+                AEMO_WA_GSOO_URL: _response(url=AEMO_WA_GSOO_URL, text=wa_html),
+                gsoo_child_url: _response(url=gsoo_child_url, text=gsoo_child_html),
+            }
+        ),
+        observed_at=_OBSERVED_AT,
+    )
+
+    source_page_urls = [
+        item.source_url
+        for item in observations
+        if item.observation_type == "source_page"
+    ]
+    link_observations = [
+        item for item in observations if item.observation_type == "link"
+    ]
+    included_urls = {
+        item.source_url
+        for item in link_observations
+        if item.include_decision == "include" and item.should_download
+    }
+    link_by_url = {item.source_url: item for item in link_observations}
+
+    assert source_page_urls == [AEMO_GSOO_URL, AEMO_WA_GSOO_URL, gsoo_child_url]
+    assert included_urls == {
+        gsoo_report_url,
+        gsoo_data_url,
+        gsoo_child_report_url,
+        wa_report_url,
+        wa_data_url,
+    }
+    assert link_by_url[gsoo_report_url].corpus_source == AEMO_GSOO_CORPUS_SOURCE
+    assert link_by_url[gsoo_data_url].source_page_section == "Supporting material"
+    assert link_by_url[gsoo_child_report_url].source_page_url == gsoo_child_url
+    assert link_by_url[wa_report_url].corpus_source == AEMO_WA_GSOO_CORPUS_SOURCE
+    assert link_by_url[gas_forecasting_portal_url].include_decision == "exclude"
+    assert link_by_url[wa_media_release_url].include_decision == "exclude"
+    assert link_by_url[gsoo_child_url].should_download is False
 
 
 def test_manifest_payload_recreates_source_page_and_media_observations() -> None:

@@ -17,6 +17,7 @@ from aemo_etl.factories.aemo_gas_documents.assets import (
     AEMO_MAJOR_PUBLICATIONS_PREFIX,
     AEMOGasDocumentSourceWriteResult,
     BRONZE_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOADS_TABLE_NAME,
+    DEFAULT_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOAD_SOURCE_PAGES,
     aemo_gas_document_sources_asset_factory,
 )
 from aemo_etl.factories.aemo_gas_documents.definitions import (
@@ -28,8 +29,12 @@ from aemo_etl.factories.aemo_gas_documents.manifest import (
     load_default_manifest_payload,
 )
 from aemo_etl.factories.aemo_gas_documents.models import (
+    AEMO_GSOO_CORPUS_SOURCE,
+    AEMO_GSOO_URL,
     AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
     AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+    AEMO_WA_GSOO_CORPUS_SOURCE,
+    AEMO_WA_GSOO_URL,
     AEMOGasDocumentPendingObservation,
     AEMOGasDocumentSourcePage,
 )
@@ -411,6 +416,143 @@ def test_major_publications_definitions_register_asset_job_and_materialize_fixtu
     assert result.metadata["needs_human_review_observation_count"] == 1
     assert result.metadata["landed_media_count"] == 1
     assert result.metadata["archived_media_count"] == 1
+
+
+def test_major_publications_defaults_materialize_gsoo_and_wa_gsoo_bundle_media(
+    mocker: MockerFixture,
+) -> None:
+    gsoo_child_url = f"{AEMO_GSOO_URL}/2025-gas-statement-of-opportunities"
+    gsoo_report_url = (
+        "https://www.aemo.com.au/-/media/files/gas/national-planning-and-"
+        "forecasting/gsoo/2026/2026-gas-statement-of-opportunities.pdf"
+    )
+    gsoo_data_url = (
+        "https://www.aemo.com.au/-/media/files/gas/national-planning-and-"
+        "forecasting/gsoo/2026/2026-gsoo-report-figures-and-data.xlsx"
+    )
+    gsoo_child_report_url = (
+        "https://www.aemo.com.au/-/media/files/gas/national-planning-and-"
+        "forecasting/gsoo/2025/2025-gas-statement-of-opportunities.pdf"
+    )
+    wa_report_url = (
+        "https://www.aemo.com.au/-/media/files/gas/wa-gsoo/2025/"
+        "2025-wa-gas-statement-of-opportunities.pdf"
+    )
+    media_urls = {
+        gsoo_report_url,
+        gsoo_data_url,
+        gsoo_child_report_url,
+        wa_report_url,
+    }
+    html_by_url = {
+        AEMO_MAJOR_PUBLICATIONS_HUB_URL: """
+        <html><body><h1>Major publications</h1></body></html>
+        """,
+        AEMO_GSOO_URL: f"""
+        <html>
+          <body>
+            <h1>Gas Statement of Opportunities</h1>
+            <a href="{gsoo_report_url}">2026 Gas Statement of Opportunities</a>
+            <a href="{gsoo_data_url}">2026 GSOO report figures and data</a>
+            <a href="{gsoo_child_url}">2025 Gas Statement of Opportunities</a>
+          </body>
+        </html>
+        """,
+        AEMO_WA_GSOO_URL: f"""
+        <html>
+          <body>
+            <h1>WA Gas Statement of Opportunities</h1>
+            <a href="{wa_report_url}">2025 WA Gas Statement of Opportunities</a>
+          </body>
+        </html>
+        """,
+        gsoo_child_url: f"""
+        <html>
+          <body>
+            <h1>2025 Gas Statement of Opportunities</h1>
+            <a href="{gsoo_child_report_url}">2025 Gas Statement of Opportunities</a>
+          </body>
+        </html>
+        """,
+    }
+    requested_pages: list[str] = []
+    requested_media: list[str] = []
+    captured_rows: list[dict[str, object]] = []
+
+    def _get(url: str) -> Response:
+        if url in html_by_url:
+            requested_pages.append(url)
+            return _response(url=url, text=html_by_url[url])
+        if url in media_urls:
+            requested_media.append(url)
+            return _response(url=url, content=f"fixture media: {url}".encode())
+        raise AssertionError(f"unexpected GSOO bundle request: {url}")
+
+    def _write(
+        batch: pl.LazyFrame,
+        *,
+        target_table_uri: str,
+        **_kwargs: object,
+    ) -> AEMOGasDocumentSourceWriteResult:
+        captured_rows.extend(batch.collect().to_dicts())
+        assert target_table_uri == (
+            "s3://aemo/bronze/aemo_major_publications/"
+            "bronze_aemo_major_publications_hub_downloads"
+        )
+        return AEMOGasDocumentSourceWriteResult(
+            row_count=len(captured_rows),
+            target_exists_before_write=True,
+            wrote_table=True,
+            write_mode="merge",
+        )
+
+    mocker.patch(
+        "aemo_etl.factories.aemo_gas_documents.assets.write_aemo_gas_document_sources_batch",
+        side_effect=_write,
+    )
+    defs = aemo_major_publications_hub_downloads_definitions_factory(
+        request_getter=_get,
+        landing_bucket="landing",
+        archive_bucket="archive",
+        aemo_bucket="aemo",
+        process_retry=1,
+    )
+    asset_def = next(
+        asset for asset in defs.assets or [] if isinstance(asset, AssetsDefinition)
+    )
+    asset_key = asset_def.key
+    context, s3, s3_client = _context_and_s3(mocker)
+
+    fn = asset_def.op.compute_fn.decorated_fn  # type: ignore[attr-defined, union-attr]
+    result = fn(context, s3=s3)
+
+    downloaded_rows = [row for row in captured_rows if row["source_url"] in media_urls]
+
+    assert isinstance(result, MaterializeResult)
+    assert asset_def.metadata_by_key[asset_key]["configured_source_page_count"] == 3
+    assert requested_pages == [
+        AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+        AEMO_GSOO_URL,
+        AEMO_WA_GSOO_URL,
+        gsoo_child_url,
+    ]
+    assert set(requested_media) == media_urls
+    assert {row["corpus_source"] for row in downloaded_rows} == {
+        AEMO_GSOO_CORPUS_SOURCE,
+        AEMO_WA_GSOO_CORPUS_SOURCE,
+    }
+    assert all(
+        str(row["target_s3_key"]).startswith(AEMO_MAJOR_PUBLICATIONS_PREFIX)
+        for row in downloaded_rows
+    )
+    assert result.metadata is not None
+    assert result.metadata["source_page_count"] == 4
+    assert result.metadata["included_media_count"] == len(media_urls)
+    assert result.metadata["landed_media_count"] == len(media_urls)
+    assert result.metadata["archived_media_count"] == len(media_urls)
+    assert s3_client.upload_fileobj.call_count == len(media_urls)
+    assert s3_client.copy_object.call_count == len(media_urls)
+    assert len(DEFAULT_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOAD_SOURCE_PAGES) == 3
 
 
 def test_definitions_factory_default_getter_uses_retrying_request_get(

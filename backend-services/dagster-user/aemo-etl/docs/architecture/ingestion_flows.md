@@ -197,7 +197,7 @@ sequenceDiagram
     autonumber
     participant Discovery as aemo-refresh-gas-document-media-manifest
     participant Manifest as Checked-in media manifest
-    participant MajorHub as AEMO major publications hub
+    participant MajorPages as AEMO major publications, GSOO, and WA GSOO pages
     participant AEMO as AEMO direct media URLs
     participant Schedule as bronze_aemo_gas_document_sources_job_schedule
     participant Docs as bronze_aemo_gas_document_sources
@@ -221,7 +221,7 @@ sequenceDiagram
     Docs->>DeltaDocs: Merge bronze_aemo_gas_document_sources metadata rows
     Docs->>Archive: Copy landed media after metadata write, then delete from landing
     MajorSchedule->>MajorDocs: Run daily after manifest-backed asset window
-    MajorDocs->>MajorHub: Discover hub and child publication pages live
+    MajorDocs->>MajorPages: Discover configured source pages and child publication pages live
     MajorDocs->>AEMO: Download included public publication media
     MajorDocs->>MajorDocs: Count source pages, included downloads, failures, review-needed rows
     MajorDocs->>MajorLanding: Write included media bytes by content_sha256 and safe suffix
@@ -247,8 +247,9 @@ Trigger and output notes:
   page is blocked or unreadable. The manifest-backed gas document source keeps
   the AEMO energy-systems major publications hub as observation-only
   `needs_human_review` metadata; `bronze_aemo_major_publications_hub_downloads`
-  is the approved live-discovery source family for landing public publication
-  bytes under `bronze/aemo_major_publications`.
+  is the approved live-discovery source family for landing public
+  major-publications, GSOO, and WA GSOO bytes under
+  `bronze/aemo_major_publications`.
 - The major-publications asset key is
   `bronze/aemo_major_publications/bronze_aemo_major_publications_hub_downloads`
   and its visual group is `gas_aemo_major_publications`. Its materialization

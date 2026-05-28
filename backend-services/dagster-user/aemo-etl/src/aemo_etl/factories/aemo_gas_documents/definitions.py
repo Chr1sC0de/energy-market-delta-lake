@@ -101,7 +101,7 @@ def aemo_major_publications_hub_downloads_definitions_factory(
     exp_base: int = 3,
     max_retry_time: int = 100,
 ) -> Definitions:
-    """Create scheduled definitions for AEMO major-publications hub downloads."""
+    """Create scheduled definitions for AEMO major-publications source downloads."""
     asset_tags = dict(tags or {})
     asset = aemo_major_publications_hub_downloads_asset_factory(
         source_pages=source_pages,

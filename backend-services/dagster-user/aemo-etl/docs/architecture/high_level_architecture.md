@@ -112,8 +112,9 @@ headers, write the metadata Delta table, and archive landed media under
 `ARCHIVE_BUCKET/bronze/aemo_gas_documents` only after that metadata write
 succeeds. `bronze_aemo_major_publications_hub_downloads` is the approved
 major-publications source-family asset. It live-discovers the AEMO
-energy-systems major publications hub and child pages, lands included public
-publication media under `LANDING_BUCKET/bronze/aemo_major_publications`, writes
+energy-systems major publications hub, GSOO, and WA GSOO source-page bundles,
+lands included public publication media under
+`LANDING_BUCKET/bronze/aemo_major_publications`, writes
 `bronze_aemo_major_publications_hub_downloads`, archives bytes under
 `ARCHIVE_BUCKET/bronze/aemo_major_publications`, and emits source-page,
 included-download, failed, and review-needed counts. Both assets keep the same

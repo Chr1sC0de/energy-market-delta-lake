@@ -34,8 +34,12 @@ from aemo_etl.asset_organization import (
 from aemo_etl.configs import AEMO_BUCKET, ARCHIVE_BUCKET, DAGSTER_URI, LANDING_BUCKET
 from aemo_etl.defs.resources import SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY
 from aemo_etl.factories.aemo_gas_documents.models import (
+    AEMO_GSOO_CORPUS_SOURCE,
+    AEMO_GSOO_URL,
     AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
     AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+    AEMO_WA_GSOO_CORPUS_SOURCE,
+    AEMO_WA_GSOO_URL,
     AEMOGasDocumentPendingObservation,
     AEMOGasDocumentSourcePage,
     AEMOGasDocumentSourceRecord,
@@ -75,6 +79,32 @@ DEFAULT_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOAD_SOURCE_PAGES = (
         ),
         source_page_title="Major publications",
         source_page_section="Energy systems major publications",
+        discover_child_pages=True,
+    ),
+    AEMOGasDocumentSourcePage(
+        corpus_source=AEMO_GSOO_CORPUS_SOURCE,
+        source_page_url=AEMO_GSOO_URL,
+        include_decision="include",
+        include_reason=(
+            "Approved Gas Statement of Opportunities publication bundle. "
+            "Public AEMO media links are downloaded, landed, and archived for "
+            "downstream corpus generation."
+        ),
+        source_page_title="Gas Statement of Opportunities",
+        source_page_section="Gas forecasting and planning",
+        discover_child_pages=True,
+    ),
+    AEMOGasDocumentSourcePage(
+        corpus_source=AEMO_WA_GSOO_CORPUS_SOURCE,
+        source_page_url=AEMO_WA_GSOO_URL,
+        include_decision="include",
+        include_reason=(
+            "Approved WA Gas Statement of Opportunities publication bundle. "
+            "Public AEMO media links are downloaded, landed, and archived for "
+            "downstream corpus generation."
+        ),
+        source_page_title="WA Gas Statement of Opportunities",
+        source_page_section="Gas forecasting and planning",
         discover_child_pages=True,
     ),
 )
@@ -906,25 +936,29 @@ def aemo_major_publications_hub_downloads_asset_factory(
     aemo_bucket: str = AEMO_BUCKET,
     **asset_kwargs: Unpack[AssetDefinitonParamSpec],
 ) -> AssetsDefinition:
-    """Create the major-publications hub download metadata bronze asset."""
+    """Create the major-publications source-family download metadata bronze asset."""
+    source_pages_tuple = tuple(source_pages)
     caller_metadata = asset_kwargs.pop("metadata", {}) or {}
     asset_kwargs.setdefault("group_name", GAS_AEMO_MAJOR_PUBLICATIONS_GROUP)
     asset_kwargs.setdefault(
         "description",
         (
             "Bronze metadata table for AEMO energy-systems major-publications "
-            "hub source pages and public media downloads. Media bytes are "
-            "landed to S3 and archived only after the metadata Delta write "
-            "succeeds."
+            "hub, GSOO, and WA GSOO source pages and public media downloads. "
+            "Media bytes are landed to S3 and archived only after the metadata "
+            "Delta write succeeds."
         ),
     )
     asset_kwargs["metadata"] = {
         "source_family": AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
         "source_page_root": AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+        "source_page_roots": MetadataValue.json(
+            [source_page.source_page_url for source_page in source_pages_tuple]
+        ),
         **caller_metadata,
     }
     return aemo_gas_document_sources_asset_factory(
-        source_pages=source_pages,
+        source_pages=source_pages_tuple,
         request_getter=request_getter,
         observation_loader=observation_loader,
         landing_bucket=landing_bucket,

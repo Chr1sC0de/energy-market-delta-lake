@@ -11,6 +11,16 @@ AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE = "major_publications"
 AEMO_MAJOR_PUBLICATIONS_HUB_URL = (
     "https://www.aemo.com.au/energy-systems/major-publications/"
 )
+AEMO_GSOO_CORPUS_SOURCE = "gsoo"
+AEMO_GSOO_URL = (
+    "https://www.aemo.com.au/energy-systems/gas/gas-forecasting-and-planning/"
+    "gas-statement-of-opportunities-gsoo"
+)
+AEMO_WA_GSOO_CORPUS_SOURCE = "wa_gsoo"
+AEMO_WA_GSOO_URL = (
+    "https://www.aemo.com.au/energy-systems/gas/gas-forecasting-and-planning/"
+    "wa-gas-statement-of-opportunities-wa-gsoo"
+)
 
 
 @dataclass(frozen=True, slots=True)
