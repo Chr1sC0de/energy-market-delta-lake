@@ -131,11 +131,14 @@ handoff. When `--publish-backend auto` cannot use local `gh` auth, the
 publisher writes `connector-publish-plan.json` for Codex to execute through the
 installed GitHub connector. That fallback is create-only and keeps source
 marker duplicate detection, blocker ordering, and `needs-triage` labels; it
-must not edit, comment on, close, reopen, or relabel existing issues. Later
-duplicate-search or create failures record their phase, exit code, stderr
-summary, and stdout summary in `publish-manifest.json`. `$ralph-triage` remains
-responsible for category, state, and **Delivery mode** labels before Ralph
-drain.
+must not edit, comment on, close, reopen, or relabel existing issues. Unblocked
+connector plan entries carry final `body_path` files. Blocked dependent entries
+carry `body_template_path` files and a render contract so Codex replaces
+`{{created_issue_url:<draft-id>}}` placeholders with created issue references
+before creating dependent issues. Later duplicate-search or create failures
+record their phase, exit code, stderr summary, and stdout summary in
+`publish-manifest.json`. `$ralph-triage` remains responsible for category,
+state, and **Delivery mode** labels before Ralph drain.
 
 Deploy-repair issues created from failed deployment evidence use a separate
 `ralph-deploy-repair:...` source marker namespace for duplicate detection.

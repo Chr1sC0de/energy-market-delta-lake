@@ -26,7 +26,9 @@ publication requires `--allow-fixture-publish`; all non-dry-run publication
 preflights `gh` auth and target repository access before issue creation. For
 Codex-owned publication, `--publish-backend auto` may write a create-only
 connector publish plan when local `gh` auth fails; created issues still enter
-with `needs-triage` only.
+with `needs-triage` only. Connector plans keep final `body_path` files for
+unblocked drafts and `body_template_path` plus a render contract for dependent
+drafts so blocker placeholders resolve to created issue references.
 
 ## Ralph runtime labels
 

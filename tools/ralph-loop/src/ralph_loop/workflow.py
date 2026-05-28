@@ -279,6 +279,27 @@ MARIMO_REVIEW_MEDIA_BASE_URL_ENV = "RALPH_MARIMO_REVIEW_BASE_URL"
 MARIMO_REVIEW_MEDIA_DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 MARIMO_REVIEW_MEDIA_BROWSER_SETUP_TIMEOUT_SECONDS = 600
 MARIMO_REVIEW_MEDIA_TIMEOUT_SECONDS = 180
+CADDY_PREFIX = "backend-services/caddy/"
+CADDY_REVIEW_MEDIA_BROWSER_SETUP_TIMEOUT_SECONDS = 600
+CADDY_REVIEW_MEDIA_TIMEOUT_SECONDS = 180
+CADDY_REVIEW_PACKAGE_ROOT_ROUTE_INPUTS = frozenset(
+    {
+        f"{CADDY_PREFIX}Caddyfile",
+        f"{CADDY_PREFIX}Dockerfile",
+        f"{CADDY_PREFIX}package.json",
+        f"{CADDY_PREFIX}astro.config.mjs",
+        f"{CADDY_PREFIX}tsconfig.json",
+        f"{CADDY_PREFIX}public/theme.css",
+        f"{CADDY_PREFIX}src/pages/index.astro",
+        f"{CADDY_PREFIX}src/components/AutomationWorkflowFlow.tsx",
+        f"{CADDY_PREFIX}src/components/HeroArchitectureFallback.astro",
+        f"{CADDY_PREFIX}src/components/HeroArchitectureFlow.tsx",
+        f"{CADDY_PREFIX}src/components/InfrastructureDiagram.astro",
+        f"{CADDY_PREFIX}src/components/ServiceLinks.astro",
+        f"{CADDY_PREFIX}src/layouts/PortfolioLayout.astro",
+        f"{CADDY_PREFIX}src/styles/site.css",
+    }
+)
 RALPH_LOOP_PREFIX = "tools/ralph-loop/"
 INTEGRATION_TARGET_BASELINE_GUARD_CHANGED_FILES = (
     f"{RALPH_LOOP_PREFIX}src/ralph_loop/cli.py",
@@ -4058,6 +4079,13 @@ def changed_marimo_notebook_routes(changed_files: list[str]) -> tuple[str, ...]:
         if route is not None and route not in routes:
             routes.append(route)
     return tuple(routes)
+
+
+def changed_caddy_root_portfolio_routes(changed_files: list[str]) -> tuple[str, ...]:
+    for changed_file in normalized_changed_file_inventory(changed_files):
+        if changed_file in CADDY_REVIEW_PACKAGE_ROOT_ROUTE_INPUTS:
+            return ("/",)
+    return ()
 
 
 def has_gas_market_knowledge_base_change(changed_files: list[str]) -> bool:

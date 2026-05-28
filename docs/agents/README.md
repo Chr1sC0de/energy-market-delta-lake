@@ -64,7 +64,10 @@ Use this page as the agent documentation map. The imperative policy lives in
   authentication and repository access, and records fixture provenance.
   Codex-owned live gates use `run_live_shape_issue_gate.py`; Codex-owned
   publication can use `--publish-backend auto` to fall back to a create-only
-  GitHub connector plan when local `gh` auth is unavailable.
+  GitHub connector plan when local `gh` auth is unavailable. Connector plans use
+  final `body_path` files for unblocked drafts and `body_template_path` plus a
+  render contract for dependent drafts, so blocker placeholders are replaced
+  with created GitHub issue references before dependents are created.
 - Use `$ralph-curate` to review open GitHub Issues against the current branch
   and propose stale, satisfied, blocked, or mislabeled issue updates.
 - Use `$ralph-issue-refresh` to reconcile ready issues after **Local

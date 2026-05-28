@@ -22,7 +22,7 @@ FIXTURE_ASSESSOR_PROVIDER = "fixture"
 PUBLISH_BACKEND_GH = "gh"
 PUBLISH_BACKEND_AUTO = "auto"
 PUBLISH_BACKEND_CONNECTOR_PLAN = "connector-plan"
-CONNECTOR_PLAN_SCHEMA_VERSION = "shape-issues-connector-publish-plan-v1"
+CONNECTOR_PLAN_SCHEMA_VERSION = "shape-issues-connector-publish-plan-v2"
 COMMAND_SUMMARY_MAX_CHARS = 600
 PREFLIGHT_GH_PHASE = "preflight-gh"
 PREFLIGHT_AUTH_PHASE = "preflight-auth"
@@ -523,6 +523,14 @@ def final_blocked_by_section(
     return "\n".join(lines)
 
 
+def connector_plan_blocked_by_template(issue: IssueDraft) -> str:
+    if len(issue.blocked_by) == 0:
+        return "None - can start immediately."
+    return "\n".join(
+        f"- {{{{created_issue_url:{blocker_id}}}}}" for blocker_id in issue.blocked_by
+    )
+
+
 def bundle_reference(bundle_path: Path) -> str:
     parts = bundle_path.parts
     if ".shape-issues" in parts:
@@ -804,16 +812,53 @@ def validate_publish_backend(backend: str) -> None:
         raise PublishError(f"Unsupported publish backend: {backend}.")
 
 
-def connector_plan_body(issue: IssueDraft, *, marker: str, bundle_path: Path) -> str:
-    body = append_source_section(
+def connector_plan_body(
+    issue: IssueDraft,
+    *,
+    marker: str,
+    bundle_path: Path,
+    context_assessor_provider: str | None,
+    dry_run: bool,
+    allow_fixture_publish: bool,
+) -> str:
+    body = replace_section(
         issue.body,
+        "Blocked by",
+        connector_plan_blocked_by_template(issue),
+    )
+    body = append_source_section(
+        body,
         marker=marker,
         bundle_path=bundle_path,
-        context_assessor_provider=None,
-        dry_run=False,
-        allow_fixture_publish=False,
+        context_assessor_provider=context_assessor_provider,
+        dry_run=dry_run,
+        allow_fixture_publish=allow_fixture_publish,
     )
     return body
+
+
+def connector_plan_render_contract(issue: IssueDraft) -> dict[str, Any]:
+    placeholders = [
+        {
+            "draft_id": blocker_id,
+            "placeholder": f"{{{{created_issue_url:{blocker_id}}}}}",
+            "replacement": (
+                "Use the URL or issue number returned when the connector creates "
+                f"draft `{blocker_id}`."
+            ),
+        }
+        for blocker_id in issue.blocked_by
+    ]
+    return {
+        "blocked_by_draft_ids": list(issue.blocked_by),
+        "instructions": (
+            "Create blocker issues first in plan order. Before creating this "
+            "dependent issue, render body_template_path by replacing every "
+            "`{{created_issue_url:<draft-id>}}` placeholder with the created "
+            "GitHub issue URL or #number for that draft."
+        ),
+        "placeholders": placeholders,
+    }
 
 
 def write_connector_publish_plan(
@@ -837,6 +882,12 @@ def write_connector_publish_plan(
             "create missing needs-triage issues in listed order, and do not edit, "
             "comment on, close, reopen, or relabel existing issues."
         ),
+        "template_render_contract": (
+            "Issues with body_template_path depend on earlier plan entries. "
+            "Render the template by replacing `{{created_issue_url:<draft-id>}}` "
+            "placeholders with created blocker issue URLs or #numbers before "
+            "creating the dependent issue."
+        ),
         "issues": [],
     }
     if gh_failure is not None:
@@ -848,20 +899,30 @@ def write_connector_publish_plan(
         action = report.issues[issue.issue_id].action
         body_path = bodies_dir / body_file_name(issue)
         body_path.write_text(
-            connector_plan_body(issue, marker=marker, bundle_path=config.bundle_path),
+            connector_plan_body(
+                issue,
+                marker=marker,
+                bundle_path=config.bundle_path,
+                context_assessor_provider=report.context_assessor_provider,
+                dry_run=config.dry_run,
+                allow_fixture_publish=config.allow_fixture_publish,
+            ),
             encoding="utf-8",
         )
-        plan["issues"].append(
-            {
-                "id": issue.issue_id,
-                "title": issue.title,
-                "labels": [NEEDS_TRIAGE_LABEL],
-                "blocked_by": list(issue.blocked_by),
-                "source_marker": marker,
-                "body_path": str(body_path),
-                "gate_action": action,
-            }
-        )
+        plan_issue = {
+            "id": issue.issue_id,
+            "title": issue.title,
+            "labels": [NEEDS_TRIAGE_LABEL],
+            "blocked_by": list(issue.blocked_by),
+            "source_marker": marker,
+            "gate_action": action,
+        }
+        if len(issue.blocked_by) == 0:
+            plan_issue["body_path"] = str(body_path)
+        else:
+            plan_issue["body_template_path"] = str(body_path)
+            plan_issue["render_contract"] = connector_plan_render_contract(issue)
+        plan["issues"].append(plan_issue)
         reference = IssueReference(number=None, title=issue.title, url="")
         manifest["issues"].append(
             manifest_entry(

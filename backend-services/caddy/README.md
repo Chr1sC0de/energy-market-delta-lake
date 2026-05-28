@@ -10,6 +10,7 @@ auth, and Marimo.
 - [What it does](#what-it-does)
 - [Astro portfolio](#astro-portfolio)
 - [Local usage](#local-usage)
+- [Review package media](#review-package-media)
 - [Validation](#validation)
 - [Related docs](#related-docs)
 
@@ -70,6 +71,20 @@ The local backend-services compose stack builds this image from
 `backend-services/caddy` and serves the generated portfolio at
 `https://localhost/`.
 
+## Review package media
+
+Ralph owns the Caddy root portfolio Review package video recipe. When an issue
+changes one of this README's `sync.sources` portfolio or static-serving inputs,
+Ralph maps that change to the generated root route `/`, runs `npm run build`
+from this Subproject, serves the built `dist/` directory from the issue
+worktree, and records desktop and narrow `.webm` videos before **Local
+integration**, Trunk push, or Exploratory handoff.
+
+The Caddy Subproject does not need a separate browser-review helper. Ralph uses
+its generic Review package media helper from `tools/ralph-loop` and stores the
+recorded videos next to the Review package in the issue run directory. Build,
+serve, or capture failures block publication.
+
 ## Validation
 
 For portfolio-only edits, run:
@@ -107,6 +122,9 @@ check** surface from the changed Subproject or root, as described in
   - `backend-services/caddy/src/components/ServiceLinks.astro`
   - `backend-services/caddy/src/layouts/PortfolioLayout.astro`
   - `backend-services/caddy/src/styles/site.css`
+  - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/review_package_media.py`
+  - `tools/ralph-loop/src/ralph_loop/workflow.py`
 - `sync.scope`: `interface, deployment`
 - `sync.qa`:
   - `git diff --name-only`
