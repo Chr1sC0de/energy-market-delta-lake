@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import subprocess
 import sys
 import tempfile
@@ -171,6 +172,96 @@ Low. This is one workflow surface with local root tests.
 Run `python3 -m unittest tests/test_shape_issue_gate.py`.
 """
 
+MEDIUM_RATIO_BODY = """## What to build
+Add visible ratio fields to the shape-issues report contract.
+
+## Acceptance criteria
+- [ ] Report JSON includes Step size.
+- [ ] Report JSON includes safe feedback step.
+- [ ] Report JSON includes hidden-coupling pressure.
+- [ ] Report JSON includes Stiffness ratio.
+- [ ] Report JSON includes ratio level.
+
+## Blocked by
+None - can start immediately.
+
+## Current context
+This keeps the root agent workflow output contract explicit for future drafts.
+
+## Context anchors
+- Path: `.agents/skills/shape-issues/scripts/shape_issue_gate.py`
+- Doc: `.agents/skills/shape-issues/references/gate-contract.md`
+- Symbol: `StiffnessResult`
+- Label: `ready-for-agent`
+- Target: `dev`
+- QA: `prek run -a`
+- Test lane: `root Commit check`
+
+## Stiffness estimate
+Medium. The output shape changes for every draft but stays inside the gate.
+
+## QA plan
+Run the root Commit check.
+"""
+
+HIGH_RATIO_BODY = """## What to build
+Adjust Dagster schema integration reporting for one gate output path.
+
+## Acceptance criteria
+- [ ] Ratio data stays visible in JSON.
+- [ ] Ratio data stays visible in Markdown.
+- [ ] Dagster references stay anchored.
+- [ ] Schema references stay anchored.
+- [ ] Unit tests cover the routing evidence.
+
+## Blocked by
+None - can start immediately.
+
+## Current context
+This crosses the root agent workflow and one ETL Subproject boundary.
+
+## Context anchors
+- Path: `.agents/skills/shape-issues/scripts/shape_issue_gate.py`
+- Path: `backend-services/dagster-user/aemo-etl/pyproject.toml`
+- Doc: `docs/agents/ralph-loop.md`
+- Symbol: `StiffnessResult`
+- Label: `ready-for-agent`
+- Target: `dev`
+- QA: `uv run pytest tests/component`
+- Test lane: `Component test`
+
+## Stiffness estimate
+High. The slice names Dagster, schema, and integration pressure.
+
+## QA plan
+Run Component tests for the changed behavior.
+"""
+
+MISSING_FEEDBACK_BODY = """## What to build
+Add an intentionally incomplete ratio example.
+
+## Acceptance criteria
+- [ ] Missing feedback data does not divide by zero.
+
+## Blocked by
+None - can start immediately.
+
+## Current context
+This draft omits QA anchors to exercise fallback ratio handling.
+
+## Context anchors
+- Path: `.agents/skills/shape-issues/scripts/shape_issue_gate.py`
+- Symbol: `StiffnessResult`
+- Label: `ready-for-agent`
+- Target: `dev`
+
+## Stiffness estimate
+Medium. The test is about a missing denominator.
+
+## QA plan
+To be added by the shaper.
+"""
+
 
 def write_bundle(tmp_path: Path, body: str, *, overrides: dict[str, str] | None = None) -> Path:
     bundle = {
@@ -257,6 +348,25 @@ def load_script_module(name: str, path: Path) -> ModuleType:
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def stiffness_for_body(
+    gate: ModuleType,
+    body: str,
+    *,
+    context_paths: tuple[str, ...] = (),
+) -> object:
+    issue = gate.IssueDraft(
+        issue_id="ratio-example",
+        title="Ratio example",
+        body=body,
+        labels=("delivery-gitflow", "enhancement"),
+        classification=None,
+        blocked_by=(),
+        source_digest="digest",
+    )
+    anchors = gate.parse_anchors(body, REPO_ROOT)
+    return gate.stiffness_score(issue, anchors, context_paths, gate.Thresholds())
 
 
 class ShapeIssueGateTests(unittest.TestCase):
@@ -370,6 +480,51 @@ class ShapeIssueGateTests(unittest.TestCase):
         self.assertTrue(issue["context_assessment"]["cited_paths"])
         self.assertNotIn("semantic", issue)
         self.assertLessEqual(len(issue["context_corpus"]["rg_candidate_paths"]), 8)
+        stiffness = issue["stiffness"]
+        for field in (
+            "step_size",
+            "safe_feedback_step",
+            "hidden_coupling_pressure",
+            "ratio",
+            "ratio_level",
+            "recommended_action",
+        ):
+            self.assertIn(field, stiffness)
+        self.assertEqual(stiffness["ratio_level"], "low")
+        self.assertGreater(stiffness["safe_feedback_step"], 0)
+        self.assertTrue(math.isfinite(stiffness["ratio"]))
+        self.assertIn(
+            "safe feedback step raised by local Unit test or Fast check evidence",
+            stiffness["reasons"],
+        )
+
+    def test_stiffness_ratio_levels_cover_expected_bands(self) -> None:
+        gate = load_script_module("shape_issue_gate_ratio_bands_under_test", GATE_SCRIPT)
+
+        examples = (
+            (READY_BODY, "low"),
+            (MEDIUM_RATIO_BODY, "medium"),
+            (HIGH_RATIO_BODY, "high"),
+            (STIFF_BODY, "extreme"),
+        )
+        for body, expected_level in examples:
+            with self.subTest(expected_level=expected_level):
+                stiffness = stiffness_for_body(gate, body)
+                self.assertEqual(stiffness.ratio_level, expected_level)
+                self.assertGreater(stiffness.hidden_coupling_pressure, 0)
+                self.assertGreater(stiffness.safe_feedback_step, 0)
+                self.assertTrue(math.isfinite(stiffness.ratio))
+                self.assertIn("hidden-coupling pressure", "\n".join(stiffness.reasons))
+
+    def test_missing_and_zero_safe_feedback_do_not_divide_by_zero(self) -> None:
+        gate = load_script_module("shape_issue_gate_ratio_zero_under_test", GATE_SCRIPT)
+
+        missing_feedback = stiffness_for_body(gate, MISSING_FEEDBACK_BODY)
+
+        self.assertEqual(missing_feedback.safe_feedback_step, 0.25)
+        self.assertGreater(missing_feedback.ratio, 0)
+        self.assertTrue(math.isfinite(missing_feedback.ratio))
+        self.assertEqual(gate.safe_ratio(2.0, 0.0), 8.0)
 
     def test_gate_writes_issue_draft_review_markdown(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
