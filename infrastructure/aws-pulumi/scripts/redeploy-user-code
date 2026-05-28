@@ -54,7 +54,7 @@ for location in locations:
 PY
 )
 
-PULUMI_ARGS=(up)
+PULUMI_ARGS=(up --yes --non-interactive --stack "$STACK")
 for target in "${TARGETS[@]}"; do
 	PULUMI_ARGS+=(--target "$target")
 done
