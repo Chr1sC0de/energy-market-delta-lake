@@ -67,6 +67,7 @@ and behavior belong on the owning Subproject or repository page.
 - [repository/architecture.md](repository/architecture.md)
 - [repository/workflow.md](repository/workflow.md)
 - [repository/documentation-sync.md](repository/documentation-sync.md)
+- [repository/generated-corpus-history-purge-preflight-2026-05-28.md](repository/generated-corpus-history-purge-preflight-2026-05-28.md)
 - [agents/README.md](agents/README.md)
 - [agents/ralph-loop.md](agents/ralph-loop.md)
 - [agents/issue-tracker.md](agents/issue-tracker.md)
@@ -85,6 +86,7 @@ and behavior belong on the owning Subproject or repository page.
   - `docs/repository/architecture.md`
   - `docs/repository/workflow.md`
   - `docs/repository/documentation-sync.md`
+  - `docs/repository/generated-corpus-history-purge-preflight-2026-05-28.md`
   - `backend-services/README.md`
   - `backend-services/authentication/README.md`
   - `backend-services/marimo/README.md`
