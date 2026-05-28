@@ -170,16 +170,19 @@ policy into the shared core instead of copying the Gas market wrappers.
 The `aemo-publications-corpus` CLI is the AEMO major publications corpus tool
 surface. Fixture builds keep a deterministic local corpus available, while
 `src/gas_market_knowledge_base/aemo_publications/source_manifest.py` converts
-downloaded hub and library metadata rows from AEMO ETL
+downloaded hub, library, GSOO, and WA GSOO metadata rows from AEMO ETL
 `bronze_aemo_major_publications_hub_downloads` into the shared
 `SourceManifestRow` shape.
 
-The metadata converter only includes AEMO major-publications hub and library
-rows in this slice. Supported PDF media rows become extraction-ready manifest
-rows. Unsupported media, failed downloads, missing storage URIs, and duplicate
-content hashes stay in the bronze source manifest as `needs_human_review`
-audit rows with `review_status` and `review_reason`, so validation can report
-them without treating them as silver extraction inputs.
+The metadata converter includes AEMO major-publications hub and library rows,
+plus GSOO and WA GSOO publication bundle rows. Supported PDF media rows become
+extraction-ready manifest rows that preserve the downloaded metadata's
+`corpus_source`, so GSOO and WA GSOO remain first-class source coverage in
+silver extraction, index generation, and cited gold Market context pages.
+Unsupported media, failed downloads, missing storage URIs, and duplicate content
+hashes stay in the bronze source manifest as `needs_human_review` audit rows
+with `review_status` and `review_reason`, so validation can report them without
+treating them as silver extraction inputs.
 
 Build the local fixture corpus:
 
@@ -205,6 +208,21 @@ root override, plus path overrides for the bronze manifest, bronze fixture
 cache, silver document directory, silver chunk directory, silver index path,
 and gold directory.
 
+Validate the AEMO publications corpus:
+
+```bash
+uv run aemo-publications-corpus validate
+```
+
+The validation command uses the same external artifact root and path overrides
+as `build-fixture`. It reports hub, library, GSOO, and WA GSOO source-family
+counts, supported PDF media counts, unsupported media counts, review-needed
+metadata counts, silver index rows, silver chunk files, gold page counts, and
+gold glossary page counts. It fails with explicit messages for missing
+downloaded metadata
+(`bronze/source_manifest.jsonl`), missing cached source PDFs, stale silver index
+rows, and broken gold citations.
+
 ## Local QA
 
 Run from this directory:
@@ -227,9 +245,10 @@ artifacts. `make fast-test` currently aliases the **Unit test** lane until the
 Subproject has a wider **Fast check** surface. `make run-prek` is the
 Subproject **Commit check**. `make aemo-publications-unit-test` is the AEMO
 publications corpus **Unit test** lane for artifact-root defaults, explicit path
-overrides, fixture manifest conversion, silver output, index validation, and
-gold formatting. `make aemo-publications-run-prek` runs the same Subproject
-**Commit check** surface for AEMO publications corpus handoff evidence.
+overrides, fixture manifest conversion, hub, library, GSOO, and WA GSOO
+validation reporting, silver output, index validation, and gold formatting.
+`make aemo-publications-run-prek` runs the same Subproject **Commit check**
+surface for AEMO publications corpus handoff evidence.
 
 ## Generated Artifacts
 
@@ -300,7 +319,8 @@ artifact output rather than maintained router documentation.
 - `src/gas_market_knowledge_base/source_manifest.py`: bronze source manifest
   writer for AEMO gas document metadata rows.
 - `src/gas_market_knowledge_base/aemo_publications/source_manifest.py`: AEMO
-  major publications metadata converter for downloaded hub and library rows.
+  major publications metadata converter for downloaded hub, library, GSOO, and
+  WA GSOO rows.
 - `tests/unit/`: package import, command-surface, and manifest writer tests.
 - `tests/unit/test_aemo_publications.py`: AEMO major publications corpus
   fixture **Unit test** lane.
@@ -330,6 +350,7 @@ artifact output rather than maintained router documentation.
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/corpus_paths.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/fixture_corpus.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/source_manifest.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/validation.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/__init__.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/gold_context.py`
@@ -368,4 +389,5 @@ artifact output rather than maintained router documentation.
   - `make aemo-publications-run-prek`
   - `uv run gas-market-kb validate`
   - `uv run aemo-publications-corpus build-fixture`
+  - `uv run aemo-publications-corpus validate`
   - `verify external generated-artifact roots, ENERGY_MARKET_CORPUS_ROOT fallback behavior, raw-PDF ignore policy, CLI help, source manifest fixture behavior, AEMO major publications fixture behavior, archive-prefix audit fixture behavior, PDF cache fixture behavior, silver document extraction fixture behavior, real Docling adapter smoke lane, chunk index validation, gold citation validation, and no embedding or vector storage behavior`

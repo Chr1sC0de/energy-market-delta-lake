@@ -65,6 +65,10 @@ an adaptive event to steer the current issue run, checkpointed Operator cycle,
 or **Ready issue refresh** candidate set. It must not adjust future thresholds,
 global retry budgets, **Delivery mode** policy, or maintained docs/config
 without an explicit Operator-owned policy change.
+**Ready issue refresh** may include completed issue ratio evidence, adaptive
+events, residual work, blocker notes, split notes, and candidate routing hints
+in its prompt and mutation metadata. Those fields remain evidence for bounded
+queue-local issue metadata updates; they are not a policy publication channel.
 
 ## Considered options
 

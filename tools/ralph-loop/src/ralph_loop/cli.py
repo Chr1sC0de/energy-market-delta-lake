@@ -2116,6 +2116,16 @@ class RalphLoop:
                     qa_results=qa_results,
                     run_dir=run_dir,
                     candidates=candidates,
+                    adaptive_events=adaptive_event_entries(manifest),
+                    completed_issue_ratio_evidence=(
+                        ready_issue_refresh_completed_issue_ratio_evidence(
+                            completed_issue_count=1,
+                            candidate_issue_count=len(candidates),
+                        )
+                    ),
+                    residual_work_summary=ready_issue_refresh_residual_work_summary(
+                        adaptive_event_entries(manifest)
+                    ),
                 ),
                 analysis_path,
                 log_path,
@@ -11961,6 +11971,60 @@ def ready_issue_refresh_candidate_issue_sections(candidates: list[Issue]) -> str
     return "\n\n".join(sections)
 
 
+def ready_issue_refresh_completed_issue_ratio_evidence(
+    *,
+    completed_issue_count: int,
+    candidate_issue_count: int,
+) -> str:
+    visible_issue_count = completed_issue_count + candidate_issue_count
+    if visible_issue_count <= 0:
+        return "No completed or candidate issues were visible to this refresh."
+    ratio = completed_issue_count / visible_issue_count
+    return (
+        f"{completed_issue_count} completed issue(s) out of "
+        f"{visible_issue_count} refresh-visible issue(s) ({ratio:.0%}); "
+        f"{candidate_issue_count} queue-local candidate issue(s) selected for "
+        "blocker, split-note, or context refresh review."
+    )
+
+
+def ready_issue_refresh_adaptive_event_lines(
+    adaptive_events: list[dict[str, Any]] | None,
+) -> str:
+    if not adaptive_events:
+        return "- None recorded."
+    lines: list[str] = []
+    for index, event in enumerate(adaptive_events, start=1):
+        event_type = str(event.get("event_type") or "unknown")
+        issue_number = event.get("issue_number")
+        issue_text = f" for #{issue_number}" if issue_number is not None else ""
+        trigger = str(event.get("trigger_reason") or "No trigger recorded.")
+        retry_allowed = event.get("automatic_retry_allowed")
+        consumes_budget = event.get("consumes_attempt_budget")
+        lines.append(
+            f"- {index}. `{event_type}`{issue_text}: {trigger} "
+            f"(automatic retry: {adaptive_bool_text(retry_allowed)}; "
+            f"attempt budget: {adaptive_bool_text(consumes_budget)})"
+        )
+        residual_work = str(event.get("residual_work_summary") or "").strip()
+        if residual_work:
+            lines.append(f"  - Residual work: {residual_work}")
+    return "\n".join(lines)
+
+
+def ready_issue_refresh_residual_work_summary(
+    adaptive_events: list[dict[str, Any]] | None,
+) -> str:
+    residual_items = [
+        str(event.get("residual_work_summary") or "").strip()
+        for event in adaptive_events or []
+        if str(event.get("residual_work_summary") or "").strip()
+    ]
+    if not residual_items:
+        return "No residual work was recorded before this refresh."
+    return "\n".join(f"- {item}" for item in residual_items)
+
+
 def ready_issue_refresh_analysis_prompt(
     *,
     repo: str,
@@ -11971,11 +12035,24 @@ def ready_issue_refresh_analysis_prompt(
     qa_results: list[QAResult],
     run_dir: Path,
     candidates: list[Issue],
+    adaptive_events: list[dict[str, Any]] | None = None,
+    completed_issue_ratio_evidence: str | None = None,
+    residual_work_summary: str | None = None,
 ) -> str:
     changed_lines = markdown_bullet_lines(changed_files)
     qa_lines = ready_issue_refresh_qa_evidence_lines(qa_results)
     candidate_sections = ready_issue_refresh_candidate_issue_sections(candidates)
     integrated_body = integrated_issue.body.strip() or "_No issue body._"
+    ratio_evidence = completed_issue_ratio_evidence
+    if ratio_evidence is None:
+        ratio_evidence = ready_issue_refresh_completed_issue_ratio_evidence(
+            completed_issue_count=1,
+            candidate_issue_count=len(candidates),
+        )
+    adaptive_lines = ready_issue_refresh_adaptive_event_lines(adaptive_events)
+    residual_summary = residual_work_summary
+    if residual_summary is None:
+        residual_summary = ready_issue_refresh_residual_work_summary(adaptive_events)
     return textwrap.dedent(
         f"""
         Run a read-only Ready issue refresh analysis for {repo}.
@@ -12029,7 +12106,13 @@ def ready_issue_refresh_analysis_prompt(
               "body": null,
               "add_labels": [],
               "remove_labels": [],
-              "close_as_completed": false
+              "close_as_completed": false,
+              "completed_issue_ratio_evidence": null,
+              "adaptive_event": null,
+              "residual_work_summary": null,
+              "blocker_update_note": null,
+              "split_note": null,
+              "routing_hint": null
             }}
           ]
         }}
@@ -12044,6 +12127,10 @@ def ready_issue_refresh_analysis_prompt(
         body, label, or comment refreshes that keep the issue contract valid.
         Comments may omit the Ready issue refresh audit prefix because Ralph
         will add it before applying metadata.
+        The adaptive fields are queue-local evidence only. Use them for blocker
+        adjustment notes, residual work notes, split notes, or candidate routing
+        hints. Do not propose global policy, threshold, drain budget, or retry
+        budget changes.
 
         Integrated issue:
 
@@ -12062,6 +12149,18 @@ def ready_issue_refresh_analysis_prompt(
         QA evidence:
 
         {qa_lines}
+
+        Completed issue ratio evidence:
+
+        {ratio_evidence}
+
+        Adaptive events recorded during this run:
+
+        {adaptive_lines}
+
+        Residual work summary:
+
+        {residual_summary}
 
         Integrated issue body:
 

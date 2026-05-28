@@ -156,11 +156,11 @@ def fixture_publications() -> tuple[FixturePublication, ...]:
             published_date="2026-01-15",
             effective_date="2026-01-15",
             source_url=(
-                "https://aemo.com.au/energy-systems/major-publications/"
+                "https://www.aemo.com.au/energy-systems/major-publications/"
                 "integrated-system-plan-isp"
             ),
             source_page_url=(
-                "https://aemo.com.au/energy-systems/major-publications/"
+                "https://www.aemo.com.au/energy-systems/major-publications/"
                 "integrated-system-plan-isp"
             ),
             source_page_title="Integrated System Plan",
@@ -203,14 +203,11 @@ def fixture_publications() -> tuple[FixturePublication, ...]:
             published_date="2025-08-28",
             effective_date="2025-08-28",
             source_url=(
-                "https://aemo.com.au/energy-systems/major-publications/"
+                "https://www.aemo.com.au/energy-systems/major-publications/"
                 "electricity-statement-of-opportunities"
             ),
-            source_page_url=(
-                "https://aemo.com.au/energy-systems/major-publications/"
-                "electricity-statement-of-opportunities"
-            ),
-            source_page_title="Electricity Statement of Opportunities",
+            source_page_url=("https://www.aemo.com.au/library/major-publications"),
+            source_page_title="Major publications library",
             source_link_text="2025 Electricity Statement of Opportunities fixture",
             source_bytes=(
                 b"%PDF-1.7\n"
@@ -241,6 +238,108 @@ def fixture_publications() -> tuple[FixturePublication, ...]:
             glossary_definition=(
                 "The Electricity Statement of Opportunities fixture represents an "
                 "AEMO major publication in the generated corpus."
+            ),
+        ),
+        FixturePublication(
+            filename="2025-gas-statement-of-opportunities-fixture.pdf",
+            document_family_id="gsoo__gas-statement-of-opportunities",
+            document_title="2025 Gas Statement of Opportunities Fixture",
+            document_kind="major-publication",
+            document_version="2025 fixture",
+            document_version_id="fixture-2025-gsoo",
+            published_date="2025-03-20",
+            effective_date="2025-03-20",
+            source_url=(
+                "https://www.aemo.com.au/energy-systems/gas/"
+                "gas-forecasting-and-planning/"
+                "gas-statement-of-opportunities-gsoo"
+            ),
+            source_page_url=(
+                "https://www.aemo.com.au/energy-systems/gas/"
+                "gas-forecasting-and-planning/"
+                "gas-statement-of-opportunities-gsoo"
+            ),
+            source_page_title="Gas Statement of Opportunities",
+            source_link_text="2025 Gas Statement of Opportunities fixture",
+            source_bytes=(
+                b"%PDF-1.7\nAEMO 2025 Gas Statement of Opportunities fixture bytes.\n"
+            ),
+            silver_markdown=(
+                "# 2025 Gas Statement of Opportunities Fixture\n\n"
+                "The Gas Statement of Opportunities fixture describes an eastern "
+                "and south-eastern Australia gas supply outlook. It provides "
+                "deterministic source text for GSOO corpus coverage, silver "
+                "chunking, and cited gold Market context pages.\n"
+            ),
+            chunks=(
+                ExtractedHybridChunk(
+                    text=(
+                        "The Gas Statement of Opportunities fixture is a gas "
+                        "planning publication used for deterministic GSOO corpus "
+                        "validation."
+                    ),
+                    heading_path=("Gas Statement of Opportunities", "Fixture Scope"),
+                    doc_items=({"self_ref": "#/texts/1", "label": "text"},),
+                ),
+            ),
+            glossary_slug="gas-statement-of-opportunities",
+            glossary_title="Gas Statement of Opportunities",
+            glossary_definition=(
+                "The Gas Statement of Opportunities fixture represents an AEMO "
+                "GSOO publication in the generated corpus."
+            ),
+        ),
+        FixturePublication(
+            filename="2025-wa-gas-statement-of-opportunities-fixture.pdf",
+            document_family_id="wa_gsoo__wa-gas-statement-of-opportunities",
+            document_title="2025 WA Gas Statement of Opportunities Fixture",
+            document_kind="major-publication",
+            document_version="2025 fixture",
+            document_version_id="fixture-2025-wa-gsoo",
+            published_date="2025-12-12",
+            effective_date="2025-12-12",
+            source_url=(
+                "https://www.aemo.com.au/energy-systems/gas/"
+                "gas-forecasting-and-planning/"
+                "wa-gas-statement-of-opportunities-wa-gsoo"
+            ),
+            source_page_url=(
+                "https://www.aemo.com.au/energy-systems/gas/"
+                "gas-forecasting-and-planning/"
+                "wa-gas-statement-of-opportunities-wa-gsoo"
+            ),
+            source_page_title="WA Gas Statement of Opportunities",
+            source_link_text="2025 WA Gas Statement of Opportunities fixture",
+            source_bytes=(
+                b"%PDF-1.7\n"
+                b"AEMO 2025 WA Gas Statement of Opportunities fixture bytes.\n"
+            ),
+            silver_markdown=(
+                "# 2025 WA Gas Statement of Opportunities Fixture\n\n"
+                "The WA Gas Statement of Opportunities fixture describes a Western "
+                "Australia gas supply outlook. It keeps WA GSOO corpus coverage "
+                "local and repeatable for silver extraction, index generation, "
+                "and cited gold Market context pages.\n"
+            ),
+            chunks=(
+                ExtractedHybridChunk(
+                    text=(
+                        "The WA Gas Statement of Opportunities fixture is a gas "
+                        "planning publication used for deterministic WA GSOO "
+                        "corpus validation."
+                    ),
+                    heading_path=(
+                        "WA Gas Statement of Opportunities",
+                        "Fixture Scope",
+                    ),
+                    doc_items=({"self_ref": "#/texts/1", "label": "text"},),
+                ),
+            ),
+            glossary_slug="wa-gas-statement-of-opportunities",
+            glossary_title="WA Gas Statement of Opportunities",
+            glossary_definition=(
+                "The WA Gas Statement of Opportunities fixture represents an AEMO "
+                "WA GSOO publication in the generated corpus."
             ),
         ),
     )

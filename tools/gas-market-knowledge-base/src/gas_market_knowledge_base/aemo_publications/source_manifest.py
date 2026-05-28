@@ -26,6 +26,23 @@ AEMO_MAJOR_PUBLICATIONS_HUB_URL = (
 AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL = (
     "https://www.aemo.com.au/library/major-publications"
 )
+AEMO_GSOO_CORPUS_SOURCE = "gsoo"
+AEMO_GSOO_URL = (
+    "https://www.aemo.com.au/energy-systems/gas/gas-forecasting-and-planning/"
+    "gas-statement-of-opportunities-gsoo"
+)
+AEMO_WA_GSOO_CORPUS_SOURCE = "wa_gsoo"
+AEMO_WA_GSOO_URL = (
+    "https://www.aemo.com.au/energy-systems/gas/gas-forecasting-and-planning/"
+    "wa-gas-statement-of-opportunities-wa-gsoo"
+)
+IN_SCOPE_CORPUS_SOURCES = frozenset(
+    {
+        AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+        AEMO_GSOO_CORPUS_SOURCE,
+        AEMO_WA_GSOO_CORPUS_SOURCE,
+    }
+)
 SUPPORTED_CONTENT_TYPES = frozenset({"application/pdf"})
 SUPPORTED_EXTENSIONS = frozenset({".pdf"})
 REQUIRED_DOWNLOAD_METADATA_FIELDS = frozenset(
@@ -130,7 +147,7 @@ def build_aemo_publication_manifest_rows(
     for index, row in enumerate(metadata_rows):
         metadata_row_count += 1
         _validate_contract_fields(row, index=index)
-        if not _is_major_publications_hub_or_library_row(row, index=index):
+        if not _is_aemo_publication_corpus_row(row, index=index):
             excluded_out_of_scope_count += 1
             continue
 
@@ -184,9 +201,10 @@ def _manifest_row(
 ) -> dict[str, ManifestJsonValue]:
     content_sha256 = _optional_text(row, "content_sha256", index=index)
     manifest_hash = content_sha256 or _fallback_row_hash(row, index=index)
+    corpus_source = _required_text(row, "corpus_source", index=index)
     document_family_id = _required_text(row, "document_family_id", index=index)
     identity = document_identity(
-        corpus_source=AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+        corpus_source=corpus_source,
         document_family_id=document_family_id,
         content_sha256=manifest_hash,
     )
@@ -203,7 +221,7 @@ def _manifest_row(
         schema_version=MANIFEST_SCHEMA_VERSION,
         document_identity=identity,
         content_sha256=manifest_hash,
-        corpus_source=AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+        corpus_source=corpus_source,
         document_family_id=document_family_id,
         document_title=_required_text(row, "document_title", index=index),
         document_kind=_optional_text(row, "document_kind", index=index),
@@ -274,21 +292,25 @@ def _is_supported_media(row: DownloadMetadataRow, *, index: int) -> bool:
     return extension in SUPPORTED_EXTENSIONS
 
 
-def _is_major_publications_hub_or_library_row(
+def _is_aemo_publication_corpus_row(
     row: DownloadMetadataRow,
     *,
     index: int,
 ) -> bool:
-    if (
-        _required_text(row, "corpus_source", index=index)
-        != AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE
-    ):
+    corpus_source = _required_text(row, "corpus_source", index=index)
+    if corpus_source not in IN_SCOPE_CORPUS_SOURCES:
         return False
     source_page_url = _required_text(row, "source_page_url", index=index)
     normalized = source_page_url.rstrip("/") + "/"
-    return normalized.startswith(
-        AEMO_MAJOR_PUBLICATIONS_HUB_URL
-    ) or normalized.startswith(AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL.rstrip("/") + "/")
+    if corpus_source == AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE:
+        return normalized.startswith(
+            AEMO_MAJOR_PUBLICATIONS_HUB_URL
+        ) or normalized.startswith(
+            AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL.rstrip("/") + "/"
+        )
+    if corpus_source == AEMO_GSOO_CORPUS_SOURCE:
+        return normalized.startswith(AEMO_GSOO_URL.rstrip("/") + "/")
+    return normalized.startswith(AEMO_WA_GSOO_URL.rstrip("/") + "/")
 
 
 def _storage_uri(row: DownloadMetadataRow, *, index: int) -> str | None:

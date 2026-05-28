@@ -6,10 +6,14 @@ import click
 
 from gas_market_knowledge_base.aemo_publications.corpus_paths import (
     CORPUS_ROOT_ENV_VAR,
+    default_corpus_paths,
 )
 from gas_market_knowledge_base.aemo_publications.fixture_corpus import (
     FixtureCorpusBuildError,
     build_fixture_corpus,
+)
+from gas_market_knowledge_base.aemo_publications.validation import (
+    validate_aemo_publications_corpus,
 )
 from gas_market_knowledge_base.corpus_core.silver_documents import (
     DEFAULT_MIN_TEXT_CHARS,
@@ -142,4 +146,117 @@ def build_fixture(
     click.echo(f"wrote silver documents to {result.paths.silver_documents_dir}")
     click.echo(f"wrote silver chunk index to {result.paths.silver_index_path}")
     click.echo(f"wrote gold pages to {result.paths.gold_dir}")
+    click.echo(summary)
+
+
+@main.command("validate")
+@click.option(
+    "--artifact-root",
+    type=click.Path(file_okay=False, path_type=Path),
+    help=(
+        "Override the corpus artifact root. Defaults to ENERGY_MARKET_CORPUS_ROOT "
+        "or the user-home corpus root."
+    ),
+)
+@click.option(
+    "--manifest-path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    show_default=_SOURCE_MANIFEST_DEFAULT_HELP,
+    help="Bronze source manifest JSONL path to validate.",
+)
+@click.option(
+    "--source-cache-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    show_default=_SOURCE_CACHE_DEFAULT_HELP,
+    help="Bronze source byte cache directory to validate.",
+)
+@click.option(
+    "--document-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    show_default=_SILVER_DOCUMENTS_DEFAULT_HELP,
+    help="Silver document Markdown directory to validate.",
+)
+@click.option(
+    "--chunk-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    show_default=_SILVER_CHUNKS_DEFAULT_HELP,
+    help="Silver chunk Markdown directory to validate.",
+)
+@click.option(
+    "--index-path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    show_default=_SILVER_INDEX_DEFAULT_HELP,
+    help="Silver chunk index JSONL path to validate.",
+)
+@click.option(
+    "--gold-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    show_default=_GOLD_DEFAULT_HELP,
+    help="Gold Markdown directory to validate.",
+)
+@click.option(
+    "--min-text-chars",
+    type=click.IntRange(min=1),
+    default=DEFAULT_MIN_TEXT_CHARS,
+    show_default=True,
+    help="Minimum extracted text setting used by silver document extraction.",
+)
+def validate(
+    artifact_root: Path | None,
+    manifest_path: Path | None,
+    source_cache_dir: Path | None,
+    document_dir: Path | None,
+    chunk_dir: Path | None,
+    index_path: Path | None,
+    gold_dir: Path | None,
+    min_text_chars: int,
+) -> None:
+    """Validate AEMO publications coverage, silver index, and gold citations."""
+    paths = default_corpus_paths(
+        artifact_root=artifact_root,
+        source_manifest_path=manifest_path,
+        source_cache_dir=source_cache_dir,
+        silver_documents_dir=document_dir,
+        silver_chunks_dir=chunk_dir,
+        silver_index_path=index_path,
+        gold_dir=gold_dir,
+    )
+    result = validate_aemo_publications_corpus(
+        paths=paths,
+        min_text_chars=min_text_chars,
+    )
+    silver_result = result.silver_result
+    gold_result = result.gold_result
+    summary = (
+        "summary: "
+        f"manifest_rows={result.coverage.manifest_row_count} "
+        f"hub_source_families={result.coverage.hub_source_family_count} "
+        f"library_source_families={result.coverage.library_source_family_count} "
+        f"gsoo_source_families={result.coverage.gsoo_source_family_count} "
+        f"wa_gsoo_source_families={result.coverage.wa_gsoo_source_family_count} "
+        f"supported_media={result.coverage.supported_media_count} "
+        f"unsupported_media={result.coverage.unsupported_media_count} "
+        f"review_needed={result.coverage.review_needed_count} "
+        f"silver_index_rows={silver_result.index_row_count if silver_result else 0} "
+        f"silver_chunk_files={silver_result.chunk_file_count if silver_result else 0} "
+        f"gold_pages={gold_result.page_count if gold_result else 0} "
+        f"gold_glossary_pages={gold_result.glossary_page_count if gold_result else 0} "
+        f"errors={result.error_count}"
+    )
+    if result.errors:
+        click.echo(
+            f"Error: validate found {result.error_count} problem(s)",
+            err=True,
+        )
+        for error in result.errors:
+            click.echo(f"- {error}", err=True)
+        click.echo(summary, err=True)
+        raise SystemExit(1)
+
+    click.echo(
+        f"validated AEMO publications source manifest {paths.source_manifest_path}"
+    )
+    click.echo(f"validated silver chunk index {paths.silver_index_path}")
+    if gold_result is not None and gold_result.page_count:
+        click.echo(f"validated gold Market context {paths.gold_dir}")
     click.echo(summary)

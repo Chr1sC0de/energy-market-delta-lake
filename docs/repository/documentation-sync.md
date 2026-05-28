@@ -353,6 +353,12 @@ way:
   `$ENERGY_MARKET_CORPUS_ROOT/aemo-major-publications/{bronze,silver,gold}` by
   default and validates the fixture build through the AEMO publications corpus
   **Unit test** lane and the Subproject **Commit check**.
+- #276: The Subproject added `aemo-publications-corpus validate` for AEMO major
+  publications hub and library coverage. The command reports source-family
+  counts, supported and unsupported media counts, silver index counts, and gold
+  page counts from the external corpus root, and fails clearly for missing
+  downloaded metadata, missing source files, stale index rows, and broken gold
+  citations.
 
 ## Search commands
 
@@ -430,6 +436,7 @@ These commands support the intended flow:
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/corpus_paths.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/fixture_corpus.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/source_manifest.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/validation.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/__init__.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/gold_context.py`
