@@ -2128,6 +2128,43 @@ class ParallelSchedulerOperatorRun(ScriptedOperatorRun):
         super()._run_promotion_checkpoint()
 
 
+class PostPushMetadataRecoveryLoop(ralph.RalphLoop):
+    def __init__(
+        self,
+        config: ralph.LoopConfig,
+        runner: FakeRunner,
+        *,
+        delivery_mode: str = ralph.GITFLOW_MODE,
+        target_branch: str = ralph.DEFAULT_GITFLOW_BRANCH,
+        metadata_status: str = "failed",
+        push_status: str = "pushed",
+        commit_sha: str = "abc1234",
+    ) -> None:
+        super().__init__(config, runner)
+        self.delivery_mode = delivery_mode
+        self.target_branch = target_branch
+        self.metadata_status = metadata_status
+        self.push_status = push_status
+        self.commit_sha = commit_sha
+        self.manifest_path: Path | None = None
+
+    def _run_drain_scheduler(self) -> None:
+        run_dir = write_recovery_manifest(
+            self.config.log_root.parent,
+            delivery_mode=self.delivery_mode,
+            target_branch=self.target_branch,
+            metadata_status=self.metadata_status,
+            push_status=self.push_status,
+            commit_sha=self.commit_sha,
+        )
+        self.manifest_path = run_dir / ralph.MANIFEST_NAME
+        raise ralph.PostPushFailure(
+            "simulated post-push issue metadata failure",
+            log_path=run_dir / "gh-issue-metadata.log",
+            manifest_path=self.manifest_path,
+        )
+
+
 class SelfUpdateGuardLoop(ralph.RalphLoop):
     def __init__(
         self,
@@ -7478,6 +7515,220 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertEqual(
             preflight_event["details"]["variables"]["UV_CACHE_DIR"]["source"],
             "operator",
+        )
+
+    def test_operator_auto_recovers_verified_post_push_metadata_failure(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                issue_view_command(42): [
+                    issue_view_output(labels=[ralph.AGENT_RUNNING_LABEL])
+                ],
+                issue_comments_command(42): [json.dumps({"comments": []})],
+                issue_state_command(42): [json.dumps({"state": "OPEN"})],
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                drain=True,
+                delivery_mode=ralph.GITFLOW_MODE,
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = ralph.RalphOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=1,
+            )
+            recovery_loop = PostPushMetadataRecoveryLoop(loop.config, runner)
+            operator.loop = recovery_loop
+            operator.github = recovery_loop.github
+            output = io.StringIO()
+
+            with redirect_stdout(output), redirect_stderr(io.StringIO()):
+                operator._run_drain_scheduler_checkpoint()
+
+            child_manifest = json.loads(
+                recovery_loop.manifest_path.read_text(encoding="utf-8")
+            )
+            operator_manifest = json.loads(
+                (run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text(encoding="utf-8")
+            )
+            comment = (
+                recovery_loop.manifest_path.parent / "issue-42-comment.md"
+            ).read_text(encoding="utf-8")
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(("git", "fetch", "origin", "dev"), commands)
+        self.assertIn(
+            ("git", "merge-base", "--is-ancestor", "abc1234", "origin/dev"),
+            commands,
+        )
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "42",
+                "-R",
+                "example/repo",
+                "--add-label",
+                "agent-integrated",
+                "--remove-label",
+                "agent-running",
+                "--remove-label",
+                "agent-failed",
+                "--remove-label",
+                "agent-merged",
+                "--remove-label",
+                "ready-for-agent",
+            ),
+            commands,
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "close") for command in commands)
+        )
+        self.assertEqual(child_manifest["status"], "succeeded")
+        self.assertEqual(child_manifest["stage"], "verified_metadata_recovered")
+        self.assertEqual(
+            child_manifest["github_metadata"]["status"],
+            "marked_integrated",
+        )
+        self.assertEqual(
+            child_manifest["adaptive_events"][-1]["event_type"],
+            "residual_update",
+        )
+        self.assertIn("Ralph Gitflow integration completed.", comment)
+        self.assertIn("Commit: `abc1234`", comment)
+        checkpoints = [
+            checkpoint["checkpoint"] for checkpoint in operator_manifest["checkpoints"]
+        ]
+        self.assertIn("issue_metadata_recovered", checkpoints)
+        self.assertIn("issue_succeeded", checkpoints)
+        self.assertIn(
+            "Operator verified post-push metadata recovery", output.getvalue()
+        )
+
+    def test_operator_metadata_recovery_is_idempotent_when_manifest_complete(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                drain=True,
+                delivery_mode=ralph.GITFLOW_MODE,
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = ralph.RalphOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=1,
+            )
+            recovery_loop = PostPushMetadataRecoveryLoop(
+                loop.config,
+                runner,
+                metadata_status="marked_integrated",
+            )
+            operator.loop = recovery_loop
+            operator.github = recovery_loop.github
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                operator._run_drain_scheduler_checkpoint()
+
+            child_manifest = json.loads(
+                recovery_loop.manifest_path.read_text(encoding="utf-8")
+            )
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(("git", "fetch", "origin", "dev"), commands)
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "view") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "comment") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
+        self.assertEqual(child_manifest["status"], "succeeded")
+        self.assertEqual(
+            child_manifest["stage"],
+            "verified_metadata_recovery_already_complete",
+        )
+        self.assertEqual(
+            child_manifest["github_metadata"]["status"],
+            "marked_integrated",
+        )
+        self.assertEqual(
+            child_manifest["adaptive_events"][-1]["event_type"],
+            "residual_update",
+        )
+
+    def test_operator_metadata_recovery_refuses_unverified_commit(self) -> None:
+        ancestor_command = (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            "abc1234",
+            "origin/dev",
+        )
+        runner = FakeRunner(fail_commands={ancestor_command: 1})
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                drain=True,
+                delivery_mode=ralph.GITFLOW_MODE,
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            operator = ralph.RalphOperatorRun(
+                loop.config,
+                runner,
+                run_dir=run_dir,
+                max_cycles=1,
+            )
+            recovery_loop = PostPushMetadataRecoveryLoop(loop.config, runner)
+            operator.loop = recovery_loop
+            operator.github = recovery_loop.github
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                with self.assertRaises(ralph.RalphError) as caught:
+                    operator._run_drain_scheduler_checkpoint()
+
+            child_manifest = json.loads(
+                recovery_loop.manifest_path.read_text(encoding="utf-8")
+            )
+            operator_manifest = json.loads(
+                (run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text(encoding="utf-8")
+            )
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(
+            "not reachable from expected Integration target",
+            str(caught.exception),
+        )
+        self.assertNotIn(issue_view_command(42), commands)
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "comment") for command in commands)
+        )
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
+        self.assertEqual(
+            child_manifest["adaptive_events"][-1]["event_type"],
+            "hard_stop",
+        )
+        self.assertEqual(operator_manifest["status"], "failed")
+        self.assertEqual(
+            operator_manifest["last_checkpoint"]["checkpoint"],
+            "issue_failed",
         )
 
     def test_operator_skips_post_promotion_deployment_when_classifier_has_no_deploy(

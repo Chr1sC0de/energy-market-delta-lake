@@ -90,6 +90,15 @@ Verified-only post-push recovery prevents Ralph from hiding a partial publish.
 If code reached the expected branch and QA evidence is still recorded, Ralph can
 repair issue metadata. If verification fails, operators inspect branch state,
 run manifests, and GitHub Issue state before choosing manual recovery.
+Checkpointed Operator runs can apply that verified metadata repair in the same
+Operator cycle after a child implementation stops with a post-push metadata
+failure. The Operator still uses the same boundary: manifest push evidence,
+passed QA evidence, and commit reachability from the recorded **Integration
+target**. Successful same-run repair is recorded as `residual_update` evidence;
+if the child run had already recorded a drain-scheduler fatal stop, that marker
+is updated to recovered before the child run is marked succeeded. Unverified
+commits or missing boundary evidence remain `hard_stop` recovery states with no
+GitHub Issue metadata mutation.
 
 ## Sync metadata
 

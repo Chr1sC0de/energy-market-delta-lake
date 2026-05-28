@@ -24,7 +24,8 @@ make run-prek
 - `src/ralph_loop/cli.py`: Ralph CLI, side-effect adapters, loop controller,
   read-only `--doctor` preflight checks, Operator **Integration target**
   baseline guard, operator-smoke execution, deploy-repair issue creation,
-  Promotion source-table replay recovery output, and compatibility re-exports
+  verified post-push metadata recovery, Promotion source-table replay recovery
+  output, and compatibility re-exports
 - `src/ralph_loop/workflow.py`: pure label, **Delivery mode**, QA selection,
   comment, **Issue completion review** trigger, Operator smoke request,
   deployment classification/execution selection, source-table replay recovery
@@ -47,7 +48,8 @@ Residual work, and adaptive events for queue-local retry and recovery behavior:
 ADR
 [0011](../../docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md)
 records the initial stiffness thresholds and verified-only post-push metadata
-recovery boundary.
+recovery boundary, including same-run Operator recovery after the Integration
+target push and commit reachability are verified.
 
 ## Sync metadata
 

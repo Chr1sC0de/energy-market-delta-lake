@@ -896,6 +896,17 @@ Recovery does not rerun Codex, rerun QA, create commits, push branches, or clean
 worktrees. Normal Ralph runs keep fail-stop behavior: if metadata operations
 fail after a push, Ralph stops loudly so an operator can inspect the run and
 recover deliberately.
+Checkpointed **Operator workflow** runs may recover this same post-push
+metadata residual automatically during the same Operator cycle. The Operator
+loads the child implementation manifest, fetches the recorded **Integration
+target**, verifies the recorded commit is reachable from
+`origin/<integration-target>`, confirms the manifest records a pushed target and
+passed QA evidence, then reuses the metadata recovery path. Successful recovery
+records a `residual_update`, a reachability event, a recovered drain-scheduler
+fatal-stop marker when the child had recorded one, an Operator
+`issue_metadata_recovered` checkpoint, and marks the child run succeeded.
+Unverified commits, missing pushed-target evidence, or missing passed QA
+evidence remain hard stops and do not mutate GitHub Issue metadata.
 
 Exploratory acceptance merge conflicts pause with run status
 `acceptance_conflict` before push or GitHub Issue metadata mutation. Ralph
