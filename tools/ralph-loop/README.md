@@ -30,18 +30,18 @@ make run-prek
 - `src/ralph_loop/review_package_media.py`: Ralph-owned Playwright helper that
   serves static build output and records Review package route `.webm` videos
 - `src/ralph_loop/workflow.py`: pure label, **Delivery mode**, QA selection,
-  comment, **Issue completion review** trigger, structured Stiffness ratio
-  parsing, Operator smoke request, deployment classification/execution
-  selection, source-table replay recovery detection, Review package media route
-  selection, baseline guard command selection, QA runtime disk guard, and
-  recovery policy helpers
+  comment, **Issue completion review** trigger, **Security-sensitive change**
+  path classification, structured Stiffness ratio parsing, Operator smoke
+  request, deployment classification/execution selection, source-table replay
+  recovery detection, Review package media route selection, baseline guard
+  command selection, QA runtime disk guard, and recovery policy helpers
 - `src/ralph_loop/state.py`: Ralph run and Operator manifest state helpers,
-  including **Issue completion review**, structured Stiffness ratio evidence,
-  Operator smoke evidence, adaptive-event evidence, source-table replay
-  recovery guidance, active child run status, deploy-repair issue state, and
-  checkpointed deploy-repair target state, Operator rollup failed-command
-  summaries, rollup requeue recovery classification, and stale detached
-  Operator status inputs
+  including **Issue completion review**, security-sensitive path evidence,
+  structured Stiffness ratio evidence, Operator smoke evidence, adaptive-event
+  evidence, source-table replay recovery guidance, active child run status,
+  deploy-repair issue state, and checkpointed deploy-repair target state,
+  Operator rollup failed-command summaries, rollup requeue recovery
+  classification, and stale detached Operator status inputs
 - `tests/unit/`: Ralph unit tests
 - `.pre-commit-config.yaml`: Subproject `prek` hook surface
 
@@ -55,6 +55,10 @@ ADR
 records the initial stiffness thresholds and verified-only post-push metadata
 recovery boundary, including same-run Operator recovery after the Integration
 target push and commit reachability are verified.
+ADR
+[0013](../../docs/adr/0013-ralph-security-sensitive-issue-completion-review.md)
+records why **Security-sensitive change** extends **Issue completion review**
+instead of adding a separate security gate or scanner block.
 
 ## Sync metadata
 
@@ -64,6 +68,7 @@ target push and commit reachability are verified.
   - `OPERATOR.md`
   - `docs/agents/ralph-loop.md`
   - `docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md`
+  - `docs/adr/0013-ralph-security-sensitive-issue-completion-review.md`
   - `docs/repository/documentation-sync.md`
   - `scripts/ralph.py`
   - `tools/ralph-loop/.pre-commit-config.yaml`

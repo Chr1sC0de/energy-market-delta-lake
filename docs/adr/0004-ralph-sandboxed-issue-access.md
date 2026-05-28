@@ -44,10 +44,11 @@ and stops before QA when a full-access diff leaves the issue's context anchors.
 
 **Issue completion review** uses the same read-only issue command boundary as
 **Post-promotion review**. It can inspect the issue contract and related issue
-context while checking the validated implementation, but it cannot perform
-GitHub Issue metadata mutation. Failing review findings feed remaining Codex
-repair attempts; Ralph's outer loop reruns selected QA and review before any
-**Integration target** update or Exploratory handoff.
+context while checking the validated implementation, including when the review
+was triggered by a **Security-sensitive change**, but it cannot perform GitHub
+Issue metadata mutation. Failing review findings feed remaining Codex repair
+attempts; Ralph's outer loop reruns selected QA and review before any
+**Integration target** update, Trunk push, or Exploratory handoff.
 
 After **Local integration**, Exploratory handoff, or successful **Promotion**
 verified issue closure, Ralph's current **Ready issue refresh** analysis
@@ -96,6 +97,7 @@ evidence, and skips duplicate `ralph-deploy-repair:...` source markers.
   - `docs/agents/ralph-loop.md`
   - `CONTEXT.md`
   - `docs/adr/0007-ralph-full-access-implementation-pass.md`
+  - `docs/adr/0013-ralph-security-sensitive-issue-completion-review.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`

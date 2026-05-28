@@ -18,6 +18,10 @@ The same pure path classifier can also identify risky issue attempts before
 **Local integration**. That pre-integration use is a review trigger only:
 **Issue completion review** may run for deployable changed paths, but it still
 does not run AWS, Pulumi, or deployment scripts.
+Security-sensitive path classification follows the same review-trigger pattern:
+it can require **Issue completion review**, but it does not change
+**Post-Promotion deployment classification** and does not run deployment,
+scanner, AWS, or Pulumi commands.
 
 ## Decision
 
@@ -136,6 +140,7 @@ failures recorded in the manifests.
   - `tools/ralph-loop/src/ralph_loop/state.py`
   - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `tools/ralph-loop/tests/unit/test_ralph.py`
+  - `docs/adr/0013-ralph-security-sensitive-issue-completion-review.md`
   - `infrastructure/aws-pulumi/scripts/redeploy-user-code`
   - `infrastructure/aws-pulumi/scripts/run-integration-tests`
 - `sync.scope`: `operations, deployment`

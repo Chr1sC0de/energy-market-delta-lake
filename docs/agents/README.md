@@ -20,12 +20,12 @@ Use this page as the agent documentation map. The imperative policy lives in
 
 - Ralph internals, **Local integration**, **Delivery mode**, **Integration
   target**, **Full-access implementation pass**, **Issue completion review**,
-  **Ready issue refresh**, **Exploratory acceptance review**, **Promotion**, and
-  **Post-promotion review**, including **Post-Promotion deployment
-  classification**, source-table archive replay recovery, deploy-repair issue
-  creation after failed checkpointed deployment evidence, adaptive Step size and
-  Stiffness ratio vocabulary, verified-only post-push metadata recovery, and
-  checkpointed Operator runs:
+  **Security-sensitive change**, **Ready issue refresh**, **Exploratory
+  acceptance review**, **Promotion**, and **Post-promotion review**, including
+  **Post-Promotion deployment classification**, source-table archive replay
+  recovery, deploy-repair issue creation after failed checkpointed deployment
+  evidence, adaptive Step size and Stiffness ratio vocabulary, verified-only
+  post-push metadata recovery, and checkpointed Operator runs:
   [ralph-loop.md](ralph-loop.md)
 - GitHub Issue queue rules:
   [issue-tracker.md](issue-tracker.md)
@@ -35,6 +35,8 @@ Use this page as the agent documentation map. The imperative policy lives in
   [domain.md](domain.md)
 - Adaptive Ralph vocabulary and verified-only recovery boundary:
   ADR [0011](../adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md)
+- **Security-sensitive change** review-trigger decision:
+  ADR [0013](../adr/0013-ralph-security-sensitive-issue-completion-review.md)
 - **Gas market knowledge base** and AEMO major publications corpus language and
   architecture:
   ADR [0010](../adr/0010-gas-market-knowledge-base.md) and the
@@ -118,6 +120,7 @@ Use this page as the agent documentation map. The imperative policy lives in
   - `docs/adr/0009-ralph-post-promotion-deployment-classification.md`
   - `docs/adr/0010-gas-market-knowledge-base.md`
   - `docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md`
+  - `docs/adr/0013-ralph-security-sensitive-issue-completion-review.md`
 - `sync.scope`: `operations`
 - `sync.qa`:
   - `git diff --name-only`
