@@ -12252,6 +12252,7 @@ def issue_completion_review_changed_file_lines(
     changed_files: list[str],
     *,
     classification: PostPromotionDeploymentClassification,
+    security_sensitive_paths: tuple[str, ...] = (),
     run_dir: Path | None = None,
 ) -> str:
     if len(changed_files) <= ISSUE_COMPLETION_REVIEW_CHANGED_FILE_VERBATIM_LIMIT:
@@ -12263,6 +12264,7 @@ def issue_completion_review_changed_file_lines(
             *classification.user_code_redeploy_paths,
             *classification.full_workflow_paths,
             *classification.agent_workflow_paths,
+            *security_sensitive_paths,
         ]
     )
     risk_path_set = set(risk_paths)
@@ -13006,6 +13008,7 @@ def issue_completion_review_prompt(
     changed_lines = issue_completion_review_changed_file_lines(
         changed_files,
         classification=trigger.deployment_classification,
+        security_sensitive_paths=trigger.security_sensitive_paths,
         run_dir=run_dir,
     )
     qa_lines = ready_issue_refresh_qa_evidence_lines(qa_results)
@@ -13037,8 +13040,8 @@ def issue_completion_review_prompt(
         after QA passed and before Ralph updates the Integration target, pushes
         trunk, or performs Exploratory handoff. Prioritize concrete incomplete
         work, missed acceptance criteria, wrong changed files, insufficient QA
-        evidence, and risks in deployable or Agent workflow paths. If the work
-        is complete, say so clearly.
+        evidence, and risks in deployable, Agent workflow, or security-sensitive
+        paths. If the work is complete, say so clearly.
 
         Your final response must be a Markdown report with these sections:
 
@@ -13073,6 +13076,10 @@ def issue_completion_review_prompt(
         ```json
         {classification_text}
         ```
+
+        Security-sensitive paths:
+
+        {markdown_bullet_lines(trigger.security_sensitive_paths)}
 
         Changed files:
 
