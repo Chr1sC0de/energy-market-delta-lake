@@ -8,8 +8,11 @@ the bytes in S3-compatible storage. That path stops at media bytes and
 metadata. It does not extract text, build retrieval chunks, create wiki pages,
 write embeddings, or update a vector store.
 Observation-only configured source pages can still add `needs_human_review`
-metadata coverage, such as the AEMO energy-systems major publications hub,
-without landing publication bytes until a later approved slice expands scope.
+metadata coverage without landing publication bytes. A later approved AEMO ETL
+source-family asset, `bronze_aemo_major_publications_hub_downloads`, uses the
+same source-page discovery, direct-media landing/archive, and bronze metadata
+boundary for the AEMO energy-systems major publications hub without adding
+text extraction or corpus-generation side effects to AEMO ETL.
 When live source-page scraping is used outside the packaged manifest path,
 failed HTTP page loads remain auditable metadata-only source-page observations.
 
@@ -63,6 +66,13 @@ document and chunk rendering, retrieval index validation, and gold Markdown
 citation validation. Gas-specific filtering, AEMO gas metadata table defaults,
 bucket naming, and CLI terminology remain outside that core.
 
+The same Subproject also hosts the AEMO major publications corpus fixture
+surface. Its `aemo-publications-corpus build-fixture` command writes deterministic
+fixture bronze, silver, silver index, and gold outputs under
+`$ENERGY_MARKET_CORPUS_ROOT/aemo-major-publications/{bronze,silver,gold}` by
+default while reusing the shared core. This first AEMO-wide corpus slice does
+not consume live `bronze_aemo_major_publications_hub_downloads` metadata.
+
 ## Considered Options
 
 - Keep all work inside AEMO ETL: rejected because PDF extraction, corpus review,
@@ -89,13 +99,14 @@ command surface, dependency files, and maintained README. Future implementation
 issues should add the PDF extraction, chunking, citation, and review workflows
 without moving those side effects into AEMO ETL.
 
-Future corpus tools, including an AEMO major publications corpus, should reuse
-the shared core with their own layout and source metadata policy instead of
-copying the Gas market corpus wrappers.
+Future corpus tools should reuse the shared core with their own layout and
+source metadata policy instead of copying the Gas market corpus wrappers.
 
 AEMO ETL must not grow Docling dependencies or extraction side effects under
-this decision. `bronze_aemo_gas_document_sources` remains the boundary for
-document discovery, raw media landing/archive, and source metadata.
+this decision. The AEMO document bronze metadata assets, including
+`bronze_aemo_gas_document_sources` and
+`bronze_aemo_major_publications_hub_downloads`, remain the boundary for document
+discovery, raw media landing/archive, and source metadata.
 
 The external corpus root and ignored repo `generated/` tree are intentionally
 separate from maintained repository docs. Future **Market context** pages are
@@ -125,7 +136,13 @@ its own ADR.
   - `docs/repository/architecture.md`
   - `docs/repository/workflow.md`
   - `tools/gas-market-knowledge-base/.pre-commit-config.yaml`
+  - `tools/gas-market-knowledge-base/Makefile`
   - `tools/gas-market-knowledge-base/README.md`
+  - `tools/gas-market-knowledge-base/pyproject.toml`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/__init__.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/cli.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/corpus_paths.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/fixture_corpus.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/__init__.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/gold_context.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/manifest.py`
@@ -133,6 +150,7 @@ its own ADR.
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/silver_chunks.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/silver_documents.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_paths.py`
+  - `tools/gas-market-knowledge-base/tests/unit/test_aemo_publications.py`
   - `docs/repository/documentation-sync.md`
   - `backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/aemo_gas_documents.py`
@@ -146,6 +164,7 @@ its own ADR.
 - `sync.qa`:
   - `git diff --name-only`
   - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
+  - `cd tools/gas-market-knowledge-base && make aemo-publications-unit-test`
   - `python3 -m unittest discover -s tests`
   - `prek run -a`
-  - `verify ADR links, Subproject language, and AEMO gas document boundaries`
+  - `verify ADR links, Subproject language, AEMO gas document boundaries, and AEMO major publications fixture boundaries`

@@ -263,19 +263,26 @@ To be added by the shaper.
 """
 
 
-def write_bundle(tmp_path: Path, body: str, *, overrides: dict[str, str] | None = None) -> Path:
+def write_bundle(
+    tmp_path: Path,
+    body: str,
+    *,
+    overrides: dict[str, str] | None = None,
+    classification: str | None = None,
+) -> Path:
+    issue: dict[str, object] = {
+        "id": "harden-ready-issue",
+        "title": "Harden Ralph ready issue handling",
+        "body": body,
+        "labels": ["enhancement", "delivery-gitflow"],
+    }
+    if classification is not None:
+        issue["classification"] = classification
     bundle = {
         "summary": "Shape Ralph issue work.",
         "shared_context": ["Ralph issue drafts need durable context anchors."],
         "operator_overrides": overrides or {},
-        "issues": [
-            {
-                "id": "harden-ready-issue",
-                "title": "Harden Ralph ready issue handling",
-                "body": body,
-                "labels": ["enhancement", "delivery-gitflow"],
-            }
-        ],
+        "issues": [issue],
     }
     bundle_path = tmp_path / "bundle.json"
     bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
@@ -488,6 +495,7 @@ class ShapeIssueGateTests(unittest.TestCase):
             "ratio",
             "ratio_level",
             "recommended_action",
+            "factor_reasons",
         ):
             self.assertIn(field, stiffness)
         self.assertEqual(stiffness["ratio_level"], "low")
@@ -495,8 +503,10 @@ class ShapeIssueGateTests(unittest.TestCase):
         self.assertTrue(math.isfinite(stiffness["ratio"]))
         self.assertIn(
             "safe feedback step raised by local Unit test or Fast check evidence",
-            stiffness["reasons"],
+            stiffness["factor_reasons"],
         )
+        self.assertIn("- Recommended routing action: `ready`", markdown)
+        self.assertIn("- Stiffness factor reasons:", markdown)
 
     def test_stiffness_ratio_levels_cover_expected_bands(self) -> None:
         gate = load_script_module("shape_issue_gate_ratio_bands_under_test", GATE_SCRIPT)
@@ -547,6 +557,9 @@ class ShapeIssueGateTests(unittest.TestCase):
         self.assertIn("- Blocked by draft ids: None", combined)
         self.assertIn("- Gate action: `ready`", combined)
         self.assertIn("- Stiffness summary:", combined)
+        self.assertIn("- Safe feedback step:", combined)
+        self.assertIn("- Hidden-coupling pressure:", combined)
+        self.assertIn("- Recommended routing action: `ready`", combined)
         self.assertIn("- Issue context assessor: `pass`", combined)
         self.assertIn("## What to build", combined)
         self.assertIn("# Harden Ralph ready issue handling", draft)
@@ -554,7 +567,18 @@ class ShapeIssueGateTests(unittest.TestCase):
         self.assertIn("shape-issues-source", draft)
         self.assertIn("- Source digest:", draft)
         self.assertIn("## Draft body", draft)
-        self.assertIn(READY_BODY.strip(), draft)
+        self.assertIn("## Stiffness estimate", draft)
+        self.assertIn("- Step size:", draft)
+        self.assertIn("- Safe feedback step:", draft)
+        self.assertIn("- Hidden-coupling pressure:", draft)
+        self.assertIn("- Stiffness ratio:", draft)
+        self.assertIn("- Ratio level: `low`", draft)
+        self.assertIn("- Recommended routing action: `ready`", draft)
+        self.assertIn("- Computed stiffness score:", draft)
+        self.assertIn("- Computed stiffness level:", draft)
+        self.assertIn("- Declared stiffness level: `low`", draft)
+        self.assertIn("- Declared stiffness mismatch: `false`", draft)
+        self.assertIn("- Factor reasons:\n  -", draft)
 
     def test_issue_draft_markdown_uses_publication_order_and_draft_blockers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -616,6 +640,72 @@ class ShapeIssueGateTests(unittest.TestCase):
         ):
             self.assertIn(line, draft)
             self.assertIn(line, final_body)
+
+    def test_publisher_rejects_stale_bundle_digest(self) -> None:
+        publisher = load_script_module(
+            "shape_issues_publisher_stale_bundle_under_test",
+            PUBLISHER_SCRIPT,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            bundle_path = write_bundle(tmp_path, READY_BODY, classification="afk")
+            result = run_gate(bundle_path, tmp_path)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            report_path = tmp_path / "report.json"
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+            payload["bundle_digest"] = "0" * 64
+            report_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            bundle = publisher.parse_bundle(bundle_path)
+            report = publisher.parse_gate_report(report_path)
+
+        with self.assertRaisesRegex(
+            publisher.PublishError,
+            "Bundle changed after gate report was written",
+        ):
+            publisher.validate_publishable(
+                bundle,
+                report,
+                confirm_publish=True,
+                dry_run=True,
+                allow_fixture_publish=False,
+                bundle_path=bundle_path,
+            )
+
+    def test_publisher_rejects_stale_issue_source_digest(self) -> None:
+        publisher = load_script_module(
+            "shape_issues_publisher_stale_issue_under_test",
+            PUBLISHER_SCRIPT,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            bundle_path = write_bundle(tmp_path, READY_BODY, classification="afk")
+            result = run_gate(bundle_path, tmp_path)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            report_path = tmp_path / "report.json"
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+            payload["issues"][0]["source_digest"] = "0" * 64
+            report_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            bundle = publisher.parse_bundle(bundle_path)
+            report = publisher.parse_gate_report(report_path)
+
+        with self.assertRaisesRegex(
+            publisher.PublishError,
+            "Issue harden-ready-issue changed after gate report was written",
+        ):
+            publisher.validate_publishable(
+                bundle,
+                report,
+                confirm_publish=True,
+                dry_run=True,
+                allow_fixture_publish=False,
+                bundle_path=bundle_path,
+            )
 
     def test_operator_approval_evidence_is_reported_not_permission(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

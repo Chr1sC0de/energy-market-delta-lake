@@ -35,7 +35,8 @@ Use this page as the agent documentation map. The imperative policy lives in
   [domain.md](domain.md)
 - Adaptive Ralph vocabulary and verified-only recovery boundary:
   ADR [0011](../adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md)
-- **Gas market knowledge base** language and architecture:
+- **Gas market knowledge base** and AEMO major publications corpus language and
+  architecture:
   ADR [0010](../adr/0010-gas-market-knowledge-base.md) and the
   [Subproject README](../../tools/gas-market-knowledge-base/README.md).
 

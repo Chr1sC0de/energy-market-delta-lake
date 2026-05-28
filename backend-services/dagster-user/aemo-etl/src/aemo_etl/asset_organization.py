@@ -47,6 +47,7 @@ SOURCE_REPORT_FAMILIES: Final[tuple[SourceReportFamily, ...]] = (
 GAS_INGESTION_DISCOVERY_GROUP: Final = "gas_ingestion_discovery"
 GAS_INGESTION_UNZIP_GROUP: Final = "gas_ingestion_unzip"
 GAS_AEMO_GAS_DOCUMENTS_GROUP: Final = "gas_aemo_gas_documents"
+GAS_AEMO_MAJOR_PUBLICATIONS_GROUP: Final = "gas_aemo_major_publications"
 GAS_METADATA_GROUP: Final = "gas_metadata"
 
 GAS_MODEL_DIMENSIONS_GROUP: Final = "gas_model_dimensions"

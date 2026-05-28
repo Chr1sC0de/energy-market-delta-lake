@@ -197,12 +197,18 @@ sequenceDiagram
     autonumber
     participant Discovery as aemo-refresh-gas-document-media-manifest
     participant Manifest as Checked-in media manifest
+    participant MajorHub as AEMO major publications hub
     participant AEMO as AEMO direct media URLs
     participant Schedule as bronze_aemo_gas_document_sources_job_schedule
     participant Docs as bronze_aemo_gas_document_sources
+    participant MajorSchedule as bronze_aemo_major_publications_hub_downloads_schedule
+    participant MajorDocs as bronze_aemo_major_publications_hub_downloads
     participant Landing as LANDING_BUCKET/bronze/aemo_gas_documents
+    participant MajorLanding as LANDING_BUCKET/bronze/aemo_major_publications
     participant DeltaDocs as AEMO Delta metadata table
+    participant MajorDelta as AEMO major publications Delta table
     participant Archive as ARCHIVE_BUCKET/bronze/aemo_gas_documents
+    participant MajorArchive as ARCHIVE_BUCKET/bronze/aemo_major_publications
 
     Discovery->>AEMO: Manually visit configured source pages with Playwright
     Discovery->>Manifest: Write non-empty manifest and validation report JSON
@@ -214,12 +220,19 @@ sequenceDiagram
     Docs->>Landing: Write included media bytes by content_sha256 and safe suffix
     Docs->>DeltaDocs: Merge bronze_aemo_gas_document_sources metadata rows
     Docs->>Archive: Copy landed media after metadata write, then delete from landing
+    MajorSchedule->>MajorDocs: Run daily after manifest-backed asset window
+    MajorDocs->>MajorHub: Discover hub and child publication pages live
+    MajorDocs->>AEMO: Download included public publication media
+    MajorDocs->>MajorDocs: Count source pages, included downloads, failures, review-needed rows
+    MajorDocs->>MajorLanding: Write included media bytes by content_sha256 and safe suffix
+    MajorDocs->>MajorDelta: Merge bronze_aemo_major_publications_hub_downloads metadata rows
+    MajorDocs->>MajorArchive: Copy landed media after metadata write, then delete from landing
 ```
 
 Trigger and output notes:
 
-- The asset is registered by `src/aemo_etl/defs/raw/aemo_gas_documents.py` and
-  built by `factories/aemo_gas_documents`.
+- The assets are registered by `src/aemo_etl/defs/raw/aemo_gas_documents.py`
+  and built by `factories/aemo_gas_documents`.
 - Daily materialization reads the checked-in media manifest from the package and
   does not fetch AEMO source-page HTML. The manifest is expected to contain
   direct `https://www.aemo.com.au/-/media/...` media-link observations, so the
@@ -231,21 +244,29 @@ Trigger and output notes:
   status, HTTP metadata, resolved URLs, and validation errors in the discovery
   report, holds failed validation rows in the manifest with
   `should_download=false`, and preserves existing manifest entries when a source
-  page is blocked or unreadable. Observation-only configured source pages,
-  including the AEMO energy-systems major publications hub, keep hub and public
-  media-link coverage as `needs_human_review` metadata until a later approved
-  scope marks publication observations downloadable.
+  page is blocked or unreadable. The manifest-backed gas document source keeps
+  the AEMO energy-systems major publications hub as observation-only
+  `needs_human_review` metadata; `bronze_aemo_major_publications_hub_downloads`
+  is the approved live-discovery source family for landing public publication
+  bytes under `bronze/aemo_major_publications`.
+- The major-publications asset key is
+  `bronze/aemo_major_publications/bronze_aemo_major_publications_hub_downloads`
+  and its visual group is `gas_aemo_major_publications`. Its materialization
+  metadata includes target table URI, landing/archive roots, source page count,
+  included download count, failed count, and review-needed count. Validate this
+  source family with `make component-test` for the AEMO ETL **Component test**
+  lane and `make run-prek` for the AEMO ETL **Commit check**.
 - Included media links produce content-addressed objects with safe URL or
   content-type suffixes, plus metadata rows with source URL, resolved URL,
   source page, include decision, `content_sha256`, content type, content length,
   target key, document family/version fields, and archive `storage_uri`.
 - Excluded and `needs_human_review` source-page or source-link observations,
   plus failed direct-media validation source-link observations, are retained in
-  `bronze_aemo_gas_document_sources` without landing media bytes. Failed
-  validation rows are not requested by the daily asset path until a later
-  manifest refresh marks them downloadable. If a manifest row marked
-  `should_download=true` still fails during daily materialization, the asset
-  records a metadata-only row with the failure reason and increments
+  their metadata Delta tables without landing media bytes. Failed validation
+  rows are not requested by the manifest-backed daily asset path until a later
+  manifest refresh marks them downloadable. If a row marked
+  `should_download=true` still fails during materialization, the asset records a
+  metadata-only row with the failure reason and increments
   `failed_download_count`. Custom live-scrape uses of the factory record failed
   HTTP page loads as metadata-only source-page observations before continuing to
   later configured pages.

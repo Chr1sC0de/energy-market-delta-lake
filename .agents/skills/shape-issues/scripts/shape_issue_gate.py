@@ -1580,6 +1580,7 @@ def evaluate_bundle(
                     "declared_level": stiffness.declared_level,
                     "declared_mismatch": declared_mismatch,
                     "reasons": list(stiffness.reasons),
+                    "factor_reasons": list(stiffness.reasons),
                     "ignored_terms": list(stiffness.ignored_terms),
                     "surface_areas": list(stiffness.surface_areas),
                 },
@@ -1679,17 +1680,7 @@ def report_markdown(report: dict[str, Any]) -> str:
                 f"- Context confidence: `{context_assessment['confidence']}`",
                 f"- Context corpus digest: `{issue['context_corpus']['digest']}`",
                 f"- Stiffness: `{issue['stiffness']['score']}` ({issue['stiffness']['level']})",
-                (
-                    f"- Stiffness ratio: `{issue['stiffness']['ratio']}` "
-                    f"({issue['stiffness']['ratio_level']}; "
-                    f"recommended action: `{issue['stiffness']['recommended_action']}`)"
-                ),
-                f"- Step size: `{issue['stiffness']['step_size']}`",
-                f"- Safe feedback step: `{issue['stiffness']['safe_feedback_step']}`",
-                (
-                    "- Hidden-coupling pressure: "
-                    f"`{issue['stiffness']['hidden_coupling_pressure']}`"
-                ),
+                *structured_stiffness_evidence_lines(issue["stiffness"]),
                 "- Stiffness surface areas: "
                 + ", ".join(f"`{area}`" for area in issue["stiffness"]["surface_areas"]),
             ]
@@ -1720,13 +1711,33 @@ def report_markdown(report: dict[str, Any]) -> str:
             f"  - `{entry['path']}` ({entry['source']}, {len(entry['snippets'])} snippet(s))"
             for entry in issue["context_corpus"]["evidence"]
         )
-        lines.append("- Stiffness reasons:")
-        lines.extend(f"  - {reason}" for reason in issue["stiffness"]["reasons"])
+        lines.append("- Stiffness factor reasons:")
+        lines.extend(
+            f"  - {reason}" for reason in stiffness_factor_reasons(issue["stiffness"])
+        )
         if issue["stiffness"]["ignored_terms"]:
             lines.append("- Ignored stiffness mentions:")
             lines.extend(f"  - {term}" for term in issue["stiffness"]["ignored_terms"])
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def stiffness_factor_reasons(stiffness: dict[str, Any]) -> list[str]:
+    reasons = stiffness.get("factor_reasons")
+    if isinstance(reasons, list):
+        return [str(reason) for reason in reasons]
+    return [str(reason) for reason in stiffness.get("reasons", [])]
+
+
+def structured_stiffness_evidence_lines(stiffness: dict[str, Any]) -> list[str]:
+    return [
+        f"- Step size: `{stiffness['step_size']}`",
+        f"- Safe feedback step: `{stiffness['safe_feedback_step']}`",
+        f"- Hidden-coupling pressure: `{stiffness['hidden_coupling_pressure']}`",
+        f"- Stiffness ratio: `{stiffness['ratio']}`",
+        f"- Ratio level: `{stiffness['ratio_level']}`",
+        f"- Recommended routing action: `{stiffness['recommended_action']}`",
+    ]
 
 
 def bundle_reference(bundle_path: Path) -> str:
@@ -1801,11 +1812,7 @@ def draft_review_metadata_lines(
         f"- Blocked by draft ids: {blocked_by}",
         f"- Gate action: `{report_issue['action']}`",
         f"- Stiffness summary: `{stiffness['score']}` ({stiffness['level']})",
-        (
-            f"- Stiffness ratio: `{stiffness['ratio']}` "
-            f"({stiffness['ratio_level']}; "
-            f"recommended action: `{stiffness['recommended_action']}`)"
-        ),
+        *structured_stiffness_evidence_lines(stiffness),
         (
             "- Issue context assessor: "
             f"`{context_assessment['verdict']}` "
@@ -1832,6 +1839,55 @@ def draft_source_lines(bundle_path: Path, issue: IssueDraft) -> list[str]:
     ]
 
 
+def replace_markdown_section(markdown: str, heading: str, body: str) -> str:
+    pattern = re.compile(
+        rf"(?ims)^(?P<header>#{{1,6}}\s+{re.escape(heading)}\s*$\n)"
+        rf"(?P<body>.*?)(?=^#{{1,6}}\s+\S|\Z)"
+    )
+    replacement = f"## {heading}\n\n{body.strip()}\n\n"
+    if pattern.search(markdown) is None:
+        return markdown.rstrip() + "\n\n" + replacement
+    return pattern.sub(lambda _match: replacement, markdown).rstrip() + "\n"
+
+
+def structured_stiffness_estimate_body(report_issue: dict[str, Any]) -> str:
+    stiffness = report_issue["stiffness"]
+    lines = [
+        *structured_stiffness_evidence_lines(stiffness),
+        f"- Computed stiffness score: `{stiffness['score']}`",
+        f"- Computed stiffness level: `{stiffness['level']}`",
+    ]
+    declared_level = stiffness["declared_level"]
+    if declared_level is not None:
+        lines.extend(
+            [
+                f"- Declared stiffness level: `{declared_level}`",
+                (
+                    "- Declared stiffness mismatch: "
+                    f"`{str(stiffness['declared_mismatch']).lower()}`"
+                ),
+            ]
+        )
+    lines.append("- Factor reasons:")
+    factor_reasons = stiffness_factor_reasons(stiffness)
+    if factor_reasons:
+        lines.extend(f"  - {reason}" for reason in factor_reasons)
+    else:
+        lines.append("  - None")
+    return "\n".join(lines)
+
+
+def draft_body_with_structured_stiffness(
+    issue: IssueDraft,
+    report_issue: dict[str, Any],
+) -> str:
+    return replace_markdown_section(
+        issue.body.strip(),
+        "Stiffness estimate",
+        structured_stiffness_estimate_body(report_issue),
+    ).strip()
+
+
 def per_draft_markdown(
     issue: IssueDraft,
     report_issue: dict[str, Any],
@@ -1856,7 +1912,7 @@ def per_draft_markdown(
         "",
         "## Draft body",
         "",
-        issue.body.strip(),
+        draft_body_with_structured_stiffness(issue, report_issue),
         "",
     ]
     return "\n".join(lines).rstrip() + "\n"
@@ -1905,7 +1961,7 @@ def combined_issue_drafts_markdown(
                 "",
                 "#### Draft body",
                 "",
-                issue.body.strip(),
+                draft_body_with_structured_stiffness(issue, report_issue),
                 "",
             ]
         )

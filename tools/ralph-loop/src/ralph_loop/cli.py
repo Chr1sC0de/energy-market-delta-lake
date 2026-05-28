@@ -4146,6 +4146,7 @@ class RalphLoop:
                 post_push_error = PostPushFailure(
                     f"Post-push promotion metadata failed: {error}",
                     log_path=error.log_path,
+                    manifest_path=manifest.path,
                 )
                 emit(str(post_push_error), err=True)
                 raise post_push_error from error
@@ -5472,6 +5473,7 @@ class RalphLoop:
                 post_push_error = PostPushFailure(
                     f"Post-push issue metadata failed for #{issue.number}: {error}",
                     log_path=error.log_path,
+                    manifest_path=manifest.path if manifest is not None else None,
                 )
                 if manifest is not None:
                     manifest.record_failure(post_push_error, log_path=error.log_path)
@@ -7519,12 +7521,113 @@ class RalphOperatorRun:
         except RalphSelfUpdateRestartRequired as error:
             self._record_drain_scheduler_child_checkpoints(before_paths)
             self._stop_for_ralph_self_update_restart(error)
+        except PostPushFailure as error:
+            new_paths = self._drain_scheduler_child_manifest_paths(before_paths)
+            try:
+                recovered = self._recover_verified_post_push_metadata(
+                    error,
+                    child_manifest_paths=new_paths,
+                )
+            except RalphError as recovery_error:
+                self._record_drain_scheduler_child_checkpoints(before_paths)
+                guidance = operator_drain_scheduler_failure_guidance(
+                    recovery_error,
+                    new_paths,
+                )
+                self.manifest.record_failure(
+                    recovery_error,
+                    recovery_guidance=guidance,
+                )
+                raise
+            self._record_drain_scheduler_child_checkpoints(before_paths)
+            if recovered:
+                return
+            guidance = operator_drain_scheduler_failure_guidance(error, new_paths)
+            self.manifest.record_failure(error, recovery_guidance=guidance)
+            raise
         except RalphError as error:
             new_paths = self._record_drain_scheduler_child_checkpoints(before_paths)
             guidance = operator_drain_scheduler_failure_guidance(error, new_paths)
             self.manifest.record_failure(error, recovery_guidance=guidance)
             raise
         self._record_drain_scheduler_child_checkpoints(before_paths)
+
+    def _drain_scheduler_child_manifest_paths(
+        self,
+        before_paths: set[Path],
+    ) -> list[Path]:
+        return sorted(
+            implementation_child_manifest_paths(self.config.log_root) - before_paths,
+            key=child_manifest_sort_key,
+        )
+
+    def _recover_verified_post_push_metadata(
+        self,
+        error: PostPushFailure,
+        *,
+        child_manifest_paths: list[Path],
+    ) -> bool:
+        candidate_paths = list(child_manifest_paths)
+        if (
+            error.manifest_path is not None
+            and error.manifest_path not in candidate_paths
+        ):
+            candidate_paths.append(error.manifest_path)
+
+        recovered = False
+        for manifest_path in candidate_paths:
+            manifest = self._load_post_push_recovery_candidate(manifest_path)
+            if manifest is None:
+                continue
+            issue_number = manifest_issue_number(manifest)
+            emit(
+                "Operator verified post-push metadata recovery: "
+                f"checking issue #{issue_number} from {manifest.path}."
+            )
+            RalphRunRecovery(self.config, self.runner).recover_verified_metadata(
+                manifest,
+                mark_success=True,
+            )
+            self.manifest.record_checkpoint(
+                "issue_metadata_recovered",
+                message=f"Issue #{issue_number} post-push metadata recovered.",
+                child_manifest_path=manifest.path,
+                issue_payload=child_manifest_issue_payload(manifest.path),
+                details={
+                    "metadata_status": metadata_status_value(manifest),
+                    "integration_target": manifest_integration_target(manifest),
+                    "integration_commit": manifest_integration_commit(manifest)[0],
+                },
+            )
+            recovered = True
+        return recovered
+
+    def _load_post_push_recovery_candidate(
+        self,
+        manifest_path: Path,
+    ) -> RunManifest | None:
+        try:
+            manifest = load_run_manifest(manifest_path.parent)
+        except RalphError:
+            return None
+        if str(manifest.data.get("run_kind") or "") != "implementation":
+            return None
+        if not manifest_has_recorded_integration_commit(manifest):
+            return None
+        if push_status_value(manifest) != "pushed":
+            return None
+        try:
+            complete_status = metadata_recovery_complete_status(
+                manifest_delivery_mode(manifest)
+            )
+        except (RalphError, ValueError):
+            return None
+        if (
+            metadata_status_value(manifest) == complete_status
+            and str(manifest.data.get("status") or "") == "succeeded"
+        ):
+            return None
+        return manifest
 
     def _record_active_child_manifest(self, child_manifest: RunManifest) -> None:
         with self._active_child_lock:
@@ -7639,6 +7742,60 @@ class RalphOperatorRun:
             child_manifest = self.loop._handle_implementation(issue)
             if child_manifest is not None:
                 manifest_path = child_manifest.path
+        except PostPushFailure as error:
+            manifest_path = error.manifest_path or latest_child_manifest_path(
+                self.config.log_root,
+                prefix=f"issue-{issue.number}-",
+            )
+            candidate_paths = [manifest_path] if manifest_path is not None else []
+            try:
+                recovered = self._recover_verified_post_push_metadata(
+                    error,
+                    child_manifest_paths=candidate_paths,
+                )
+            except RalphError as recovery_error:
+                guidance = operator_issue_failure_guidance(issue, manifest_path)
+                self.manifest.record_checkpoint(
+                    "issue_failed",
+                    message=f"Issue #{issue.number} metadata recovery failed.",
+                    child_manifest_path=manifest_path,
+                    issue=issue,
+                    status="failed",
+                    recovery_guidance=guidance,
+                )
+                self.manifest.record_failure(
+                    recovery_error,
+                    recovery_guidance=guidance,
+                    child_manifest_path=manifest_path,
+                )
+                raise
+            if recovered:
+                self.manifest.record_checkpoint(
+                    "issue_succeeded",
+                    message=f"Issue #{issue.number} completed after metadata recovery.",
+                    child_manifest_path=manifest_path,
+                    issue=issue,
+                )
+                self.manifest.clear_current()
+                self._stop_if_child_manifest_requires_ralph_self_update_restart(
+                    manifest_path
+                )
+                return
+            guidance = operator_issue_failure_guidance(issue, manifest_path)
+            self.manifest.record_checkpoint(
+                "issue_failed",
+                message=f"Issue #{issue.number} failed.",
+                child_manifest_path=manifest_path,
+                issue=issue,
+                status="failed",
+                recovery_guidance=guidance,
+            )
+            self.manifest.record_failure(
+                error,
+                recovery_guidance=guidance,
+                child_manifest_path=manifest_path,
+            )
+            raise
         except RalphError as error:
             manifest_path = latest_child_manifest_path(
                 self.config.log_root,
@@ -9511,6 +9668,18 @@ def metadata_recovery_complete_status(mode: str) -> str:
     raise ValueError(f"Unsupported delivery mode: {mode}")
 
 
+def qa_results_passed_for_metadata_recovery(manifest: RunManifest) -> bool:
+    results = manifest.data.get("qa_results")
+    if not isinstance(results, list) or not results:
+        return False
+    statuses = [
+        str(item.get("status") or "unknown")
+        for item in results
+        if isinstance(item, dict)
+    ]
+    return bool(statuses) and all(status == "passed" for status in statuses)
+
+
 def manifest_has_recorded_integration_commit(manifest: RunManifest) -> bool:
     return (
         normalized_commit_payload(manifest.data.get("integration_commit")) is not None
@@ -10599,14 +10768,64 @@ class RalphRunRecovery:
                 "for post-push metadata recovery state."
             )
 
+        self.recover_verified_metadata(manifest)
+
+    def recover_verified_metadata(
+        self,
+        manifest: RunManifest,
+        *,
+        mark_success: bool = False,
+    ) -> None:
         issue_number = manifest_issue_number(manifest)
         delivery_mode = manifest_delivery_mode(manifest)
         target_branch = manifest_integration_target(manifest)
         commit_sha, commit_branch = manifest_integration_commit(manifest)
         if commit_branch != target_branch:
+            self._record_metadata_recovery_hard_stop(
+                manifest,
+                trigger_reason=(
+                    "Run manifest integration commit branch does not match the "
+                    "expected Integration target."
+                ),
+                residual_work_summary=(
+                    f"Inspect the manifest before reconciling issue #{issue_number} "
+                    "metadata."
+                ),
+            )
             raise RalphError(
                 "Run manifest integration commit branch does not match the expected "
                 f"Integration target: {commit_branch} != {target_branch}"
+            )
+        push_status = push_status_value(manifest)
+        if push_status != "pushed":
+            self._record_metadata_recovery_hard_stop(
+                manifest,
+                trigger_reason=(
+                    "Run manifest does not record a pushed Integration target."
+                ),
+                residual_work_summary=(
+                    f"Do not reconcile issue #{issue_number} metadata until the "
+                    "Push check boundary is verified."
+                ),
+            )
+            raise RalphError(
+                "Run manifest does not record a pushed Integration target; "
+                f"push status is {push_status}."
+            )
+        if not qa_results_passed_for_metadata_recovery(manifest):
+            self._record_metadata_recovery_hard_stop(
+                manifest,
+                trigger_reason=(
+                    "Run manifest does not record passed QA evidence for metadata "
+                    "recovery."
+                ),
+                residual_work_summary=(
+                    f"Inspect issue #{issue_number} QA evidence before metadata "
+                    "recovery."
+                ),
+            )
+            raise RalphError(
+                "Run manifest does not record passed QA evidence for metadata recovery."
             )
 
         recovery_run_dir = manifest_run_dir(manifest)
@@ -10616,6 +10835,17 @@ class RalphRunRecovery:
             ancestor=commit_sha,
             descendant=f"origin/{target_branch}",
         ):
+            self._record_metadata_recovery_hard_stop(
+                manifest,
+                trigger_reason=(
+                    "Recorded integration commit is not reachable from the expected "
+                    "Integration target."
+                ),
+                residual_work_summary=(
+                    f"Inspect origin/{target_branch}, commit {commit_sha}, and "
+                    f"issue #{issue_number} metadata before manual recovery."
+                ),
+            )
             raise RalphError(
                 f"Recorded integration commit {commit_sha} is not reachable from "
                 f"expected Integration target origin/{target_branch}."
@@ -10626,6 +10856,40 @@ class RalphRunRecovery:
                 "recovery_reachability_verified",
                 details={"commit": commit_sha, "integration_target": target_branch},
             )
+            complete_status = metadata_recovery_complete_status(delivery_mode)
+            manifest.record_adaptive_event(
+                "residual_update",
+                trigger_reason=(
+                    "Post-push GitHub metadata recovery verified the recorded "
+                    "integration commit on the expected Integration target."
+                ),
+                issue_number=issue_number,
+                residual_work_summary=(
+                    f"Reconcile issue metadata to `{complete_status}` for "
+                    f"commit {commit_sha} on origin/{target_branch}."
+                ),
+            )
+            if metadata_status_value(manifest) == complete_status:
+                manifest.record_event(
+                    "verified_metadata_recovery_already_complete",
+                    details={
+                        "issue_number": issue_number,
+                        "commit": commit_sha,
+                        "integration_target": target_branch,
+                        "metadata_status": complete_status,
+                    },
+                )
+                emit(
+                    f"Verified issue #{issue_number} metadata already complete "
+                    f"for {commit_sha}."
+                )
+                if mark_success:
+                    manifest.record_drain_scheduler_fatal_stop_recovered()
+                    manifest.record_success(
+                        "verified_metadata_recovery_already_complete"
+                    )
+                return
+
             issue = self.github.view_issue(issue_number)
             self._recover_completion_comment(
                 manifest,
@@ -10656,6 +10920,9 @@ class RalphRunRecovery:
                 )
             else:
                 raise ValueError(f"Unsupported delivery mode: {delivery_mode}")
+            if mark_success:
+                manifest.record_drain_scheduler_fatal_stop_recovered()
+                manifest.record_success("verified_metadata_recovered")
         except CommandFailure as error:
             manifest.record_metadata_status(
                 "failed",
@@ -10664,7 +10931,21 @@ class RalphRunRecovery:
             raise PostPushFailure(
                 f"Run recovery metadata failed for #{issue_number}: {error}",
                 log_path=error.log_path,
+                manifest_path=manifest.path,
             ) from error
+
+    def _record_metadata_recovery_hard_stop(
+        self,
+        manifest: RunManifest,
+        *,
+        trigger_reason: str,
+        residual_work_summary: str,
+    ) -> None:
+        manifest.record_adaptive_event(
+            "hard_stop",
+            trigger_reason=trigger_reason,
+            residual_work_summary=residual_work_summary,
+        )
 
     def _recover_pre_push_requeue(self, manifest: RunManifest) -> None:
         run_dir = manifest_run_dir(manifest)

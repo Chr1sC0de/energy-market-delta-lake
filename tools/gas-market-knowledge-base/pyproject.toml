@@ -20,6 +20,7 @@ dependencies = [
   "docling>=2.93",
   "polars>=1.38.1",
 ]
+scripts.aemo-publications-corpus = "gas_market_knowledge_base.aemo_publications.cli:main"
 scripts.gas-market-kb = "gas_market_knowledge_base.cli:main"
 
 [dependency-groups]

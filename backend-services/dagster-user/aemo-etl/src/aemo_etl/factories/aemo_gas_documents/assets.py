@@ -27,10 +27,15 @@ from polars import Datetime, Int64, LazyFrame, Schema, String
 from requests import RequestException, Response
 from types_boto3_s3 import S3Client
 
-from aemo_etl.asset_organization import GAS_AEMO_GAS_DOCUMENTS_GROUP
+from aemo_etl.asset_organization import (
+    GAS_AEMO_GAS_DOCUMENTS_GROUP,
+    GAS_AEMO_MAJOR_PUBLICATIONS_GROUP,
+)
 from aemo_etl.configs import AEMO_BUCKET, ARCHIVE_BUCKET, DAGSTER_URI, LANDING_BUCKET
 from aemo_etl.defs.resources import SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY
 from aemo_etl.factories.aemo_gas_documents.models import (
+    AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+    AEMO_MAJOR_PUBLICATIONS_HUB_URL,
     AEMOGasDocumentPendingObservation,
     AEMOGasDocumentSourcePage,
     AEMOGasDocumentSourceRecord,
@@ -53,6 +58,26 @@ from aemo_etl.utils import (
 AEMO_GAS_DOCUMENTS_DOMAIN = "aemo_gas_documents"
 BRONZE_AEMO_GAS_DOCUMENT_SOURCES_TABLE_NAME = "bronze_aemo_gas_document_sources"
 AEMO_GAS_DOCUMENTS_PREFIX = f"bronze/{AEMO_GAS_DOCUMENTS_DOMAIN}"
+AEMO_MAJOR_PUBLICATIONS_DOMAIN = "aemo_major_publications"
+BRONZE_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOADS_TABLE_NAME = (
+    "bronze_aemo_major_publications_hub_downloads"
+)
+AEMO_MAJOR_PUBLICATIONS_PREFIX = f"bronze/{AEMO_MAJOR_PUBLICATIONS_DOMAIN}"
+DEFAULT_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOAD_SOURCE_PAGES = (
+    AEMOGasDocumentSourcePage(
+        corpus_source=AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+        source_page_url=AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+        include_decision="include",
+        include_reason=(
+            "Approved major-publications hub corpus source. Public AEMO media "
+            "links are downloaded, landed, and archived for downstream corpus "
+            "generation."
+        ),
+        source_page_title="Major publications",
+        source_page_section="Energy systems major publications",
+        discover_child_pages=True,
+    ),
+)
 SURROGATE_KEY_COLUMNS = [
     "observation_type",
     "source_page_url",
@@ -372,10 +397,11 @@ def _media_key(
     content_sha256: str,
     source_url: str,
     content_type: str | None,
+    storage_prefix: str = AEMO_GAS_DOCUMENTS_PREFIX,
 ) -> str:
     """Return the canonical S3 key for a downloaded media byte version."""
     extension = _media_extension(source_url=source_url, content_type=content_type)
-    return f"{AEMO_GAS_DOCUMENTS_PREFIX}/{content_sha256}{extension}"
+    return f"{storage_prefix}/{content_sha256}{extension}"
 
 
 def _empty_record(
@@ -529,6 +555,7 @@ def scrape_and_land_aemo_gas_document_sources(
     request_getter: Callable[[str], Response] = request_get_aemo_gas_document,
     landing_bucket: str = LANDING_BUCKET,
     archive_bucket: str = ARCHIVE_BUCKET,
+    storage_prefix: str = AEMO_GAS_DOCUMENTS_PREFIX,
     observed_at: datetime | None = None,
 ) -> AEMOGasDocumentScrapeResult:
     """Scrape metadata rows and land included media bytes to S3-compatible storage."""
@@ -543,6 +570,7 @@ def scrape_and_land_aemo_gas_document_sources(
         request_getter=request_getter,
         landing_bucket=landing_bucket,
         archive_bucket=archive_bucket,
+        storage_prefix=storage_prefix,
     )
 
 
@@ -553,6 +581,7 @@ def land_aemo_gas_document_observations(
     request_getter: Callable[[str], Response] = request_get_aemo_gas_document,
     landing_bucket: str = LANDING_BUCKET,
     archive_bucket: str = ARCHIVE_BUCKET,
+    storage_prefix: str = AEMO_GAS_DOCUMENTS_PREFIX,
     logger: object | None = None,
 ) -> AEMOGasDocumentScrapeResult:
     """Land included media bytes and return metadata for pending observations."""
@@ -598,6 +627,7 @@ def land_aemo_gas_document_observations(
                 content_sha256=content_sha256,
                 source_url=resolved_url,
                 content_type=content_type,
+                storage_prefix=storage_prefix,
             )
         included_media_count += 1
         if content_sha256 not in landed_keys_by_hash:
@@ -734,12 +764,26 @@ def _asset_metadata(
     scrape_result: AEMOGasDocumentScrapeResult,
     write_result: AEMOGasDocumentSourceWriteResult,
     archived_keys: list[str],
+    target_table_uri: str,
+    landing_root: str,
+    archive_root: str,
 ) -> dict[str, RawMetadataValue]:
     """Return stable Dagster materialization metadata."""
+    source_page_count = sum(
+        record.observation_type == "source_page" for record in scrape_result.records
+    )
     return {
         "dagster/row_count": write_result.row_count,
+        "target_table_uri": target_table_uri,
+        "storage_uri": target_table_uri,
+        "s3_landing_root": landing_root,
+        "s3_archive_root": archive_root,
+        "source_page_count": source_page_count,
         "write_mode": write_result.write_mode,
         "wrote_table": write_result.wrote_table,
+        "included_download_count": scrape_result.included_media_count,
+        "failed_count": scrape_result.failed_download_count,
+        "review_needed_count": scrape_result.needs_human_review_observation_count,
         "included_media_count": scrape_result.included_media_count,
         "excluded_observation_count": scrape_result.excluded_observation_count,
         "needs_human_review_observation_count": (
@@ -760,22 +804,25 @@ def aemo_gas_document_sources_asset_factory(
     landing_bucket: str = LANDING_BUCKET,
     archive_bucket: str = ARCHIVE_BUCKET,
     aemo_bucket: str = AEMO_BUCKET,
+    table_name: str = BRONZE_AEMO_GAS_DOCUMENT_SOURCES_TABLE_NAME,
+    asset_domain: str = AEMO_GAS_DOCUMENTS_DOMAIN,
+    storage_prefix: str | None = None,
     **asset_kwargs: Unpack[AssetDefinitonParamSpec],
 ) -> AssetsDefinition:
     """Create the AEMO gas document-source metadata bronze asset."""
     source_pages_tuple = tuple(source_pages)
+    resolved_storage_prefix = storage_prefix or f"bronze/{asset_domain}"
     if observation_loader is None:
         observation_loader = _default_observation_loader(
             source_pages=source_pages_tuple,
             request_getter=request_getter,
         )
 
-    target_table_uri = (
-        f"s3://{aemo_bucket}/{AEMO_GAS_DOCUMENTS_PREFIX}/"
-        f"{BRONZE_AEMO_GAS_DOCUMENT_SOURCES_TABLE_NAME}"
-    )
-    asset_kwargs.setdefault("key_prefix", ["bronze", AEMO_GAS_DOCUMENTS_DOMAIN])
-    asset_kwargs.setdefault("name", BRONZE_AEMO_GAS_DOCUMENT_SOURCES_TABLE_NAME)
+    target_table_uri = f"s3://{aemo_bucket}/{resolved_storage_prefix}/{table_name}"
+    landing_root = f"s3://{landing_bucket}/{resolved_storage_prefix}"
+    archive_root = f"s3://{archive_bucket}/{resolved_storage_prefix}"
+    asset_kwargs.setdefault("key_prefix", ["bronze", asset_domain])
+    asset_kwargs.setdefault("name", table_name)
     asset_kwargs.setdefault("group_name", GAS_AEMO_GAS_DOCUMENTS_GROUP)
     asset_kwargs.setdefault("io_manager_key", SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY)
     asset_kwargs.setdefault("kinds", {"source", "table", "deltalake"})
@@ -790,14 +837,13 @@ def aemo_gas_document_sources_asset_factory(
     caller_metadata = asset_kwargs.get("metadata") or {}
     asset_kwargs["metadata"] = {
         DAGSTER_URI: target_table_uri,
-        "dagster/table_name": (
-            f"aemo.{AEMO_GAS_DOCUMENTS_DOMAIN}."
-            f"{BRONZE_AEMO_GAS_DOCUMENT_SOURCES_TABLE_NAME}"
-        ),
+        "dagster/table_name": f"aemo.{asset_domain}.{table_name}",
         "dagster/column_schema": get_metadata_schema(SCHEMA, DESCRIPTIONS),
+        "target_table_uri": target_table_uri,
+        "configured_source_page_count": len(source_pages_tuple),
         "surrogate_key_sources": MetadataValue.json(SURROGATE_KEY_COLUMNS),
-        "s3_landing_root": f"s3://{landing_bucket}/{AEMO_GAS_DOCUMENTS_PREFIX}",
-        "s3_archive_root": f"s3://{archive_bucket}/{AEMO_GAS_DOCUMENTS_PREFIX}",
+        "s3_landing_root": landing_root,
+        "s3_archive_root": archive_root,
         **caller_metadata,
     }
 
@@ -814,6 +860,7 @@ def aemo_gas_document_sources_asset_factory(
             request_getter=request_getter,
             landing_bucket=landing_bucket,
             archive_bucket=archive_bucket,
+            storage_prefix=resolved_storage_prefix,
             logger=context.log,
         )
         batch = records_to_lazyframe(
@@ -838,10 +885,56 @@ def aemo_gas_document_sources_asset_factory(
                 scrape_result=scrape_result,
                 write_result=write_result,
                 archived_keys=archived_keys,
+                target_table_uri=target_table_uri,
+                landing_root=landing_root,
+                archive_root=archive_root,
             )
         )
 
     return _asset
+
+
+def aemo_major_publications_hub_downloads_asset_factory(
+    *,
+    source_pages: Iterable[AEMOGasDocumentSourcePage] = (
+        DEFAULT_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOAD_SOURCE_PAGES
+    ),
+    request_getter: Callable[[str], Response] = request_get_aemo_gas_document,
+    observation_loader: AEMOGasDocumentObservationLoader | None = None,
+    landing_bucket: str = LANDING_BUCKET,
+    archive_bucket: str = ARCHIVE_BUCKET,
+    aemo_bucket: str = AEMO_BUCKET,
+    **asset_kwargs: Unpack[AssetDefinitonParamSpec],
+) -> AssetsDefinition:
+    """Create the major-publications hub download metadata bronze asset."""
+    caller_metadata = asset_kwargs.pop("metadata", {}) or {}
+    asset_kwargs.setdefault("group_name", GAS_AEMO_MAJOR_PUBLICATIONS_GROUP)
+    asset_kwargs.setdefault(
+        "description",
+        (
+            "Bronze metadata table for AEMO energy-systems major-publications "
+            "hub source pages and public media downloads. Media bytes are "
+            "landed to S3 and archived only after the metadata Delta write "
+            "succeeds."
+        ),
+    )
+    asset_kwargs["metadata"] = {
+        "source_family": AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+        "source_page_root": AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+        **caller_metadata,
+    }
+    return aemo_gas_document_sources_asset_factory(
+        source_pages=source_pages,
+        request_getter=request_getter,
+        observation_loader=observation_loader,
+        landing_bucket=landing_bucket,
+        archive_bucket=archive_bucket,
+        aemo_bucket=aemo_bucket,
+        table_name=BRONZE_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOADS_TABLE_NAME,
+        asset_domain=AEMO_MAJOR_PUBLICATIONS_DOMAIN,
+        storage_prefix=AEMO_MAJOR_PUBLICATIONS_PREFIX,
+        **asset_kwargs,
+    )
 
 
 def _default_observation_loader(

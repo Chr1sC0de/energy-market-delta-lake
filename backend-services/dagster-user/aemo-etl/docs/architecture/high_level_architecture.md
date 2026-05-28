@@ -100,31 +100,36 @@ manifest. The ad hoc `download_sttm_day_zip_files_job` handles DAYNN.ZIP
 bootstrap/backfill separately and lands bundles under `bronze/sttm/<filename>`
 for the STTM unzipper path.
 
-`src/aemo_etl/defs/raw/aemo_gas_documents.py` registers
-`bronze_aemo_gas_document_sources`, a daily AEMO gas document source asset. It
-uses `factories/aemo_gas_documents` to load a checked-in package media manifest,
-record included, excluded, and `needs_human_review` source-page or direct
+`src/aemo_etl/defs/raw/aemo_gas_documents.py` registers two AEMO document
+metadata assets. `bronze_aemo_gas_document_sources` is the daily manifest-backed
+AEMO gas document source asset. It uses `factories/aemo_gas_documents` to load a
+checked-in package media manifest, record included, excluded, and
+`needs_human_review` source-page or direct
 `https://www.aemo.com.au/-/media/...` media-link observations, land
 direct-media bytes under `LANDING_BUCKET/bronze/aemo_gas_documents` only when
 the manifest row has `should_download=true` using browser-compatible request
 headers, write the metadata Delta table, and archive landed media under
 `ARCHIVE_BUCKET/bronze/aemo_gas_documents` only after that metadata write
-succeeds. If a direct-media request that was downloadable during manifest
-refresh still fails during the daily materialization, the asset records a
-metadata-only row and increments `failed_download_count` instead of failing the
-run. Source-page HTML discovery is a manual Playwright CLI workflow, so the
-daily asset path does not fetch AEMO source-page HTML. It does not extract
+succeeds. `bronze_aemo_major_publications_hub_downloads` is the approved
+major-publications source-family asset. It live-discovers the AEMO
+energy-systems major publications hub and child pages, lands included public
+publication media under `LANDING_BUCKET/bronze/aemo_major_publications`, writes
+`bronze_aemo_major_publications_hub_downloads`, archives bytes under
+`ARCHIVE_BUCKET/bronze/aemo_major_publications`, and emits source-page,
+included-download, failed, and review-needed counts. Both assets keep the same
+write-after-land/archive-after-write pattern. If a direct-media request that was
+downloadable during manifest refresh or hub discovery fails during
+materialization, the asset records a metadata-only row and increments
+`failed_download_count` instead of failing the run. The manifest-backed daily
+asset path does not fetch AEMO source-page HTML. These paths do not extract
 document text, create wiki output, or write embeddings/vector storage. Custom
 live-scrape uses of the factory record failed HTTP page loads as metadata-only
-source-page observations before continuing to later configured pages. The packaged
-manifest is expected to contain media-link observations, and the paired
+source-page observations before continuing to later configured pages. The
+packaged manifest is expected to contain media-link observations, and the paired
 discovery report records direct-media validation status, HTTP metadata, resolved
 URLs, and validation errors. Failed direct-media validation rows are retained in
 the manifest with `should_download=false`, so daily materialization writes
-metadata for the row without requesting the failed media URL. Observation-only
-configured source pages, including the AEMO energy-systems major publications
-hub, keep hub and public media-link coverage as `needs_human_review` metadata
-until an approved scope marks those observations downloadable.
+metadata for the row without requesting the failed media URL.
 
 ### Unzipper assets
 

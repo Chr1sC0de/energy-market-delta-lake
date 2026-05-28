@@ -55,8 +55,10 @@ carry sync metadata.
 
 ADR [0010](../adr/0010-gas-market-knowledge-base.md) reserves the external
 `$ENERGY_MARKET_CORPUS_ROOT/gas-market/{bronze,silver,gold}` tree for
-**Gas market knowledge base** corpus artifacts. Those generated text artifacts
-are not maintained router docs under this workflow. The
+**Gas market knowledge base** corpus artifacts and
+`$ENERGY_MARKET_CORPUS_ROOT/aemo-major-publications/{bronze,silver,gold}` for
+the AEMO major publications fixture corpus. Those generated text artifacts are
+not maintained router docs under this workflow. The
 `tools/gas-market-knowledge-base/README.md` Subproject doc is maintained, but
 generated Markdown under that Subproject's explicit `generated/` tree and under
 the external corpus root remains corpus output rather than maintained
@@ -345,6 +347,12 @@ way:
   The tree is ignored, the Subproject **Commit check** rejects staged generated
   bronze, silver, and gold corpus artifacts, and any git-history purge remains
   a separate guarded maintenance issue.
+- #274: The Subproject added the AEMO major publications corpus fixture command
+  surface. `aemo-publications-corpus build-fixture` writes deterministic
+  fixture bronze, silver, silver index, and gold outputs under
+  `$ENERGY_MARKET_CORPUS_ROOT/aemo-major-publications/{bronze,silver,gold}` by
+  default and validates the fixture build through the AEMO publications corpus
+  **Unit test** lane and the Subproject **Commit check**.
 
 ## Search commands
 
@@ -417,6 +425,10 @@ These commands support the intended flow:
   - `tools/gas-market-knowledge-base/README.md`
   - `tools/gas-market-knowledge-base/pyproject.toml`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/archive_audit.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/__init__.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/cli.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/corpus_paths.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/fixture_corpus.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/__init__.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/gold_context.py`
@@ -432,6 +444,7 @@ These commands support the intended flow:
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/silver_documents.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/source_manifest.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_archive_audit.py`
+  - `tools/gas-market-knowledge-base/tests/unit/test_aemo_publications.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_cli.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_corpus_core.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_corpus_paths.py`

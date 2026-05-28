@@ -36,6 +36,7 @@ def test_root_defs_apply_asset_organization_contract() -> None:
         AEMO_ETL_REPORT_FAMILY_TAG,
         AEMO_ETL_ROLE_TAG,
         GAS_AEMO_GAS_DOCUMENTS_GROUP,
+        GAS_AEMO_MAJOR_PUBLICATIONS_GROUP,
         GAS_INGESTION_DISCOVERY_GROUP,
         GAS_INGESTION_UNZIP_GROUP,
         GAS_METADATA_GROUP,
@@ -73,6 +74,13 @@ def test_root_defs_apply_asset_organization_contract() -> None:
         AssetKey(
             ["bronze", "aemo_gas_documents", "bronze_aemo_gas_document_sources"]
         ): GAS_AEMO_GAS_DOCUMENTS_GROUP,
+        AssetKey(
+            [
+                "bronze",
+                "aemo_major_publications",
+                "bronze_aemo_major_publications_hub_downloads",
+            ]
+        ): GAS_AEMO_MAJOR_PUBLICATIONS_GROUP,
         AssetKey(["bronze", "metadata", "bronze_table_metadata"]): GAS_METADATA_GROUP,
     }
     for asset_key, expected_group in helper_group_by_key.items():

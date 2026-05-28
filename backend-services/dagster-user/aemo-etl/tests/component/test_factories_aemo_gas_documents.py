@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from datetime import datetime
 from unittest.mock import MagicMock
 
 import polars as pl
@@ -7,14 +8,19 @@ from botocore.exceptions import ClientError
 from dagster import AssetsDefinition, Definitions, MaterializeResult, ScheduleDefinition
 from dagster_aws.s3 import S3Resource
 from pytest_mock import MockerFixture
-from requests import Response
+from requests import RequestException, Response
 from types_boto3_s3 import S3Client
 
+from aemo_etl.asset_organization import GAS_AEMO_MAJOR_PUBLICATIONS_GROUP
 from aemo_etl.factories.aemo_gas_documents.assets import (
+    AEMO_MAJOR_PUBLICATIONS_DOMAIN,
+    AEMO_MAJOR_PUBLICATIONS_PREFIX,
     AEMOGasDocumentSourceWriteResult,
+    BRONZE_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOADS_TABLE_NAME,
     aemo_gas_document_sources_asset_factory,
 )
 from aemo_etl.factories.aemo_gas_documents.definitions import (
+    aemo_major_publications_hub_downloads_definitions_factory,
     aemo_gas_document_sources_definitions_factory,
 )
 from aemo_etl.factories.aemo_gas_documents.manifest import (
@@ -24,12 +30,23 @@ from aemo_etl.factories.aemo_gas_documents.manifest import (
 from aemo_etl.factories.aemo_gas_documents.models import (
     AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
     AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+    AEMOGasDocumentPendingObservation,
     AEMOGasDocumentSourcePage,
 )
 
 _PAGE_URL = "https://www.aemo.com.au/energy-systems/gas/component"
 _PDF_URL = "https://www.aemo.com.au/-/media/files/gas/component-guide.pdf"
 _PDF_BYTES = b"%PDF component\n"
+_MAJOR_PUBLICATIONS_PDF_URL = (
+    "https://www.aemo.com.au/-/media/files/major-publications/"
+    "isp/2026-integrated-system-plan.pdf"
+)
+_MAJOR_PUBLICATIONS_FAILED_PDF_URL = (
+    "https://www.aemo.com.au/-/media/files/major-publications/isp/failed-download.pdf"
+)
+_MAJOR_PUBLICATIONS_REVIEW_PDF_URL = (
+    "https://www.aemo.com.au/-/media/files/major-publications/isp/review-needed.pdf"
+)
 
 
 def _response(*, url: str, text: str = "", content: bytes | None = None) -> Response:
@@ -53,6 +70,117 @@ def _request_getter() -> Callable[[str], Response]:
         return responses[url]
 
     return _get
+
+
+def _major_publications_fixture_observations(
+    observed_at: datetime,
+) -> tuple[AEMOGasDocumentPendingObservation, ...]:
+    return (
+        AEMOGasDocumentPendingObservation(
+            observation_type="source_page",
+            corpus_source=AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+            source_page_url=AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+            source_page_title="Major publications",
+            source_page_section="Energy systems major publications",
+            source_page_observed_at=observed_at,
+            source_link_text=None,
+            source_url=AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+            resolved_url=AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+            normalized_source_url=AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+            source_url_query=None,
+            document_family_id=None,
+            document_title=None,
+            document_kind="source_page",
+            include_decision="include",
+            include_reason="Fixture major-publications source page.",
+            exclude_reason=None,
+            document_version=None,
+            published_date=None,
+            effective_date=None,
+            media_revision=None,
+            should_download=False,
+        ),
+        AEMOGasDocumentPendingObservation(
+            observation_type="link",
+            corpus_source=AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+            source_page_url=AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+            source_page_title="Major publications",
+            source_page_section="Integrated System Plan",
+            source_page_observed_at=observed_at,
+            source_link_text="2026 Integrated System Plan",
+            source_url=_MAJOR_PUBLICATIONS_PDF_URL,
+            resolved_url=_MAJOR_PUBLICATIONS_PDF_URL,
+            normalized_source_url=_MAJOR_PUBLICATIONS_PDF_URL,
+            source_url_query=None,
+            document_family_id="major-publications__2026-integrated-system-plan",
+            document_title="2026 Integrated System Plan",
+            document_kind="publication",
+            include_decision="include",
+            include_reason="Fixture downloadable publication.",
+            exclude_reason=None,
+            document_version=None,
+            published_date=None,
+            effective_date=None,
+            media_revision=None,
+            should_download=True,
+        ),
+        AEMOGasDocumentPendingObservation(
+            observation_type="link",
+            corpus_source=AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+            source_page_url=AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+            source_page_title="Major publications",
+            source_page_section="Integrated System Plan",
+            source_page_observed_at=observed_at,
+            source_link_text="Failed publication",
+            source_url=_MAJOR_PUBLICATIONS_FAILED_PDF_URL,
+            resolved_url=_MAJOR_PUBLICATIONS_FAILED_PDF_URL,
+            normalized_source_url=_MAJOR_PUBLICATIONS_FAILED_PDF_URL,
+            source_url_query=None,
+            document_family_id="major-publications__failed-publication",
+            document_title="Failed publication",
+            document_kind="publication",
+            include_decision="include",
+            include_reason="Fixture failed publication.",
+            exclude_reason=None,
+            document_version=None,
+            published_date=None,
+            effective_date=None,
+            media_revision=None,
+            should_download=True,
+        ),
+        AEMOGasDocumentPendingObservation(
+            observation_type="link",
+            corpus_source=AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+            source_page_url=AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+            source_page_title="Major publications",
+            source_page_section="Integrated System Plan",
+            source_page_observed_at=observed_at,
+            source_link_text="Review-needed publication",
+            source_url=_MAJOR_PUBLICATIONS_REVIEW_PDF_URL,
+            resolved_url=_MAJOR_PUBLICATIONS_REVIEW_PDF_URL,
+            normalized_source_url=_MAJOR_PUBLICATIONS_REVIEW_PDF_URL,
+            source_url_query=None,
+            document_family_id="major-publications__review-needed-publication",
+            document_title="Review-needed publication",
+            document_kind="publication",
+            include_decision="needs_human_review",
+            include_reason="Fixture review-needed publication.",
+            exclude_reason=None,
+            document_version=None,
+            published_date=None,
+            effective_date=None,
+            media_revision=None,
+            should_download=False,
+        ),
+    )
+
+
+def _major_publications_request_getter(url: str) -> Response:
+    if url == _MAJOR_PUBLICATIONS_FAILED_PDF_URL:
+        raise RequestException("fixture download failed")
+    if url != _MAJOR_PUBLICATIONS_PDF_URL:
+        raise AssertionError(f"unexpected major-publications media request: {url}")
+    return _response(url=url, content=_PDF_BYTES)
 
 
 def _asset_def() -> AssetsDefinition:
@@ -177,6 +305,112 @@ def test_definitions_factory_registers_asset_job_and_schedule() -> None:
         "bronze_aemo_gas_document_sources_job"
     ]
     assert [schedule.cron_schedule for schedule in schedules] == ["0 4 * * *"]
+
+
+def test_major_publications_definitions_register_asset_job_and_materialize_fixture_observations(
+    mocker: MockerFixture,
+) -> None:
+    events: list[str] = []
+    captured_target_table_uris: list[str] = []
+    captured_rows: list[dict[str, object]] = []
+
+    def _write(
+        batch: pl.LazyFrame,
+        *,
+        target_table_uri: str,
+        **_kwargs: object,
+    ) -> AEMOGasDocumentSourceWriteResult:
+        events.append("write")
+        captured_target_table_uris.append(target_table_uri)
+        captured_rows.extend(batch.collect().to_dicts())
+        return AEMOGasDocumentSourceWriteResult(
+            row_count=len(captured_rows),
+            target_exists_before_write=True,
+            wrote_table=True,
+            write_mode="merge",
+        )
+
+    mocker.patch(
+        "aemo_etl.factories.aemo_gas_documents.assets.write_aemo_gas_document_sources_batch",
+        side_effect=_write,
+    )
+    defs = aemo_major_publications_hub_downloads_definitions_factory(
+        observation_loader=_major_publications_fixture_observations,
+        request_getter=_major_publications_request_getter,
+        cron_schedule="30 4 * * *",
+        landing_bucket="landing",
+        archive_bucket="archive",
+        aemo_bucket="aemo",
+        process_retry=1,
+    )
+    assets = [
+        asset for asset in defs.assets or [] if isinstance(asset, AssetsDefinition)
+    ]
+    schedules = [
+        schedule
+        for schedule in defs.schedules or []
+        if isinstance(schedule, ScheduleDefinition)
+    ]
+    asset_def = assets[0]
+    asset_key = asset_def.key
+
+    assert asset_key.path == [
+        "bronze",
+        AEMO_MAJOR_PUBLICATIONS_DOMAIN,
+        BRONZE_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOADS_TABLE_NAME,
+    ]
+    assert asset_def.group_names_by_key[asset_key] == GAS_AEMO_MAJOR_PUBLICATIONS_GROUP
+    assert asset_def.metadata_by_key[asset_key]["source_family"] == (
+        AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE
+    )
+    assert asset_def.metadata_by_key[asset_key]["target_table_uri"] == (
+        "s3://aemo/bronze/aemo_major_publications/"
+        "bronze_aemo_major_publications_hub_downloads"
+    )
+    assert [job.name for job in defs.jobs or []] == [
+        "bronze_aemo_major_publications_hub_downloads_job"
+    ]
+    assert [schedule.cron_schedule for schedule in schedules] == ["30 4 * * *"]
+
+    context, s3, s3_client = _context_and_s3(mocker)
+    s3_client.upload_fileobj.side_effect = lambda *_args, **_kwargs: events.append(
+        "upload"
+    )
+    s3_client.copy_object.side_effect = lambda **_kwargs: events.append("copy")
+
+    fn = asset_def.op.compute_fn.decorated_fn  # type: ignore[attr-defined, union-attr]
+    result = fn(context, s3=s3)
+
+    assert isinstance(result, MaterializeResult)
+    assert events == ["upload", "write", "copy"]
+    assert captured_target_table_uris == [
+        "s3://aemo/bronze/aemo_major_publications/"
+        "bronze_aemo_major_publications_hub_downloads"
+    ]
+    assert {row["source_url"] for row in captured_rows} == {
+        AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+        _MAJOR_PUBLICATIONS_PDF_URL,
+        _MAJOR_PUBLICATIONS_FAILED_PDF_URL,
+        _MAJOR_PUBLICATIONS_REVIEW_PDF_URL,
+    }
+    assert result.metadata is not None
+    assert result.metadata["target_table_uri"] == captured_target_table_uris[0]
+    assert result.metadata["storage_uri"] == captured_target_table_uris[0]
+    assert result.metadata["s3_landing_root"] == (
+        f"s3://landing/{AEMO_MAJOR_PUBLICATIONS_PREFIX}"
+    )
+    assert result.metadata["s3_archive_root"] == (
+        f"s3://archive/{AEMO_MAJOR_PUBLICATIONS_PREFIX}"
+    )
+    assert result.metadata["source_page_count"] == 1
+    assert result.metadata["included_download_count"] == 1
+    assert result.metadata["failed_count"] == 1
+    assert result.metadata["review_needed_count"] == 1
+    assert result.metadata["included_media_count"] == 1
+    assert result.metadata["failed_download_count"] == 1
+    assert result.metadata["needs_human_review_observation_count"] == 1
+    assert result.metadata["landed_media_count"] == 1
+    assert result.metadata["archived_media_count"] == 1
 
 
 def test_definitions_factory_default_getter_uses_retrying_request_get(
@@ -385,3 +619,4 @@ def test_root_defs_registers_aemo_gas_document_job() -> None:
     job_names = {job.name for job in result.jobs or []}
 
     assert "bronze_aemo_gas_document_sources_job" in job_names
+    assert "bronze_aemo_major_publications_hub_downloads_job" in job_names

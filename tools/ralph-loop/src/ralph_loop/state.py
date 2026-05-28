@@ -1235,6 +1235,19 @@ class RunManifest:
         scheduler["fatal_stop"] = fatal_stop
         self.record_event(f"drain_scheduler_fatal_stop_{status}", details=fatal_stop)
 
+    def record_drain_scheduler_fatal_stop_recovered(self) -> None:
+        scheduler = self.data.get("drain_scheduler")
+        if not isinstance(scheduler, dict):
+            return
+        fatal_stop = scheduler.get("fatal_stop")
+        if not isinstance(fatal_stop, dict):
+            return
+        if fatal_stop.get("status") != "triggered":
+            return
+        fatal_stop["status"] = "recovered"
+        fatal_stop["recovered_at"] = utc_now_text()
+        self.record_event("drain_scheduler_fatal_stop_recovered", details=fatal_stop)
+
     def record_promoted_issues(
         self,
         issues: list[tuple[Issue, str]],
