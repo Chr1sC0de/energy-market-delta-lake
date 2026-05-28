@@ -4090,6 +4090,19 @@ Build it.
             qa_results=[qa_result],
             run_dir=Path("/logs/issue-42-test"),
             candidates=[candidate],
+            adaptive_events=[
+                {
+                    "event_type": "residual_update",
+                    "issue_number": 43,
+                    "trigger_reason": "Candidate blocker was satisfied by Local integration.",
+                    "residual_work_summary": "Refresh #43 blocker evidence before claim.",
+                    "automatic_retry_allowed": False,
+                    "consumes_attempt_budget": False,
+                }
+            ],
+            completed_issue_ratio_evidence=(
+                "1 completed issue out of 2 refresh-visible issues."
+            ),
         )
 
         self.assertIn("Use the repo-local $ralph-issue-refresh skill", prompt)
@@ -4113,6 +4126,16 @@ Build it.
         self.assertIn("## Candidate Issue Update Plan", prompt)
         self.assertIn("## Candidate Issue Mutation Plan", prompt)
         self.assertIn("ready_issue_refresh_mutations", prompt)
+        self.assertIn("Completed issue ratio evidence", prompt)
+        self.assertIn("1 completed issue out of 2 refresh-visible issues.", prompt)
+        self.assertIn("Adaptive events recorded during this run", prompt)
+        self.assertIn("`residual_update` for #43", prompt)
+        self.assertIn("Refresh #43 blocker evidence before claim.", prompt)
+        self.assertIn("Residual work summary", prompt)
+        self.assertIn("blocker_update_note", prompt)
+        self.assertIn("split_note", prompt)
+        self.assertIn("routing_hint", prompt)
+        self.assertIn("Do not propose global policy, threshold", prompt)
 
     def test_ready_issue_refresh_mutation_parser_enforces_comment_prefix(self) -> None:
         candidate = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)
@@ -4130,6 +4153,91 @@ Build it.
         self.assertTrue(
             mutations[0].comment.startswith(ralph.AI_READY_ISSUE_REFRESH_DISCLAIMER)
         )
+
+    def test_ready_issue_refresh_mutation_parser_accepts_adaptive_fields(
+        self,
+    ) -> None:
+        candidate = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)
+        markdown = """# Ready Issue Refresh Analysis
+
+## Candidate Issue Mutation Plan
+
+```json
+{
+  "ready_issue_refresh_mutations": [
+    {
+      "issue_number": 43,
+      "action": "update",
+      "comment": "Blocker evidence refreshed after Local integration.",
+      "completed_issue_ratio_evidence": "1 of 2 refresh-visible issues completed.",
+      "residual_work_summary": "Update Blocked by after #42 integration.",
+      "blocker_update_note": "Remove #42 from Blocked by.",
+      "split_note": "Keep remaining work in the same queue-local issue.",
+      "routing_hint": "Ready after blocker evidence refresh.",
+      "unsupported_queue_note": {"ignored": true},
+      "adaptive_event": {
+        "event_type": "residual_update",
+        "issue_number": 43,
+        "trigger_reason": "Local integration satisfied #42.",
+        "residual_work_summary": "Refresh #43 before next claim.",
+        "automatic_retry_allowed": false,
+        "consumes_attempt_budget": false
+      }
+    }
+  ]
+}
+```
+"""
+
+        mutations = ralph.ready_issue_refresh_mutations_from_markdown(
+            markdown,
+            candidates=[candidate],
+        )
+
+        self.assertEqual(len(mutations), 1)
+        mutation = mutations[0]
+        self.assertEqual(mutation.action, "update")
+        assert mutation.adaptive_metadata is not None
+        self.assertEqual(
+            mutation.adaptive_metadata["completed_issue_ratio_evidence"],
+            "1 of 2 refresh-visible issues completed.",
+        )
+        self.assertEqual(
+            mutation.adaptive_metadata["adaptive_event"]["event_type"],
+            "residual_update",
+        )
+        self.assertEqual(
+            mutation.adaptive_metadata["blocker_update_note"],
+            "Remove #42 from Blocked by.",
+        )
+        self.assertNotIn("unsupported_queue_note", mutation.adaptive_metadata)
+
+    def test_ready_issue_refresh_mutation_parser_rejects_global_threshold_fields(
+        self,
+    ) -> None:
+        candidate = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)
+        markdown = """# Ready Issue Refresh Analysis
+
+## Candidate Issue Mutation Plan
+
+```json
+{
+  "ready_issue_refresh_mutations": [
+    {
+      "issue_number": 43,
+      "action": "no_change",
+      "global_threshold": "raise drain budget"
+    }
+  ]
+}
+```
+"""
+
+        with self.assertRaisesRegex(ValueError, "global policy or threshold"):
+            ralph.ready_issue_refresh_mutations_from_markdown(
+                markdown,
+                candidates=[candidate],
+            )
 
     def test_ready_issue_refresh_mutation_parser_rejects_malformed_json(self) -> None:
         candidate = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)

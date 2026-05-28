@@ -31,6 +31,7 @@ MEDIUM_STIFFNESS_RATIO_THRESHOLD = 1.5
 HIGH_STIFFNESS_RATIO_THRESHOLD = 2.5
 EXTREME_STIFFNESS_RATIO_THRESHOLD = 4.0
 HIGH_STIFFNESS_RATIO_LEVELS = frozenset({"high", "extreme"})
+ADAPTIVE_EVENT_TYPES = frozenset({"hard_stop", "gated_retry", "residual_update"})
 
 READY_LABEL = "ready-for-agent"
 NEEDS_TRIAGE_LABEL = "needs-triage"
@@ -857,6 +858,7 @@ class ReadyIssueRefreshMutation:
     add_labels: tuple[str, ...]
     remove_labels: tuple[str, ...]
     close_as_completed: bool
+    adaptive_metadata: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -2701,6 +2703,7 @@ def ready_issue_refresh_mutation_from_payload(
     number_value = payload.get("issue_number", payload.get("number"))
     if number_value is None:
         raise ValueError("Ready issue refresh mutation is missing issue_number.")
+    issue_number = int(number_value)
     action = normalize_ready_issue_refresh_action(
         str(
             payload.get("action")
@@ -2756,14 +2759,136 @@ def ready_issue_refresh_mutation_from_payload(
         if label not in add_set or label in protected_removals
     )
     return ReadyIssueRefreshMutation(
-        issue_number=int(number_value),
+        issue_number=issue_number,
         action=action,
         comment=comment,
         body=body,
         add_labels=add_labels,
         remove_labels=remove_labels,
         close_as_completed=close_as_completed,
+        adaptive_metadata=ready_issue_refresh_adaptive_metadata_from_payload(
+            payload,
+            issue_number=issue_number,
+        ),
     )
+
+
+def ready_issue_refresh_optional_text(value: Any, *, field_name: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"Ready issue refresh {field_name} must be a string or null.")
+    text = value.strip()
+    if text == "":
+        return None
+    if len(text) > 4000:
+        raise ValueError(f"Ready issue refresh {field_name} is too long.")
+    return text
+
+
+def ready_issue_refresh_reject_policy_or_threshold_fields(
+    payload: Mapping[str, Any],
+    *,
+    context: str,
+) -> None:
+    unsafe_names = [
+        name
+        for name in payload
+        if re.search(r"(?i)(?:global|policy|threshold)", str(name)) is not None
+    ]
+    if unsafe_names:
+        formatted = ", ".join(sorted(str(name) for name in unsafe_names))
+        raise ValueError(
+            "Ready issue refresh adaptive metadata must not include global policy "
+            f"or threshold fields in {context}: {formatted}."
+        )
+
+
+def ready_issue_refresh_adaptive_event_metadata(
+    value: Any,
+    *,
+    issue_number: int,
+) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError(
+            "Ready issue refresh adaptive_event must be an object or null."
+        )
+    ready_issue_refresh_reject_policy_or_threshold_fields(
+        value,
+        context="adaptive_event",
+    )
+    event_type = ready_issue_refresh_optional_text(
+        value.get("event_type"),
+        field_name="adaptive_event.event_type",
+    )
+    if event_type is not None and event_type not in ADAPTIVE_EVENT_TYPES | {"none"}:
+        supported = ", ".join(sorted((*ADAPTIVE_EVENT_TYPES, "none")))
+        raise ValueError(
+            "Ready issue refresh adaptive_event.event_type must be one of: "
+            f"{supported}."
+        )
+    payload_issue = value.get("issue_number")
+    if payload_issue is not None and int(payload_issue) != issue_number:
+        raise ValueError(
+            "Ready issue refresh adaptive_event.issue_number must match "
+            f"mutation issue #{issue_number}."
+        )
+    metadata: dict[str, Any] = {}
+    if event_type is not None:
+        metadata["event_type"] = event_type
+    for field_name in ("trigger_reason", "residual_work_summary"):
+        text = ready_issue_refresh_optional_text(
+            value.get(field_name),
+            field_name=f"adaptive_event.{field_name}",
+        )
+        if text is not None:
+            metadata[field_name] = text
+    for field_name in ("automatic_retry_allowed", "consumes_attempt_budget"):
+        if field_name in value and value[field_name] is not None:
+            metadata[field_name] = parse_bool_value(value[field_name])
+    return metadata or None
+
+
+def ready_issue_refresh_adaptive_metadata_from_payload(
+    payload: dict[str, Any],
+    *,
+    issue_number: int,
+) -> dict[str, Any] | None:
+    ready_issue_refresh_reject_policy_or_threshold_fields(
+        payload,
+        context=f"mutation for issue #{issue_number}",
+    )
+    metadata: dict[str, Any] = {}
+    field_aliases = {
+        "completed_issue_ratio_evidence": (
+            "completed_issue_ratio_evidence",
+            "completed_issue_ratio",
+        ),
+        "residual_work_summary": ("residual_work_summary", "residual_work"),
+        "blocker_update_note": ("blocker_update_note", "blocker_adjustment_note"),
+        "split_note": ("split_note", "split_notes"),
+        "routing_hint": ("routing_hint", "adaptive_routing_hint"),
+    }
+    for target_name, aliases in field_aliases.items():
+        for alias in aliases:
+            if alias not in payload:
+                continue
+            text = ready_issue_refresh_optional_text(
+                payload.get(alias),
+                field_name=alias,
+            )
+            if text is not None:
+                metadata[target_name] = text
+            break
+    event_metadata = ready_issue_refresh_adaptive_event_metadata(
+        payload.get("adaptive_event"),
+        issue_number=issue_number,
+    )
+    if event_metadata is not None:
+        metadata["adaptive_event"] = event_metadata
+    return metadata or None
 
 
 def ready_issue_refresh_mutations_from_markdown(

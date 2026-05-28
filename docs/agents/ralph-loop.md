@@ -1551,15 +1551,22 @@ After candidate selection, Ralph invokes a read-only spawned Codex subprocess
 using the repo-local `$ralph-issue-refresh` skill. The analysis prompt includes
 the integrated issue, **Delivery mode**, **Integration target**, **Local
 integration** or Exploratory handoff commit, changed files, QA evidence, run log
-path, and candidate issue bodies. The subprocess is granted only read-only
-GitHub Issue commands and is instructed not to comment, edit labels, edit
-bodies, close, reopen, create issues, commit, push, fetch, merge, rebase, reset,
-or update refs. It records planned issue updates and a structured mutation plan
-only; Ralph's outer loop applies validated metadata mutations afterwards.
+path, completed issue ratio evidence, adaptive events recorded during the run,
+residual work evidence, and candidate issue bodies. The subprocess is granted
+only read-only GitHub Issue commands and is instructed not to comment, edit
+labels, edit bodies, close, reopen, create issues, commit, push, fetch, merge,
+rebase, reset, or update refs. It records planned issue updates and a structured
+mutation plan only; Ralph's outer loop applies validated metadata mutations
+afterwards.
 When candidates were selected, that mutation plan must include a parseable
 fenced `json` block with a `ready_issue_refresh_mutations` list, including
 explicit `no_change` entries for candidates that need no metadata mutation.
 Reports with no selected candidates may omit mutation JSON.
+Mutation entries may include queue-local adaptive metadata such as completed
+issue ratio evidence, a recorded adaptive event, residual work summary, blocker
+update note, split note, or routing hint. Ralph validates those fields as
+metadata and does not apply them as global policy, threshold, drain budget,
+retry budget, or maintained-doc/config changes.
 
 The read-only analysis report is saved as
 `ready-issue-refresh-analysis.md` in the current `.ralph/runs/issue-.../` or
