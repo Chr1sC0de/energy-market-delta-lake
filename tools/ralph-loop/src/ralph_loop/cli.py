@@ -5402,6 +5402,9 @@ class RalphLoop:
                     delivery_plan=delivery_plan,
                     operator_smoke=operator_smoke_result,
                     review_package=review_package,
+                    issue_completion_review=manifest.data.get(
+                        "issue_completion_review"
+                    ),
                 ),
                 run_dir=run_dir,
             )
@@ -12111,6 +12114,7 @@ class RalphRunRecovery:
                 run_dir,
                 delivery_plan=delivery_plan,
                 review_package=review_package,
+                issue_completion_review=manifest.data.get("issue_completion_review"),
             ),
             run_dir=run_dir,
         )
@@ -13363,8 +13367,14 @@ def issue_completion_review_result(markdown: str) -> str:
 
 def issue_completion_review_findings(markdown: str) -> str:
     findings = section_body(markdown, "Findings")
+    security_review = section_body(markdown, "Security review")
+    sections: list[str] = []
     if findings is not None and findings.strip() != "":
-        return findings.strip()
+        sections.append("## Findings\n\n" + findings.strip())
+    if security_review is not None and security_review.strip() != "":
+        sections.append("## Security review\n\n" + security_review.strip())
+    if sections:
+        return "\n\n".join(sections)
     return markdown.strip()
 
 

@@ -5263,9 +5263,13 @@ def build_completion_comment(
     delivery_plan: DeliveryPlan,
     operator_smoke: OperatorSmokeResult | None = None,
     review_package: dict[str, Any] | None = None,
+    issue_completion_review: dict[str, Any] | None = None,
 ) -> str:
     qa_lines = qa_result_markdown_lines(qa_results)
     smoke_lines = operator_smoke_markdown_lines(operator_smoke)
+    issue_completion_review_lines = issue_completion_review_markdown_lines(
+        issue_completion_review
+    )
     review_package_lines = review_package_markdown_lines(review_package)
     changed_lines = [f"- `{path}`" for path in changed_files]
     if delivery_plan.mode == TRUNK_MODE:
@@ -5301,6 +5305,7 @@ def build_completion_comment(
             "",
             *qa_lines,
             "",
+            *issue_completion_review_lines,
             *review_package_lines,
             *smoke_lines,
             f"Run logs: `{run_dir}`",
@@ -5309,6 +5314,53 @@ def build_completion_comment(
             "",
         ]
     )
+
+
+def issue_completion_review_markdown_lines(
+    review: dict[str, Any] | None,
+) -> list[str]:
+    if not isinstance(review, dict):
+        return []
+    status = str(review.get("status") or "not_recorded")
+    if status == "not_started":
+        return []
+    lines = [
+        "## Issue completion review",
+        "",
+        f"- Status: `{status}`",
+    ]
+    artifact_path = str(review.get("artifact_path") or "")
+    log_path = str(review.get("log_path") or "")
+    if artifact_path:
+        lines.append(f"- Artifact: `{artifact_path}`")
+    if log_path:
+        lines.append(f"- Log: `{log_path}`")
+    attempts = review.get("attempts")
+    if isinstance(attempts, list) and attempts:
+        attempt_lines: list[str] = []
+        for item in attempts:
+            if not isinstance(item, dict):
+                continue
+            attempt = item.get("attempt")
+            attempt_status = str(item.get("status") or "unknown")
+            result = str(item.get("result") or "").strip()
+            result_text = f" ({result})" if result else ""
+            attempt_lines.append(f"{attempt}: {attempt_status}{result_text}")
+        if attempt_lines:
+            lines.append(f"- Review attempts: {', '.join(attempt_lines)}")
+    repairs = review.get("repair_attempts")
+    if isinstance(repairs, list) and repairs:
+        repair_lines: list[str] = []
+        for item in repairs:
+            if not isinstance(item, dict):
+                continue
+            attempt = item.get("attempt")
+            attempt_status = str(item.get("status") or "unknown")
+            repair_lines.append(f"{attempt}: {attempt_status}")
+        if repair_lines:
+            lines.append(f"- Repair attempts: {', '.join(repair_lines)}")
+    lines.append("")
+    return lines
 
 
 def review_package_markdown_lines(review_package: dict[str, Any] | None) -> list[str]:

@@ -184,6 +184,26 @@ fail
 The issue would be integrated incomplete.
 """
 
+ISSUE_COMPLETION_REVIEW_SECURITY_FAIL_MARKDOWN = """# Issue completion review
+
+## Review result
+
+fail
+
+## Findings
+
+No blocking functional findings.
+
+## Security review
+
+- `scripts/ralph.py` would publish a credential-bearing environment variable;
+  remove the unsafe echo before Local integration.
+
+## Residual risk
+
+Credential exposure remains until the repair removes the echo.
+"""
+
 REVIEW_PACKAGE_HTML = """<!doctype html>
 <html>
 <head><meta charset="utf-8"><title>Review package for issue #42</title></head>
@@ -3165,6 +3185,10 @@ Credential exposure remains until the deploy script is repaired.
         self.assertEqual(ralph.issue_completion_review_result(markdown), "fail")
         self.assertIn(
             "`ops/deploy.sh` now echoes",
+            ralph.issue_completion_review_findings(markdown),
+        )
+        self.assertIn(
+            "`ops/deploy.sh` exposes credentials",
             ralph.issue_completion_review_findings(markdown),
         )
 
@@ -13050,6 +13074,120 @@ Build it.
             [1, 2],
         )
 
+    def test_security_review_failure_repairs_reruns_qa_refreshes_evidence_then_integrates(
+        self,
+    ) -> None:
+        before_repair_diff = """diff --git a/scripts/ralph.py b/scripts/ralph.py
+--- a/scripts/ralph.py
++++ b/scripts/ralph.py
+@@ -1,0 +1 @@
++API_TOKEN=before-repair-secret
+"""
+        after_repair_diff = """diff --git a/scripts/ralph.py b/scripts/ralph.py
+--- a/scripts/ralph.py
++++ b/scripts/ralph.py
+@@ -1,0 +1 @@
++OPENAI_API_KEY=after-repair-secret
+"""
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n"] * 4,
+            diff_outputs=[
+                "scripts/ralph.py\n",
+                before_repair_diff,
+                "scripts/ralph.py\n",
+                after_repair_diff,
+            ],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            issue_completion_review_markdowns=[
+                ISSUE_COMPLETION_REVIEW_SECURITY_FAIL_MARKDOWN,
+                ISSUE_COMPLETION_REVIEW_PASS_MARKDOWN,
+            ],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, max_codex_attempts=2)
+
+            with redirect_stdout(io.StringIO()):
+                loop._handle_implementation(
+                    make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+                )
+
+            run_dir = next(tmp_path.glob("logs/issue-42-*"))
+            comment = (run_dir / "issue-42-comment.md").read_text(encoding="utf-8")
+            manifest = load_run_manifest(tmp_path)
+
+        review_calls = [
+            call
+            for call in runner.calls
+            if call.input_text is not None
+            and "Run an Issue completion review" in call.input_text
+        ]
+        repair_call = next(
+            call
+            for call in runner.calls
+            if call.input_text is not None
+            and "Repair GitHub issue #42 after Issue completion review findings"
+            in call.input_text
+        )
+        qa_calls = [call for call in runner.calls if call.args == ("make", "run-prek")]
+        commands = [call.args for call in runner.calls]
+        merge_index = commands.index(
+            ("git", "merge", "--squash", "agent/issue-42-implement-thing")
+        )
+        push_index = commands.index(("git", "push", "origin", "HEAD:main"))
+        comment_index = next(
+            index
+            for index, call in enumerate(runner.calls)
+            if call.args[:3] == ("gh", "issue", "comment")
+        )
+
+        self.assertEqual(len(review_calls), 2)
+        self.assertIn("credential-bearing environment variable", repair_call.input_text)
+        self.assertIn("## Security review", repair_call.input_text)
+        self.assertEqual(len(qa_calls), 2)
+        self.assertLess(
+            runner.calls.index(repair_call), runner.calls.index(qa_calls[1])
+        )
+        self.assertLess(
+            runner.calls.index(qa_calls[1]), runner.calls.index(review_calls[1])
+        )
+        self.assertLess(runner.calls.index(review_calls[1]), merge_index)
+        self.assertLess(runner.calls.index(review_calls[1]), push_index)
+        self.assertLess(runner.calls.index(review_calls[1]), comment_index)
+        self.assertIn("API_TOKEN=[REDACTED]", review_calls[0].input_text)
+        self.assertIn("OPENAI_API_KEY=[REDACTED]", review_calls[1].input_text)
+        self.assertNotIn("before-repair-secret", review_calls[0].input_text)
+        self.assertNotIn("after-repair-secret", review_calls[1].input_text)
+        self.assertEqual(manifest["status"], "succeeded")
+        self.assertEqual(manifest["issue_completion_review"]["status"], "passed")
+        self.assertEqual(
+            [
+                attempt["result"]
+                for attempt in manifest["issue_completion_review"]["attempts"]
+            ],
+            ["fail", "pass"],
+        )
+        self.assertEqual(
+            [
+                repair["status"]
+                for repair in manifest["issue_completion_review"]["repair_attempts"]
+            ],
+            ["repair_completed"],
+        )
+        self.assertEqual(
+            manifest["issue_completion_review"]["security_diff_evidence"][0]["line"],
+            "OPENAI_API_KEY=[REDACTED]",
+        )
+        self.assertIn(
+            "issue_completion_review_repair_changes_detected",
+            [event["stage"] for event in manifest["events"]],
+        )
+        self.assertEqual(manifest["integration_commit"]["sha"], "merge-sha")
+        self.assertEqual(manifest["pushes"]["integration_target"]["status"], "pushed")
+        self.assertIn("## Issue completion review", comment)
+        self.assertIn("- Review attempts: 1: failed (fail), 2: passed (pass)", comment)
+        self.assertIn("- Repair attempts: 2: repair_completed", comment)
+
     def test_security_diff_evidence_on_ordinary_path_runs_review(self) -> None:
         diff_text = """diff --git a/app/config.py b/app/config.py
 --- a/app/config.py
@@ -13184,14 +13322,16 @@ Build it.
         self.assertIn("OPENAI_API_KEY=[REDACTED]", review_calls[1].input_text)
         self.assertNotIn("after-repair-secret", review_calls[1].input_text)
 
-    def test_issue_completion_review_exhaustion_fails_before_local_integration(
+    def test_security_review_exhaustion_marks_failed_before_integration_target_update(
         self,
     ) -> None:
         runner = FakeRunner(
             status_outputs=[" M scripts/ralph.py\n"] * 2,
             diff_outputs=["scripts/ralph.py\n"],
             rev_parse_outputs=["base-sha\n", "base-sha\n"],
-            issue_completion_review_markdowns=[ISSUE_COMPLETION_REVIEW_FAIL_MARKDOWN],
+            issue_completion_review_markdowns=[
+                ISSUE_COMPLETION_REVIEW_SECURITY_FAIL_MARKDOWN
+            ],
         )
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -13234,11 +13374,14 @@ Build it.
         self.assertEqual(
             manifest["issue_completion_review"]["status"], "failed_exhausted"
         )
+        self.assertIsNone(manifest["integration_commit"])
+        self.assertEqual(manifest["pushes"], {})
         self.assertEqual(
             manifest["failure"]["type"],
             ralph.ISSUE_COMPLETION_REVIEW_FAILURE_TYPE,
         )
         self.assertIn("Issue completion review failed", comment)
+        self.assertIn("credential-bearing environment variable", comment)
 
     def test_successful_e2e_retry_reports_durable_run_manifest_evidence(self) -> None:
         changed_path = (

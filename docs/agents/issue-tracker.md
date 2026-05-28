@@ -98,13 +98,16 @@ authentication, infrastructure, and Ralph loop code. Ralph records the trigger
 reason and path evidence in the run manifest and keeps those paths visible in
 the review prompt even when the changed-file inventory is grouped and sampled.
 Passing review lets the normal delivery path continue. Failing review findings
-become a repair prompt for remaining `--max-codex-attempts` attempts; Ralph
-reruns QA and review after each repair. If the budget is exhausted, Ralph marks
-the issue `agent-failed`, preserves worktrees and logs, and does not update an
-**Integration target**. This gate is not human `dev` review, **Ready issue
-refresh**, or **Post-promotion review**. The security-sensitive trigger does not
-add a separate security gate, hard-blocking scanner, label, **Delivery mode**,
-CLI flag, or GitHub Issue mutation permission.
+and concrete blockers in `## Security review` become a repair prompt for
+remaining `--max-codex-attempts` attempts; Ralph reruns QA and review after each
+repair. Completion comments and run manifests preserve the review artifact,
+review log, review attempts, repair attempts, and refreshed redacted security
+evidence. If the budget is exhausted, Ralph marks the issue `agent-failed`,
+preserves worktrees and logs, and does not update an **Integration target**.
+This gate is not human `dev` review, **Ready issue refresh**, or
+**Post-promotion review**. The security-sensitive trigger does not add a
+separate security gate, hard-blocking scanner, label, **Delivery mode**, CLI
+flag, or GitHub Issue mutation permission.
 
 Ralph then runs configured Review package media recipes before **Local
 integration**, Trunk push, or Exploratory handoff. Media recipes may add sibling
