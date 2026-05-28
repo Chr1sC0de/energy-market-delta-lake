@@ -48,7 +48,11 @@ Failing findings do not hard-block through a separate scanner. They feed the
 same **Issue completion review** repair loop as other review findings and
 consume the same per-issue implementation attempt budget. Ralph reruns selected
 QA and review after each repair before any **Integration target** update,
-Trunk push, or Exploratory handoff.
+Trunk push, or Exploratory handoff. Concrete blockers in `## Security review`
+are carried into the repair prompt with ordinary `## Findings`, and the
+completion comment plus manifest preserve enough attempt evidence to inspect
+the security review failure, repair, QA rerun, refreshed redacted security
+evidence, and review rerun sequence.
 
 The review subprocess keeps read-only **Sandboxed issue access**. It may use
 `gh auth status`, `gh issue view`, `gh issue list`, and `gh issue status` only.
@@ -80,11 +84,12 @@ handoff.
 
 Operators have one place to inspect risky issue review outcomes:
 `issue-completion-review.md`, `codex-issue-completion-review.jsonl`, and the
-`issue_completion_review` section in `ralph-run.json`. The artifact's
-`## Security review` section makes the security assessment explicit for every
-review run. Security-sensitive paths and redacted diff matches are evidence for
-why the gate ran, not a new **Delivery mode**, label, CLI flag, or GitHub Issue
-permission.
+`issue_completion_review` section in `ralph-run.json`. Completion comments also
+summarize the review and repair attempt sequence after successful publication.
+The artifact's `## Security review` section makes the security assessment
+explicit for every review run. Security-sensitive paths and redacted diff
+matches are evidence for why the gate ran, not a new **Delivery mode**, label,
+CLI flag, or GitHub Issue permission.
 
 The evidence trigger can produce conservative review coverage for automation,
 credentials, dependency, and infrastructure-adjacent changes without granting

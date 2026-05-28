@@ -1139,6 +1139,12 @@ ordinary implementation, Codex, and QA retries; after each repair Ralph reruns
 selected QA, refreshes redacted security diff evidence from the repaired diff,
 and reruns **Issue completion review** before **Local integration**, Trunk push,
 or Exploratory handoff can proceed.
+Security blockers reported in `## Security review` are included in the same
+repair prompt as ordinary `## Findings`; they do not create a separate security
+gate term. Completion comments and `ralph-run.json` preserve the review
+artifact path, review log path, review attempt sequence, repair attempt
+sequence, and refreshed redacted security evidence so Operators can inspect the
+failure, repair, QA rerun, and review rerun ordering after publication.
 Ralph then runs any configured Review package media recipes. Changed curated
 Marimo notebook files under
 `backend-services/marimo/notebooks/<name>.py` map to `/marimo/<name>/` when that
