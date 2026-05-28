@@ -323,6 +323,14 @@ way:
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md), and ADR
   [0012](../adr/0012-ralph-gitflow-review-package-gate.md) records the static
   HTML validation boundary.
+- #294: Ralph Trunk delivery reuses the blocking **Review package** gate before
+  **Local integration**, the `main` push, completion comments, `agent-merged`,
+  or issue closure. The v1 operator contract lives in
+  [OPERATOR.md](../../OPERATOR.md),
+  [docs/agents/issue-tracker.md](../agents/issue-tracker.md), and
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md), and ADR
+  [0012](../adr/0012-ralph-gitflow-review-package-gate.md) now records that
+  Gitflow and Trunk share the static HTML validation boundary.
 - #166: Checkpointed Operator runs record valid deploy-repair issues in
   `deploy_repair.target_issue`, select that issue before unrelated ready work,
   clear the target after a successful deployment retry, and stop after two

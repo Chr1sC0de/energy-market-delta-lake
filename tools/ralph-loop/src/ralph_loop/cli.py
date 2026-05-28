@@ -5275,7 +5275,7 @@ class RalphLoop:
             )
 
             review_package: dict[str, Any] | None = None
-            if delivery_plan.mode == GITFLOW_MODE:
+            if delivery_plan.mode in {GITFLOW_MODE, TRUNK_MODE}:
                 review_package = self._run_review_package_gate(
                     issue,
                     delivery_plan=delivery_plan,
@@ -11772,6 +11772,9 @@ class RalphRunRecovery:
             changed_files = [
                 str(path) for path in changed_values if isinstance(path, str)
             ]
+        review_package = manifest.data.get("review_package")
+        if not isinstance(review_package, dict):
+            review_package = None
         self.github.comment_issue(
             issue.number,
             build_completion_comment(
@@ -11781,6 +11784,7 @@ class RalphRunRecovery:
                 qa_results_from_manifest(manifest),
                 run_dir,
                 delivery_plan=delivery_plan,
+                review_package=review_package,
             ),
             run_dir=run_dir,
         )
@@ -12794,9 +12798,10 @@ def review_package_prompt(
         f"""
         Generate a Review package for GitHub issue #{issue.number} in {repo}.
 
-        This is a blocking Gitflow delivery gate after QA and any required
-        Issue completion review, and before Local integration, pushing the
-        Integration target, completion comments, or `agent-integrated`.
+        This is a blocking Gitflow or Trunk delivery gate after QA and any
+        required Issue completion review, and before Local integration, pushing
+        the Integration target, completion comments, `agent-integrated`,
+        `agent-merged`, or Trunk issue closure.
 
         Write one complete offline static HTML document only. Do not edit repo
         files. Do not use scripts, inline JavaScript, event handler attributes,

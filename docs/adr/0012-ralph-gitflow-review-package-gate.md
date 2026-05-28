@@ -1,36 +1,37 @@
-# Ralph Gitflow Delivery Uses A Blocking Review Package Gate
+# Ralph Delivery Uses A Blocking Review Package Gate
 
-Ralph Gitflow delivery now generates a per-issue **Review package** after final
-changed files, QA evidence, and any required **Issue completion review** are
-known, and before **Local integration** updates `dev`. The artifact is an
-ignored local `review-package.html` in the issue run directory. It gives the
-operator a human-facing static summary of the issue contract, changed files, QA
-evidence, and review state before the work becomes part of the Gitflow
-**Integration target**.
+Ralph Gitflow and Trunk delivery now generate a per-issue **Review package**
+after final changed files, QA evidence, and any required **Issue completion
+review** are known, and before **Local integration** updates `dev` or `main`.
+The artifact is an ignored local `review-package.html` in the issue run
+directory. It gives the operator a human-facing static summary of the issue
+contract, changed files, QA evidence, and review state before the work becomes
+part of the **Integration target**.
 
 ## Decision
 
-Gitflow delivery must treat Review package generation and validation as a
+Gitflow and Trunk delivery must treat Review package generation and validation as a
 blocking gate. Ralph records package state in `ralph-run.json`, including
 status, HTML path, generator log path, structured summary, validation status,
-and failure reason. Successful Gitflow completion comments include the package
-path and summary.
+and failure reason. Successful Gitflow and Trunk completion comments include the
+package path and summary.
 
 The validator accepts only bounded offline static HTML with required review
 sections. It rejects scripts, external URLs or assets, inline JavaScript,
 JavaScript URLs, `file:` URLs, absolute local file reads, missing issue or
 changed-file evidence, and oversized output. Generation failure, validation
 failure, or generator-created repo edits fail the issue before **Local
-integration**, before any `dev` push, and before `agent-integrated`.
+integration**, before any `dev` or `main` push, before `agent-integrated` or
+`agent-merged`, and before Trunk issue closure.
 
 ## Consequences
 
-Gitflow issue failures at this gate remain Ralph-owned pre-push failures:
+Gitflow and Trunk issue failures at this gate remain Ralph-owned pre-push failures:
 worktrees, logs, and `review-package.html` evidence are preserved for operator
 inspection, but no **Integration target** is updated and no completion metadata
-is written. Trunk and Exploratory delivery do not use this gate yet; later
-slices can reuse the same manifest model and validator when their delivery
-contracts need a Review package.
+is written. Exploratory delivery does not use this gate yet; a later slice can
+reuse the same manifest model and validator if that delivery contract needs a
+Review package.
 
 ## Sync metadata
 
