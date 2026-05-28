@@ -589,6 +589,7 @@ class FakeRunner:
         issue_completion_review_markdowns: list[str] | None = None,
         review_package_html: str = REVIEW_PACKAGE_HTML,
         fail_review_package: bool = False,
+        fail_marimo_review_media: bool = False,
         fail_ready_issue_refresh_analysis: bool = False,
         ready_issue_refresh_analysis_markdown: str = READY_ISSUE_REFRESH_ANALYSIS_MARKDOWN,
         fail_deploy_failure_analysis: bool = False,
@@ -607,6 +608,7 @@ class FakeRunner:
         self.issue_completion_review_markdowns = issue_completion_review_markdowns or []
         self.review_package_html = review_package_html
         self.fail_review_package = fail_review_package
+        self.fail_marimo_review_media = fail_marimo_review_media
         self.fail_ready_issue_refresh_analysis = fail_ready_issue_refresh_analysis
         self.ready_issue_refresh_analysis_markdown = (
             ready_issue_refresh_analysis_markdown
@@ -685,6 +687,41 @@ class FakeRunner:
                 stdout=self.command_outputs[command].pop(0),
                 stderr="",
             )
+        if (
+            command[:6]
+            == (
+                "uv",
+                "run",
+                "--with",
+                "playwright",
+                "python",
+                "scripts/review_promoted_dashboards.py",
+            )
+            and "--videos" in command
+        ):
+            if self.fail_marimo_review_media:
+                raise ralph.CommandFailure(
+                    args,
+                    cwd,
+                    1,
+                    "",
+                    "fake media failure",
+                    log_path,
+                )
+            artifact_dir = Path(command[command.index("--artifact-dir") + 1])
+            routes = [
+                command[index + 1]
+                for index, value in enumerate(command)
+                if value == "--route"
+            ]
+            artifact_dir.mkdir(parents=True, exist_ok=True)
+            for route in routes:
+                for viewport in ("desktop", "narrow"):
+                    video_path = artifact_dir / ralph.marimo_review_video_name(
+                        route, viewport
+                    )
+                    video_path.write_bytes(b"fake webm")
+            return ralph.CompletedCommand(stdout="fake media evidence\n", stderr="")
         if command == ("git", "status", "--porcelain"):
             stdout = self.status_outputs.pop(0) if self.status_outputs else ""
             return ralph.CompletedCommand(stdout=stdout, stderr="")
@@ -2727,6 +2764,39 @@ class RalphHelperTests(unittest.TestCase):
                 )
 
         self.assertIn("CSS url() assets", str(context.exception))
+
+    def test_changed_marimo_notebook_routes_map_to_mounted_routes(self) -> None:
+        self.assertEqual(
+            ralph.changed_marimo_notebook_routes(
+                [
+                    "backend-services/marimo/notebooks/gas_market_prices.py",
+                    "./backend-services/marimo/notebooks/gas_market_prices.py",
+                    "backend-services/marimo/notebooks/head.html",
+                    "backend-services/marimo/src/marimoserver/main.py",
+                ]
+            ),
+            ("/marimo/gas_market_prices/",),
+        )
+
+    def test_review_package_validation_allows_sibling_webm_links(self) -> None:
+        html = REVIEW_PACKAGE_HTML.replace(
+            "</body>",
+            '<p><a href="marimo__gas_market_prices__desktop.webm">'
+            "desktop video</a></p></body>",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            html_path = Path(tmp) / "review-package.html"
+            html_path.write_text(html, encoding="utf-8")
+
+            summary = ralph.validate_review_package_html(
+                html_path,
+                issue_number=42,
+                changed_files=["scripts/ralph.py"],
+                qa_results=[],
+            )
+
+        self.assertEqual(summary.issue_number, 42)
 
     def test_review_package_validation_rejects_external_style_attribute_url(
         self,
@@ -12225,6 +12295,118 @@ Build it.
                 1,
             )
 
+    def test_trunk_review_package_records_marimo_changed_notebook_videos(
+        self,
+    ) -> None:
+        runner = FakeRunner(
+            status_outputs=[
+                " M backend-services/marimo/notebooks/gas_market_prices.py\n",
+                " M backend-services/marimo/notebooks/gas_market_prices.py\n",
+            ],
+            diff_outputs=["backend-services/marimo/notebooks/gas_market_prices.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+
+            with redirect_stdout(io.StringIO()):
+                loop._handle_implementation(issue)
+
+            manifest = load_run_manifest(tmp_path)
+            comment_path = next(
+                (tmp_path / "logs").glob("issue-42-*/issue-42-comment.md")
+            )
+            package_path = next(
+                (tmp_path / "logs").glob("issue-42-*/review-package.html")
+            )
+
+            media = manifest["review_package"]["media"]
+            self.assertEqual(
+                [(item["route"], item["viewport"]) for item in media],
+                [
+                    ("/marimo/gas_market_prices/", "desktop"),
+                    ("/marimo/gas_market_prices/", "narrow"),
+                ],
+            )
+            for item in media:
+                self.assertTrue(Path(item["path"]).exists())
+                self.assertEqual(item["format"], "webm")
+            package_html = package_path.read_text(encoding="utf-8")
+            self.assertIn("Review package media", package_html)
+            self.assertIn("marimo__gas_market_prices__desktop.webm", package_html)
+            comment = comment_path.read_text(encoding="utf-8")
+            self.assertIn("## Review package", comment)
+            self.assertIn("Media", comment)
+            self.assertIn("/marimo/gas_market_prices/", comment)
+            media_call = next(
+                call
+                for call in runner.calls
+                if call.args[:6]
+                == (
+                    "uv",
+                    "run",
+                    "--with",
+                    "playwright",
+                    "python",
+                    "scripts/review_promoted_dashboards.py",
+                )
+            )
+            browser_install_call = next(
+                call
+                for call in runner.calls
+                if call.args
+                == (
+                    "uv",
+                    "run",
+                    "--with",
+                    "playwright",
+                    "playwright",
+                    "install",
+                    "chromium",
+                )
+            )
+            self.assertEqual(browser_install_call.cwd.name, "marimo")
+            self.assertEqual(media_call.cwd.name, "marimo")
+            self.assertIn("--videos", media_call.args)
+            self.assertIn("--route", media_call.args)
+
+    def test_trunk_marimo_media_failure_stops_before_main_push(
+        self,
+    ) -> None:
+        runner = FakeRunner(
+            status_outputs=[
+                " M backend-services/marimo/notebooks/gas_market_prices.py\n",
+                " M backend-services/marimo/notebooks/gas_market_prices.py\n",
+            ],
+            diff_outputs=["backend-services/marimo/notebooks/gas_market_prices.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            fail_marimo_review_media=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                manifest_obj = loop._handle_implementation(issue)
+
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertIsNotNone(manifest_obj)
+        self.assertFalse(
+            any(command[:3] == ("git", "merge", "--squash") for command in commands)
+        )
+        self.assertNotIn(("git", "push", "origin", "HEAD:main"), commands)
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["review_package"]["status"], "failed")
+        self.assertIn(
+            "Marimo Review package media capture failed",
+            manifest["review_package"]["failure_reason"],
+        )
+
     def test_trunk_review_package_validation_failure_stops_before_main_push(
         self,
     ) -> None:
@@ -14187,6 +14369,131 @@ Build it.
             self.assertEqual(manifest["integration_target"], handoff_branch)
             self.assertEqual(manifest["branches"]["issue"], handoff_branch)
             self.assertEqual(manifest["github_metadata"]["status"], "marked_reviewing")
+
+    def test_exploratory_marimo_media_failure_stops_before_handoff(
+        self,
+    ) -> None:
+        handoff_branch = "agent/exploratory/issue-42-implement-thing"
+        ls_remote = (
+            "git",
+            "ls-remote",
+            "--exit-code",
+            "--heads",
+            "origin",
+            handoff_branch,
+        )
+        runner = FakeRunner(
+            status_outputs=[
+                " M backend-services/marimo/notebooks/gas_market_prices.py\n",
+                " M backend-services/marimo/notebooks/gas_market_prices.py\n",
+            ],
+            diff_outputs=["backend-services/marimo/notebooks/gas_market_prices.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            fail_commands={ls_remote: 2},
+            fail_marimo_review_media=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.EXPLORATORY_MODE)
+            issue = make_issue({"ready-for-agent"}, EXPLORATORY_IMPLEMENTATION_BODY)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                manifest_obj = loop._handle_implementation(issue)
+
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertIsNotNone(manifest_obj)
+        self.assertFalse(
+            any(
+                command == ("git", "push", "origin", f"HEAD:{handoff_branch}")
+                for command in commands
+            )
+        )
+        self.assertFalse(
+            any(
+                command[:6] == ("gh", "issue", "edit", "42", "-R", "example/repo")
+                and "agent-reviewing" in command
+                for command in commands
+            )
+        )
+        media_call = next(
+            call
+            for call in runner.calls
+            if call.args[:6]
+            == (
+                "uv",
+                "run",
+                "--with",
+                "playwright",
+                "python",
+                "scripts/review_promoted_dashboards.py",
+            )
+        )
+        self.assertEqual(media_call.cwd.name, "marimo")
+        self.assertIn("--videos", media_call.args)
+        self.assertIn("--route", media_call.args)
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["review_package"]["status"], "failed")
+        self.assertIn(
+            "Marimo Review package media capture failed",
+            manifest["review_package"]["failure_reason"],
+        )
+
+    def test_exploratory_marimo_media_success_records_handoff_evidence(
+        self,
+    ) -> None:
+        handoff_branch = "agent/exploratory/issue-42-implement-thing"
+        ls_remote = (
+            "git",
+            "ls-remote",
+            "--exit-code",
+            "--heads",
+            "origin",
+            handoff_branch,
+        )
+        runner = FakeRunner(
+            status_outputs=[
+                " M backend-services/marimo/notebooks/gas_market_prices.py\n",
+                " M backend-services/marimo/notebooks/gas_market_prices.py\n",
+            ],
+            diff_outputs=["backend-services/marimo/notebooks/gas_market_prices.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            fail_commands={ls_remote: 2},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.EXPLORATORY_MODE)
+            issue = make_issue({"ready-for-agent"}, EXPLORATORY_IMPLEMENTATION_BODY)
+
+            with redirect_stdout(io.StringIO()):
+                loop._handle_implementation(issue)
+
+            manifest = load_run_manifest(tmp_path)
+            comment_path = next(tmp_path.glob("logs/issue-42-*/issue-42-comment.md"))
+            comment = comment_path.read_text(encoding="utf-8")
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(("git", "push", "origin", f"HEAD:{handoff_branch}"), commands)
+        self.assertEqual(manifest["status"], "succeeded")
+        self.assertEqual(manifest["review_package"]["status"], "media_captured")
+        self.assertEqual(
+            manifest["review_package"]["validation_status"], "not_required"
+        )
+        self.assertEqual(
+            [
+                (item["route"], item["viewport"])
+                for item in manifest["review_package"]["media"]
+            ],
+            [
+                ("/marimo/gas_market_prices/", "desktop"),
+                ("/marimo/gas_market_prices/", "narrow"),
+            ],
+        )
+        self.assertIn("## Review package", comment)
+        self.assertIn("Review package media captured.", comment)
+        self.assertNotIn("- HTML:", comment)
+        self.assertIn("/marimo/gas_market_prices/", comment)
 
     def test_exploratory_operator_smoke_runs_after_push_and_records_evidence(
         self,

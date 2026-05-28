@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import codecs
+import html
 import json
 import os
 import re
@@ -5285,6 +5286,14 @@ class RalphLoop:
                     run_dir=run_dir,
                     manifest=manifest,
                 )
+            elif delivery_plan.mode == EXPLORATORY_MODE:
+                review_package = self._run_review_package_media_gate(
+                    issue,
+                    changed_files=changed_files,
+                    worktree_path=worktree_path,
+                    run_dir=run_dir,
+                    manifest=manifest,
+                )
 
             if delivery_plan.mode == EXPLORATORY_MODE:
                 commit_sha = self.git.rev_parse("HEAD", cwd=worktree_path)
@@ -5523,11 +5532,19 @@ class RalphLoop:
     ) -> dict[str, Any]:
         html_path = run_dir / REVIEW_PACKAGE_ARTIFACT_NAME
         log_path = run_dir / "codex-review-package.jsonl"
+        media = self._capture_review_package_media(
+            issue,
+            changed_files=changed_files,
+            worktree_path=worktree_path,
+            run_dir=run_dir,
+            manifest=manifest,
+        )
         emit(f"#{issue.number}: generating Review package")
         manifest.record_review_package(
             "generating",
             html_path=html_path,
             generator_log_path=log_path,
+            media=media,
             validation_status="not_started",
         )
         try:
@@ -5556,6 +5573,7 @@ class RalphLoop:
                 "failed",
                 html_path=html_path,
                 generator_log_path=error.log_path or log_path,
+                media=media,
                 validation_status="not_started",
                 failure_reason=str(failure),
             )
@@ -5577,16 +5595,21 @@ class RalphLoop:
                 "failed",
                 html_path=html_path,
                 generator_log_path=log_path,
+                media=media,
                 validation_status="not_started",
                 failure_reason=str(failure),
             )
             raise failure
+
+        if media:
+            append_review_package_media_links(html_path, media)
 
         emit(f"#{issue.number}: validating Review package")
         manifest.record_review_package(
             "validating",
             html_path=html_path,
             generator_log_path=log_path,
+            media=media,
             validation_status="running",
         )
         try:
@@ -5601,6 +5624,7 @@ class RalphLoop:
                 "validation_failed",
                 html_path=html_path,
                 generator_log_path=log_path,
+                media=media,
                 validation_status="failed",
                 failure_reason=str(error),
             )
@@ -5612,14 +5636,156 @@ class RalphLoop:
             html_path=html_path,
             generator_log_path=log_path,
             summary=summary_payload,
+            media=media,
             validation_status="passed",
         )
         return {
             "html_path": str(html_path),
             "generator_log_path": str(log_path),
             "summary": summary_payload,
+            "media": media,
             "validation_status": "passed",
         }
+
+    def _run_review_package_media_gate(
+        self,
+        issue: Issue,
+        *,
+        changed_files: list[str],
+        worktree_path: Path,
+        run_dir: Path,
+        manifest: RunManifest,
+    ) -> dict[str, Any] | None:
+        media = self._capture_review_package_media(
+            issue,
+            changed_files=changed_files,
+            worktree_path=worktree_path,
+            run_dir=run_dir,
+            manifest=manifest,
+        )
+        if not media:
+            return None
+
+        manifest.record_review_package(
+            "media_captured",
+            html_path=None,
+            generator_log_path=None,
+            summary=None,
+            media=media,
+            validation_status="not_required",
+        )
+        return {
+            "html_path": None,
+            "generator_log_path": None,
+            "summary": None,
+            "media": media,
+            "validation_status": "not_required",
+        }
+
+    def _capture_review_package_media(
+        self,
+        issue: Issue,
+        *,
+        changed_files: list[str],
+        worktree_path: Path,
+        run_dir: Path,
+        manifest: RunManifest,
+    ) -> list[dict[str, Any]]:
+        routes = changed_marimo_notebook_routes(changed_files)
+        if not routes:
+            return []
+
+        artifact_dir = run_dir
+        log_path = run_dir / "marimo-review-package-media.log"
+        browser_install_log_path = (
+            run_dir / "marimo-review-package-media-playwright-install.log"
+        )
+        browser_install_command = [
+            "uv",
+            "run",
+            "--with",
+            "playwright",
+            "playwright",
+            "install",
+            "chromium",
+        ]
+        command = [
+            "uv",
+            "run",
+            "--with",
+            "playwright",
+            "python",
+            "scripts/review_promoted_dashboards.py",
+            "--base-url",
+            os.environ.get(
+                MARIMO_REVIEW_MEDIA_BASE_URL_ENV,
+                MARIMO_REVIEW_MEDIA_DEFAULT_BASE_URL,
+            ),
+            "--artifact-dir",
+            str(artifact_dir),
+            "--videos",
+        ]
+        for route in routes:
+            command.extend(["--route", route])
+
+        emit(
+            f"#{issue.number}: recording Marimo Review package media for "
+            f"{', '.join(routes)}"
+        )
+        try:
+            self.runner.run(
+                browser_install_command,
+                cwd=worktree_path / MARIMO_PREFIX,
+                log_path=browser_install_log_path,
+                phase=f"#{issue.number}: Marimo Review package media browser setup",
+                timeout_seconds=MARIMO_REVIEW_MEDIA_BROWSER_SETUP_TIMEOUT_SECONDS,
+            )
+            self.runner.run(
+                command,
+                cwd=worktree_path / MARIMO_PREFIX,
+                log_path=log_path,
+                phase=f"#{issue.number}: Marimo Review package media",
+                timeout_seconds=MARIMO_REVIEW_MEDIA_TIMEOUT_SECONDS,
+            )
+        except CommandFailure as error:
+            failure = ReviewPackageFailure(
+                f"Marimo Review package media capture failed for #{issue.number}: "
+                f"{error}",
+                log_path=error.log_path or log_path,
+            )
+            manifest.record_review_package(
+                "failed",
+                html_path=run_dir / REVIEW_PACKAGE_ARTIFACT_NAME,
+                generator_log_path=None,
+                media=[],
+                validation_status="not_started",
+                failure_reason=str(failure),
+            )
+            raise failure from error
+
+        media = marimo_review_media_manifest_entries(routes, artifact_dir)
+        missing = [
+            entry["path"]
+            for entry in media
+            if not Path(str(entry["path"])).exists()
+            or Path(str(entry["path"])).stat().st_size <= 0
+        ]
+        if missing:
+            failure = ReviewPackageFailure(
+                "Marimo Review package media capture did not create expected "
+                f"artifact(s): {', '.join(str(path) for path in missing)}",
+                log_path=log_path,
+            )
+            manifest.record_review_package(
+                "failed",
+                html_path=run_dir / REVIEW_PACKAGE_ARTIFACT_NAME,
+                generator_log_path=None,
+                media=media,
+                validation_status="not_started",
+                failure_reason=str(failure),
+            )
+            raise failure
+        return media
 
     def _validate_issue_contract(
         self,
@@ -12832,6 +12998,62 @@ def review_package_prompt(
         {issue.body}
         """
     ).strip()
+
+
+def marimo_review_video_name(route: str, viewport: str) -> str:
+    route_slug = route.strip("/").replace("/", "__")
+    return f"{route_slug}__{viewport}.webm"
+
+
+def marimo_review_media_manifest_entries(
+    routes: tuple[str, ...],
+    artifact_dir: Path,
+) -> list[dict[str, Any]]:
+    media: list[dict[str, Any]] = []
+    for route in routes:
+        for viewport in ("desktop", "narrow"):
+            video_path = artifact_dir / marimo_review_video_name(route, viewport)
+            media.append(
+                {
+                    "kind": "video",
+                    "format": "webm",
+                    "route": route,
+                    "viewport": viewport,
+                    "path": str(video_path),
+                    "review_package_href": video_path.name,
+                }
+            )
+    return media
+
+
+def append_review_package_media_links(
+    html_path: Path,
+    media: list[dict[str, Any]],
+) -> None:
+    if not media:
+        return
+    html_text = html_path.read_text(encoding="utf-8")
+    items = "\n".join(
+        "      <li>"
+        f"{html.escape(str(item.get('route') or ''))} "
+        f"{html.escape(str(item.get('viewport') or ''))}: "
+        f'<a href="{html.escape(str(item.get("review_package_href") or ""))}">'
+        f"{html.escape(str(item.get('review_package_href') or ''))}</a>"
+        "</li>"
+        for item in media
+    )
+    section = (
+        "\n  <h2>Review package media</h2>\n"
+        "  <p>Recorded Marimo route videos are stored next to this Review package.</p>\n"
+        "  <ul>\n"
+        f"{items}\n"
+        "  </ul>\n"
+    )
+    if "</body>" in html_text:
+        html_text = html_text.replace("</body>", f"{section}</body>", 1)
+    else:
+        html_text = f"{html_text.rstrip()}\n{section}\n"
+    html_path.write_text(html_text, encoding="utf-8")
 
 
 def issue_completion_review_repair_prompt(

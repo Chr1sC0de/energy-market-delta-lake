@@ -94,17 +94,23 @@ review after each repair. If the budget is exhausted, Ralph marks the issue
 **Integration target**. This gate is not human `dev` review, **Ready issue
 refresh**, or **Post-promotion review**.
 
-For **Gitflow delivery** and **Trunk delivery**, Ralph then generates and
-validates a **Review package** before **Local integration**, the `dev` or `main`
-push, completion comments, `agent-integrated`, `agent-merged`, or Trunk issue
-closure. The artifact is an ignored local `review-package.html` in the run
+Ralph then runs configured Review package media recipes before **Local
+integration**, Trunk push, or Exploratory handoff. Media recipes may add sibling
+artifacts, such as Marimo `.webm` recordings for changed configured notebook
+routes. For **Gitflow delivery** and **Trunk delivery**, Ralph also generates
+and validates a **Review package** before **Local integration**, the `dev` or
+`main` push, completion comments, `agent-integrated`, `agent-merged`, or Trunk
+issue closure. The artifact is an ignored local `review-package.html` in the run
 directory, built from the final changed files, QA evidence, issue contract, and
-any **Issue completion review** result. Validation accepts only bounded offline
+any **Issue completion review** result; recorded media is linked from that
+package. Exploratory delivery records media metadata and handoff comment links
+without generating Review package HTML. Validation accepts only bounded offline
 static HTML with required review sections and rejects scripts, external URLs or
 assets, inline JavaScript, absolute local file reads, missing issue or
-changed-file evidence, and oversized output. Generation or validation failure
-marks the issue `agent-failed`, preserves logs and worktrees, and does not
-update an **Integration target**.
+changed-file evidence, and oversized output, while permitting sibling `.webm`
+links recorded by Ralph. Media capture, generation, or validation failure marks
+the issue `agent-failed`, preserves logs and worktrees, and does not update an
+**Integration target** or publish an Exploratory handoff.
 
 `$shape-issues` v2 may create new GitHub Issues only after explicit Operator
 confirmation of a passing gate report and pre-publication review Markdown:
