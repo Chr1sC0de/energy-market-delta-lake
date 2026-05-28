@@ -4605,6 +4605,20 @@ def local_branch_fast_forward_recovery_command(
     )
 
 
+def local_branch_not_fast_forward_recovery_guidance(
+    *,
+    branch: str,
+    current_commit: str,
+    target_commit: str,
+) -> str:
+    return (
+        f"Manual recovery required for local {branch}: current commit "
+        f"{current_commit} is not an ancestor of Promotion commit {target_commit}. "
+        "Inspect the local commits, then intentionally rebase, cherry-pick, "
+        "or drop them before moving the branch to the Promotion commit."
+    )
+
+
 def local_branch_ref_fast_forward_recovery_command(
     *,
     repo_root: Path,

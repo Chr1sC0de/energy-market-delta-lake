@@ -16378,6 +16378,82 @@ Build it.
             ),
         )
 
+    def test_promotion_records_manual_recovery_for_non_fast_forward_checked_out_local_branch(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            main_path = tmp_path / "main-worktree"
+            current_commit = "a1d147d3aaf715db92eb8ab352dc32fc1069df8f"
+            target_commit = "8fbea4b179a4a035cbbca89d32d7e2d84d2b984b"
+            ancestor_command = (
+                "git",
+                "merge-base",
+                "--is-ancestor",
+                current_commit,
+                target_commit,
+            )
+            runner = FakeRunner(
+                diff_outputs=["scripts/ralph.py\n"],
+                rev_parse_outputs=["source-sha\n", target_commit + "\n"],
+                status_outputs=[""],
+                command_outputs={
+                    ("git", "worktree", "list", "--porcelain"): [
+                        "\n".join(
+                            [
+                                f"worktree {main_path}",
+                                f"HEAD {current_commit}",
+                                "branch refs/heads/main",
+                                "",
+                            ]
+                        )
+                    ],
+                    (
+                        "git",
+                        "for-each-ref",
+                        "--format=%(objectname)",
+                        "--count=1",
+                        "refs/heads/dev",
+                    ): ["dev-old\n"],
+                },
+                fail_commands={ancestor_command: 1},
+            )
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+            )
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        self.assertFalse(
+            any(
+                call.args == ("git", "merge", "--ff-only", target_commit)
+                for call in runner.calls
+            )
+        )
+        target_fast_forward = manifest["local_branch_fast_forwards"][
+            "integration_target"
+        ]
+        self.assertEqual(target_fast_forward["status"], "skipped_not_fast_forward")
+        self.assertEqual(target_fast_forward["worktree_path"], str(main_path))
+        self.assertEqual(target_fast_forward["current_commit"], current_commit)
+        self.assertEqual(target_fast_forward["target_commit"], target_commit)
+        self.assertIn(current_commit, target_fast_forward["reason"])
+        self.assertIn(target_commit, target_fast_forward["reason"])
+        recovery_guidance = target_fast_forward["recovery_command"]
+        self.assertIn(current_commit, recovery_guidance)
+        self.assertIn(target_commit, recovery_guidance)
+        self.assertIn("Inspect", recovery_guidance)
+        self.assertIn("rebase", recovery_guidance)
+        self.assertIn("cherry-pick", recovery_guidance)
+        self.assertIn("drop", recovery_guidance)
+        self.assertNotIn("pull --ff-only", recovery_guidance)
+
     def test_promotion_from_unrelated_worktree_updates_checked_out_target_only(
         self,
     ) -> None:

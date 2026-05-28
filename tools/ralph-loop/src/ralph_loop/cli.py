@@ -6417,6 +6417,11 @@ class RalphLoop:
                 f"Local {branch} commit {current_commit} is not an ancestor of "
                 f"Promotion commit {target_commit}."
             )
+            recovery_guidance = local_branch_not_fast_forward_recovery_guidance(
+                branch=branch,
+                current_commit=current_commit,
+                target_commit=target_commit,
+            )
             manifest.record_local_branch_fast_forward(
                 role,
                 branch=branch,
@@ -6425,7 +6430,7 @@ class RalphLoop:
                 worktree_path=worktree.path,
                 current_commit=current_commit,
                 reason=reason,
-                recovery_command=recovery_command,
+                recovery_command=recovery_guidance,
             )
             emit(f"Local branch fast-forward skipped: {reason}", err=True)
             return
