@@ -69,6 +69,9 @@ lint.per-file-ignores."tests/**" = [ "D" ]
 lint.pycodestyle.max-line-length = 200
 lint.pydocstyle.convention = "google"
 
+[tool.ty]
+rules.invalid-argument-type = "ignore"
+
 [tool.pytest]
 ini_options.testpaths = [ "tests" ]
 ini_options.markers = [
@@ -78,9 +81,6 @@ ini_options.markers = [
   "deployed: opt-in tests against deployed cloud resources",
   "e2e: complete local service stack tests across subprojects",
 ]
-
-[tool.ty]
-rules.invalid-argument-type = "ignore"
 
 [tool.dg]
 directory_type = "project"
