@@ -27,16 +27,17 @@ make run-prek
   verified post-push metadata recovery, Promotion source-table replay recovery
   output, and compatibility re-exports
 - `src/ralph_loop/workflow.py`: pure label, **Delivery mode**, QA selection,
-  comment, **Issue completion review** trigger, Operator smoke request,
-  deployment classification/execution selection, source-table replay recovery
-  detection, baseline guard command selection, QA runtime disk guard, and
-  recovery policy helpers
+  comment, **Issue completion review** trigger, structured Stiffness ratio
+  parsing, Operator smoke request, deployment classification/execution
+  selection, source-table replay recovery detection, baseline guard command
+  selection, QA runtime disk guard, and recovery policy helpers
 - `src/ralph_loop/state.py`: Ralph run and Operator manifest state helpers,
-  including **Issue completion review**, Operator smoke evidence,
-  adaptive-event evidence, source-table replay recovery guidance, active child
-  run status, deploy-repair issue state, and checkpointed deploy-repair target
-  state, Operator rollup failed-command summaries, rollup requeue recovery
-  classification, and stale detached Operator status inputs
+  including **Issue completion review**, structured Stiffness ratio evidence,
+  Operator smoke evidence, adaptive-event evidence, source-table replay
+  recovery guidance, active child run status, deploy-repair issue state, and
+  checkpointed deploy-repair target state, Operator rollup failed-command
+  summaries, rollup requeue recovery classification, and stale detached
+  Operator status inputs
 - `tests/unit/`: Ralph unit tests
 - `.pre-commit-config.yaml`: Subproject `prek` hook surface
 

@@ -156,6 +156,7 @@ class RunManifest:
                 "reasons": [],
                 "deployment_classification": None,
                 "high_stiffness_evidence": [],
+                "stiffness_ratio_evidence": None,
                 "log_path": None,
                 "artifact_path": None,
                 "attempts": [],
@@ -735,6 +736,9 @@ class RunManifest:
             ]
             review["high_stiffness_evidence"] = trigger_payload[
                 "high_stiffness_evidence"
+            ]
+            review["stiffness_ratio_evidence"] = trigger_payload[
+                "stiffness_ratio_evidence"
             ]
         if log_path is not None or "log_path" not in review:
             review["log_path"] = path_text(log_path)

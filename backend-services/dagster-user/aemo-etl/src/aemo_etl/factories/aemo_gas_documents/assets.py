@@ -34,8 +34,13 @@ from aemo_etl.asset_organization import (
 from aemo_etl.configs import AEMO_BUCKET, ARCHIVE_BUCKET, DAGSTER_URI, LANDING_BUCKET
 from aemo_etl.defs.resources import SOURCE_TABLE_BRONZE_READ_IO_MANAGER_KEY
 from aemo_etl.factories.aemo_gas_documents.models import (
+    AEMO_GSOO_CORPUS_SOURCE,
+    AEMO_GSOO_URL,
     AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
     AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+    AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL,
+    AEMO_WA_GSOO_CORPUS_SOURCE,
+    AEMO_WA_GSOO_URL,
     AEMOGasDocumentPendingObservation,
     AEMOGasDocumentSourcePage,
     AEMOGasDocumentSourceRecord,
@@ -75,6 +80,45 @@ DEFAULT_AEMO_MAJOR_PUBLICATIONS_HUB_DOWNLOAD_SOURCE_PAGES = (
         ),
         source_page_title="Major publications",
         source_page_section="Energy systems major publications",
+        discover_child_pages=True,
+    ),
+    AEMOGasDocumentSourcePage(
+        corpus_source=AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+        source_page_url=AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL,
+        include_decision="include",
+        include_reason=(
+            "Approved major-publications library corpus source. Public AEMO media "
+            "links are downloaded, landed, and archived for downstream corpus "
+            "generation."
+        ),
+        source_page_title="Major publications",
+        source_page_section="Library major publications",
+        discover_child_pages=True,
+    ),
+    AEMOGasDocumentSourcePage(
+        corpus_source=AEMO_GSOO_CORPUS_SOURCE,
+        source_page_url=AEMO_GSOO_URL,
+        include_decision="include",
+        include_reason=(
+            "Approved Gas Statement of Opportunities publication bundle. "
+            "Public AEMO media links are downloaded, landed, and archived for "
+            "downstream corpus generation."
+        ),
+        source_page_title="Gas Statement of Opportunities",
+        source_page_section="Gas forecasting and planning",
+        discover_child_pages=True,
+    ),
+    AEMOGasDocumentSourcePage(
+        corpus_source=AEMO_WA_GSOO_CORPUS_SOURCE,
+        source_page_url=AEMO_WA_GSOO_URL,
+        include_decision="include",
+        include_reason=(
+            "Approved WA Gas Statement of Opportunities publication bundle. "
+            "Public AEMO media links are downloaded, landed, and archived for "
+            "downstream corpus generation."
+        ),
+        source_page_title="WA Gas Statement of Opportunities",
+        source_page_section="Gas forecasting and planning",
         discover_child_pages=True,
     ),
 )
@@ -221,6 +265,16 @@ class AEMOGasDocumentScrapeResult:
     excluded_observation_count: int
     needs_human_review_observation_count: int
     failed_download_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class _DownloadedMedia:
+    """Downloaded media response cached for duplicate normalized source URLs."""
+
+    response: Response
+    content: bytes
+    content_sha256: str
+    key: str
 
 
 def _stable_hash(parts: Iterable[object]) -> str:
@@ -548,6 +602,15 @@ def _land_media_once(
     return True
 
 
+def _observation_decision_counts(
+    observation: AEMOGasDocumentPendingObservation,
+) -> tuple[int, int]:
+    """Return excluded and review-needed increments for one observation."""
+    excluded_count = 1 if observation.include_decision == "exclude" else 0
+    review_count = 1 if observation.include_decision == "needs_human_review" else 0
+    return excluded_count, review_count
+
+
 def scrape_and_land_aemo_gas_document_sources(
     *,
     s3_client: S3Client,
@@ -588,24 +651,54 @@ def land_aemo_gas_document_observations(
     records: list[AEMOGasDocumentSourceRecord] = []
     landed_keys: list[str] = []
     landed_keys_by_hash: dict[str, str] = {}
+    downloaded_media_by_normalized_url: dict[str, _DownloadedMedia] = {}
+    download_errors_by_normalized_url: dict[str, RequestException] = {}
     included_media_count = 0
     excluded_observation_count = 0
     needs_human_review_observation_count = 0
     failed_download_count = 0
 
     for observation in observations:
-        if observation.include_decision == "exclude":
-            excluded_observation_count += 1
-        if observation.include_decision == "needs_human_review":
-            needs_human_review_observation_count += 1
+        excluded_count, review_count = _observation_decision_counts(observation)
+        excluded_observation_count += excluded_count
+        needs_human_review_observation_count += review_count
 
         if not observation.should_download:
             records.append(_empty_record(observation))
             continue
 
+        if (
+            download_error := download_errors_by_normalized_url.get(
+                observation.normalized_source_url
+            )
+        ) is not None:
+            failed_download_count += 1
+            records.append(_download_failed_record(observation, error=download_error))
+            continue
+
+        if (
+            downloaded_media := downloaded_media_by_normalized_url.get(
+                observation.normalized_source_url
+            )
+        ) is not None:
+            included_media_count += 1
+            records.append(
+                _downloaded_record(
+                    observation,
+                    response=downloaded_media.response,
+                    content=downloaded_media.content,
+                    content_sha256=downloaded_media.content_sha256,
+                    landing_bucket=landing_bucket,
+                    archive_bucket=archive_bucket,
+                    key=downloaded_media.key,
+                )
+            )
+            continue
+
         try:
             response = request_getter(observation.source_url)
         except RequestException as e:
+            download_errors_by_normalized_url[observation.normalized_source_url] = e
             failed_download_count += 1
             if logger is not None and hasattr(logger, "warning"):
                 logger.warning(
@@ -640,6 +733,14 @@ def land_aemo_gas_document_observations(
             )
             landed_keys.append(key)
             landed_keys_by_hash[content_sha256] = key
+        downloaded_media_by_normalized_url[observation.normalized_source_url] = (
+            _DownloadedMedia(
+                response=response,
+                content=content,
+                content_sha256=content_sha256,
+                key=key,
+            )
+        )
         records.append(
             _downloaded_record(
                 observation,
@@ -906,25 +1007,29 @@ def aemo_major_publications_hub_downloads_asset_factory(
     aemo_bucket: str = AEMO_BUCKET,
     **asset_kwargs: Unpack[AssetDefinitonParamSpec],
 ) -> AssetsDefinition:
-    """Create the major-publications hub download metadata bronze asset."""
+    """Create the major-publications source-family download metadata bronze asset."""
+    source_pages_tuple = tuple(source_pages)
     caller_metadata = asset_kwargs.pop("metadata", {}) or {}
     asset_kwargs.setdefault("group_name", GAS_AEMO_MAJOR_PUBLICATIONS_GROUP)
     asset_kwargs.setdefault(
         "description",
         (
             "Bronze metadata table for AEMO energy-systems major-publications "
-            "hub source pages and public media downloads. Media bytes are "
-            "landed to S3 and archived only after the metadata Delta write "
-            "succeeds."
+            "hub, library, GSOO, and WA GSOO source pages and public media "
+            "downloads. Media bytes are landed to S3 and archived only after "
+            "the metadata Delta write succeeds."
         ),
     )
     asset_kwargs["metadata"] = {
         "source_family": AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
         "source_page_root": AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+        "source_page_roots": MetadataValue.json(
+            [source_page.source_page_url for source_page in source_pages_tuple]
+        ),
         **caller_metadata,
     }
     return aemo_gas_document_sources_asset_factory(
-        source_pages=source_pages,
+        source_pages=source_pages_tuple,
         request_getter=request_getter,
         observation_loader=observation_loader,
         landing_bucket=landing_bucket,

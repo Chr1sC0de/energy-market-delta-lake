@@ -31,7 +31,10 @@ The initial routing thresholds use the existing `$shape-issues` gate score:
 
 High-stiffness evidence in an already ready issue does not rewrite the
 **Delivery mode**. It triggers **Issue completion review** after QA and before
-**Local integration**, a Trunk push, or Exploratory handoff.
+**Local integration**, a Trunk push, or Exploratory handoff. Ralph accepts both
+legacy score evidence and structured `## Stiffness estimate` ratio fields; high
+or extreme ratio levels, explicit completion-review requirements, and Operator
+overrides that require review all preserve that review gate.
 
 Adaptive events have these boundaries:
 

@@ -112,14 +112,18 @@ headers, write the metadata Delta table, and archive landed media under
 `ARCHIVE_BUCKET/bronze/aemo_gas_documents` only after that metadata write
 succeeds. `bronze_aemo_major_publications_hub_downloads` is the approved
 major-publications source-family asset. It live-discovers the AEMO
-energy-systems major publications hub and child pages, lands included public
-publication media under `LANDING_BUCKET/bronze/aemo_major_publications`, writes
-`bronze_aemo_major_publications_hub_downloads`, archives bytes under
-`ARCHIVE_BUCKET/bronze/aemo_major_publications`, and emits source-page,
-included-download, failed, and review-needed counts. Both assets keep the same
+energy-systems major publications hub, the library major publications page,
+GSOO, and WA GSOO source-page bundles; lands included public publication media
+under `LANDING_BUCKET/bronze/aemo_major_publications`; writes
+`bronze_aemo_major_publications_hub_downloads`; archives bytes under
+`ARCHIVE_BUCKET/bronze/aemo_major_publications`; and emits source-page,
+included-download, failed, and review-needed counts. Repeated normalized source
+URLs are downloaded once per materialization, and byte-identical files from
+different source URLs share one content-addressed archive object while retaining
+each source-page and source-link observation. Both assets keep the same
 write-after-land/archive-after-write pattern. If a direct-media request that was
-downloadable during manifest refresh or hub discovery fails during
-materialization, the asset records a metadata-only row and increments
+downloadable during manifest refresh or major-publications discovery fails
+during materialization, the asset records a metadata-only row and increments
 `failed_download_count` instead of failing the run. The manifest-backed daily
 asset path does not fetch AEMO source-page HTML. These paths do not extract
 document text, create wiki output, or write embeddings/vector storage. Custom

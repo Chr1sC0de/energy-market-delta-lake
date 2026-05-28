@@ -757,8 +757,9 @@ Key fields for inspection:
 - `post_promotion_review`: enabled state, skip reason, warning-only review
   status, review log path, and Markdown artifact path for **Promotion** runs.
 - `issue_completion_review`: trigger reasons, deployment classifier snapshot,
-  high-stiffness evidence, review log and Markdown artifact paths, per-review
-  attempt results, repair attempts, and failure state for implementation runs.
+  high-stiffness evidence, structured Stiffness ratio evidence, review log and
+  Markdown artifact paths, per-review attempt results, repair attempts, and
+  failure state for implementation runs.
 - `post_promotion_followups`: enabled state, created issue URLs, duplicate
   source-marker skips, validation downgrades to `needs-triage`, warning-only
   creation failures, and recovery guidance for **Promotion** follow-ups.
@@ -1053,8 +1054,14 @@ After QA passes and the branch is current with its base, Ralph evaluates the
 **Issue completion review** triggers. Review runs when the final changed-file
 inventory includes deployable paths from the deployment classifier,
 **Agent workflow changes**, when the issue uses **Trunk delivery**, or when the
-issue body contains high-stiffness evidence. The review agent receives the issue
-contract, a bounded changed-file inventory summary, QA evidence,
+issue body contains high-stiffness evidence. Ralph reads both legacy
+`Stiffness: <score> (<level>)` evidence and the structured
+`## Stiffness estimate` fields emitted by issue shaping: `Stiffness ratio`,
+`Ratio level`, `Recommended routing action`, and `Operator override`. A high or
+extreme ratio, an explicit completion-review requirement, or an Operator
+override that requires review keeps the high-stiffness trigger active and is
+recorded in `ralph-run.json`. The review agent receives the issue contract, a
+bounded changed-file inventory summary, QA evidence,
 **Delivery mode**, **Integration target**, run manifest path, and trigger
 reasons. Small inventories are listed verbatim. Large inventories are grouped
 and sampled while risk-relevant deployable and **Agent workflow changes** stay

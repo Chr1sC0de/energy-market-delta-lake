@@ -270,6 +270,16 @@ class StiffnessResult:
     recommended_action: str = "ready"
 
 
+@dataclass(frozen=True)
+class IssueRoutingDecision:
+    action: str
+    ready: bool
+    state_label: str
+    reasons: tuple[str, ...] = ()
+    issue_completion_review_required: bool = False
+    issue_completion_review_reasons: tuple[str, ...] = ()
+
+
 def section_body(markdown: str, heading: str) -> str | None:
     pattern = re.compile(
         rf"(?ims)^#{{1,6}}\s+{re.escape(heading)}\s*$\n"
@@ -1318,9 +1328,9 @@ def stiffness_ratio_level(ratio: float, thresholds: Thresholds) -> str:
 
 def recommended_action_for_ratio(ratio_level: str) -> str:
     if ratio_level == "extreme":
-        return "split"
+        return "split-or-exploratory"
     if ratio_level == "high":
-        return "human-review"
+        return "split"
     if ratio_level == "medium":
         return "keep-visible"
     return "ready"
@@ -1448,22 +1458,130 @@ def action_for_issue(
     validation_reasons: list[str],
     context_passed: bool,
     stiffness: int,
+    ratio_level: str,
     thresholds: Thresholds,
     override: str | None,
-) -> tuple[str, bool, str]:
+    has_review_focus: bool,
+) -> IssueRoutingDecision:
     if validation_reasons or not context_passed:
-        return "needs-context", False, NEEDS_TRIAGE_LABEL
+        return IssueRoutingDecision(
+            action="needs-context",
+            ready=False,
+            state_label=NEEDS_TRIAGE_LABEL,
+            reasons=("validation or Issue context assessor evidence failed",),
+        )
+
+    exploratory_delivery = "delivery-exploratory" in labels
+    if ratio_level == "extreme":
+        if exploratory_delivery and has_review_focus:
+            return IssueRoutingDecision(
+                action="exploratory",
+                ready=True,
+                state_label=READY_LABEL,
+                reasons=(
+                    "extreme ratio routed to Exploratory delivery with "
+                    "Review focus and passing context evidence",
+                ),
+                issue_completion_review_required=True,
+                issue_completion_review_reasons=(
+                    "Extreme-ratio Exploratory delivery requires Issue completion review.",
+                ),
+            )
+        return IssueRoutingDecision(
+            action="split",
+            ready=False,
+            state_label=NEEDS_TRIAGE_LABEL,
+            reasons=(
+                "extreme ratio requires split or Exploratory delivery with "
+                "Review focus and passing context evidence",
+            ),
+        )
+
+    if ratio_level == "high":
+        if exploratory_delivery and has_review_focus:
+            return IssueRoutingDecision(
+                action="exploratory",
+                ready=True,
+                state_label=READY_LABEL,
+                reasons=(
+                    "high ratio routed to Exploratory delivery with Review focus "
+                    "and passing context evidence",
+                ),
+                issue_completion_review_required=True,
+                issue_completion_review_reasons=(
+                    "High-ratio Exploratory delivery requires Issue completion review.",
+                ),
+            )
+        if override is not None:
+            return IssueRoutingDecision(
+                action="ready",
+                ready=True,
+                state_label=READY_LABEL,
+                reasons=("Operator override accepted high-ratio draft.",),
+                issue_completion_review_required=True,
+                issue_completion_review_reasons=(
+                    "Operator override accepted high-ratio draft.",
+                ),
+            )
+        return IssueRoutingDecision(
+            action="split",
+            ready=False,
+            state_label=NEEDS_TRIAGE_LABEL,
+            reasons=(
+                "high ratio requires split before publication unless an Operator "
+                "override accepts AFK drain",
+            ),
+        )
+
     if stiffness >= thresholds.split_stiffness:
         if override is not None:
-            return "ready", True, READY_LABEL
-        return "split", False, NEEDS_TRIAGE_LABEL
+            return IssueRoutingDecision(
+                action="ready",
+                ready=True,
+                state_label=READY_LABEL,
+                reasons=("Operator override accepted high-stiffness draft.",),
+                issue_completion_review_required=True,
+                issue_completion_review_reasons=(
+                    "Operator override accepted high-stiffness draft.",
+                ),
+            )
+        return IssueRoutingDecision(
+            action="split",
+            ready=False,
+            state_label=NEEDS_TRIAGE_LABEL,
+            reasons=("high stiffness requires split before publication",),
+        )
     if stiffness >= thresholds.human_review_stiffness:
         if override is not None:
-            return "ready", True, READY_LABEL
-        return "human-review", False, READY_FOR_HUMAN_LABEL
-    if "delivery-exploratory" in labels:
-        return "exploratory", True, READY_LABEL
-    return "ready", True, READY_LABEL
+            return IssueRoutingDecision(
+                action="ready",
+                ready=True,
+                state_label=READY_LABEL,
+                reasons=("Operator override accepted medium-high stiffness draft.",),
+                issue_completion_review_required=True,
+                issue_completion_review_reasons=(
+                    "Operator override accepted medium-high stiffness draft.",
+                ),
+            )
+        return IssueRoutingDecision(
+            action="human-review",
+            ready=False,
+            state_label=READY_FOR_HUMAN_LABEL,
+            reasons=("medium-high stiffness requires human review before publication",),
+        )
+    if exploratory_delivery:
+        return IssueRoutingDecision(
+            action="exploratory",
+            ready=True,
+            state_label=READY_LABEL,
+            reasons=("Exploratory delivery draft has required context evidence",),
+        )
+    return IssueRoutingDecision(
+        action="ready",
+        ready=True,
+        state_label=READY_LABEL,
+        reasons=("draft passed context and routing gates",),
+    )
 
 
 def evaluate_bundle(
@@ -1537,23 +1655,30 @@ def evaluate_bundle(
         )
         override = bundle.operator_overrides.get(issue.issue_id)
         context_passed = context_assessment.valid and context_assessment.verdict == "pass"
-        action, ready, state_label = action_for_issue(
+        routing = action_for_issue(
             labels=labels,
             validation_reasons=validation_reasons,
             context_passed=context_passed,
             stiffness=stiffness.score,
+            ratio_level=stiffness.ratio_level,
             thresholds=thresholds,
             override=override,
+            has_review_focus=section_body(issue.body, "Review focus") is not None,
         )
         issue_reports.append(
             {
                 "id": issue.issue_id,
                 "title": issue.title,
                 "source_digest": issue.source_digest,
-                "action": action,
-                "ready": ready,
-                "recommended_state_label": state_label,
-                "recommended_labels": sorted({state_label, *issue.labels}),
+                "action": routing.action,
+                "ready": routing.ready,
+                "recommended_state_label": routing.state_label,
+                "recommended_labels": sorted({routing.state_label, *issue.labels}),
+                "routing_reasons": list(routing.reasons),
+                "issue_completion_review": {
+                    "required": routing.issue_completion_review_required,
+                    "reasons": list(routing.issue_completion_review_reasons),
+                },
                 "operator_override": override,
                 "operator_approval_evidence": operator_approval_evidence(issue.body),
                 "validation_reasons": validation_reasons,
@@ -1691,6 +1816,10 @@ def report_markdown(report: dict[str, Any]) -> str:
             lines.append(f"- Declared stiffness: `{declared_level}` (mismatch: `{mismatch}`)")
         if issue["operator_override"] is not None:
             lines.append(f"- Operator override: {issue['operator_override']}")
+        lines.extend(issue_completion_review_markdown_lines(issue))
+        if issue.get("routing_reasons"):
+            lines.append("- Routing reasons:")
+            lines.extend(f"  - {reason}" for reason in issue["routing_reasons"])
         approval = issue["operator_approval_evidence"]
         if approval["present"]:
             lines.append("- Operator approval evidence: present")
@@ -1738,6 +1867,19 @@ def structured_stiffness_evidence_lines(stiffness: dict[str, Any]) -> list[str]:
         f"- Ratio level: `{stiffness['ratio_level']}`",
         f"- Recommended routing action: `{stiffness['recommended_action']}`",
     ]
+
+
+def issue_completion_review_markdown_lines(report_issue: dict[str, Any]) -> list[str]:
+    review = report_issue.get("issue_completion_review")
+    if not isinstance(review, dict) or not bool(review.get("required")):
+        return []
+
+    lines = ["- Issue completion review required: `true`"]
+    reasons = review.get("reasons")
+    if isinstance(reasons, list) and reasons:
+        lines.append("- Issue completion review reasons:")
+        lines.extend(f"  - {reason}" for reason in reasons)
+    return lines
 
 
 def bundle_reference(bundle_path: Path) -> str:
@@ -1826,6 +1968,7 @@ def draft_review_metadata_lines(
         lines.append(
             f"- Declared stiffness: `{declared_level}` (mismatch: `{mismatch}`)"
         )
+    lines.extend(issue_completion_review_markdown_lines(report_issue))
     if review_file is not None:
         lines.append(f"- Review file: `{review_file}`")
     return lines
@@ -1868,6 +2011,7 @@ def structured_stiffness_estimate_body(report_issue: dict[str, Any]) -> str:
                 ),
             ]
         )
+    lines.extend(issue_completion_review_markdown_lines(report_issue))
     lines.append("- Factor reasons:")
     factor_reasons = stiffness_factor_reasons(stiffness)
     if factor_reasons:

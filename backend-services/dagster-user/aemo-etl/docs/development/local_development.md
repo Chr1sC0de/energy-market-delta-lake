@@ -421,10 +421,13 @@ Playwright-backed CLI so regular Dagster runs do not depend on source-page HTML
 availability. The manifest-backed gas document source keeps the AEMO
 energy-systems major publications hub as observation-only `needs_human_review`
 metadata. `bronze_aemo_major_publications_hub_downloads` is the approved
-live-discovery source family for landing public major-publications bytes under
-`bronze/aemo_major_publications`; its materialization metadata reports target
-table URI, landing/archive roots, source page count, included download count,
-failed count, and review-needed count. Validate that source family with
+live-discovery source family for landing public major-publications, library,
+GSOO, and WA GSOO publication bytes under `bronze/aemo_major_publications`; its
+materialization metadata reports target table URI, landing/archive roots,
+source page count, included download count, failed count, and review-needed
+count. Duplicate normalized source URLs are downloaded once per
+materialization, and byte-identical files share one content-addressed archive
+object while preserving each metadata row. Validate that source family with
 `make component-test` for the AEMO ETL **Component test** lane and
 `make run-prek` for the AEMO ETL **Commit check**.
 

@@ -237,6 +237,14 @@ High. The slice names Dagster, schema, and integration pressure.
 Run Component tests for the changed behavior.
 """
 
+EXTREME_EXPLORATORY_BODY = STIFF_BODY + """
+
+## Review focus
+
+Review whether this unsplittable extreme-ratio change should proceed from a
+durable Exploratory branch instead of being split into smaller AFK issues.
+"""
+
 MISSING_FEEDBACK_BODY = """## What to build
 Add an intentionally incomplete ratio example.
 
@@ -269,12 +277,13 @@ def write_bundle(
     *,
     overrides: dict[str, str] | None = None,
     classification: str | None = None,
+    labels: list[str] | None = None,
 ) -> Path:
     issue: dict[str, object] = {
         "id": "harden-ready-issue",
         "title": "Harden Ralph ready issue handling",
         "body": body,
-        "labels": ["enhancement", "delivery-gitflow"],
+        "labels": labels or ["enhancement", "delivery-gitflow"],
     }
     if classification is not None:
         issue["classification"] = classification
@@ -501,6 +510,7 @@ class ShapeIssueGateTests(unittest.TestCase):
         self.assertEqual(stiffness["ratio_level"], "low")
         self.assertGreater(stiffness["safe_feedback_step"], 0)
         self.assertTrue(math.isfinite(stiffness["ratio"]))
+        self.assertFalse(issue["issue_completion_review"]["required"])
         self.assertIn(
             "safe feedback step raised by local Unit test or Fast check evidence",
             stiffness["factor_reasons"],
@@ -525,6 +535,25 @@ class ShapeIssueGateTests(unittest.TestCase):
                 self.assertGreater(stiffness.safe_feedback_step, 0)
                 self.assertTrue(math.isfinite(stiffness.ratio))
                 self.assertIn("hidden-coupling pressure", "\n".join(stiffness.reasons))
+
+    def test_low_and_medium_ratio_paths_remain_ready(self) -> None:
+        examples = (READY_BODY, MEDIUM_RATIO_BODY)
+        for body in examples:
+            with self.subTest(body=body.splitlines()[1]):
+                with tempfile.TemporaryDirectory() as tmp:
+                    tmp_path = Path(tmp)
+                    result = run_gate(write_bundle(tmp_path, body), tmp_path)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+
+                    report = json.loads(
+                        (tmp_path / "report.json").read_text(encoding="utf-8")
+                    )
+
+                issue = report["issues"][0]
+                self.assertEqual(issue["action"], "ready")
+                self.assertTrue(issue["ready"])
+                self.assertIn(issue["stiffness"]["ratio_level"], {"low", "medium"})
+                self.assertFalse(issue["issue_completion_review"]["required"])
 
     def test_missing_and_zero_safe_feedback_do_not_divide_by_zero(self) -> None:
         gate = load_script_module("shape_issue_gate_ratio_zero_under_test", GATE_SCRIPT)
@@ -872,7 +901,89 @@ class ShapeIssueGateTests(unittest.TestCase):
         self.assertEqual(stiffness["declared_level"], "low")
         self.assertTrue(stiffness["declared_mismatch"])
 
-    def test_operator_override_can_accept_high_stiffness(self) -> None:
+    def test_high_ratio_recommends_split(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            result = run_gate(write_bundle(tmp_path, HIGH_RATIO_BODY), tmp_path)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+            markdown = (tmp_path / "report.md").read_text(encoding="utf-8")
+
+        issue = report["issues"][0]
+        self.assertEqual(issue["stiffness"]["ratio_level"], "high")
+        self.assertEqual(issue["stiffness"]["recommended_action"], "split")
+        self.assertEqual(issue["action"], "split")
+        self.assertFalse(issue["ready"])
+        self.assertEqual(issue["recommended_state_label"], "needs-triage")
+        self.assertIn("high ratio requires split before publication", markdown)
+
+    def test_extreme_unsplittable_draft_routes_to_exploratory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            result = run_gate(
+                write_bundle(
+                    tmp_path,
+                    EXTREME_EXPLORATORY_BODY,
+                    labels=["enhancement", "delivery-exploratory"],
+                ),
+                tmp_path,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+            combined = (tmp_path / "issue-drafts.md").read_text(encoding="utf-8")
+
+        issue = report["issues"][0]
+        self.assertEqual(issue["stiffness"]["ratio_level"], "extreme")
+        self.assertEqual(issue["action"], "exploratory")
+        self.assertTrue(issue["ready"])
+        self.assertTrue(issue["issue_completion_review"]["required"])
+        self.assertIn("Review focus", combined)
+        self.assertIn("- Gate action: `exploratory`", combined)
+        self.assertIn("- Issue completion review required: `true`", combined)
+
+    def test_operator_override_can_accept_high_ratio_with_review_requirement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            result = run_gate(
+                write_bundle(
+                    tmp_path,
+                    HIGH_RATIO_BODY,
+                    overrides={
+                        "harden-ready-issue": "Operator accepts high-ratio AFK drain."
+                    },
+                ),
+                tmp_path,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+            markdown = (tmp_path / "report.md").read_text(encoding="utf-8")
+            draft = (tmp_path / "issue-drafts" / "harden-ready-issue.md").read_text(
+                encoding="utf-8"
+            )
+
+        issue = report["issues"][0]
+        self.assertEqual(issue["action"], "ready")
+        self.assertTrue(issue["ready"])
+        self.assertEqual(
+            issue["operator_override"],
+            "Operator accepts high-ratio AFK drain.",
+        )
+        self.assertTrue(issue["issue_completion_review"]["required"])
+        self.assertIn(
+            "Operator override accepted high-ratio draft.",
+            issue["issue_completion_review"]["reasons"],
+        )
+        self.assertIn(
+            "- Operator override: Operator accepts high-ratio AFK drain.",
+            markdown,
+        )
+        self.assertIn("- Issue completion review required: `true`", markdown)
+        self.assertIn("- Issue completion review required: `true`", draft)
+
+    def test_extreme_ratio_override_still_requires_split_or_exploratory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             result = run_gate(
@@ -888,8 +999,9 @@ class ShapeIssueGateTests(unittest.TestCase):
             report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
 
         issue = report["issues"][0]
-        self.assertEqual(issue["action"], "ready")
-        self.assertTrue(issue["ready"])
+        self.assertEqual(issue["stiffness"]["ratio_level"], "extreme")
+        self.assertEqual(issue["action"], "split")
+        self.assertFalse(issue["ready"])
         self.assertEqual(issue["operator_override"], "Operator accepts this scope.")
 
     def test_provider_failure_stops_gate(self) -> None:

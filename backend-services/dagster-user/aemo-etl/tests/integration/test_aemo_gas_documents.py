@@ -15,6 +15,7 @@ from aemo_etl.factories.aemo_gas_documents.models import AEMOGasDocumentSourcePa
 
 _PAGE_URL = "https://www.aemo.com.au/energy-systems/gas/integration"
 _PDF_URL = "https://www.aemo.com.au/-/media/files/gas/integration-guide.pdf"
+_PDF_COPY_URL = "https://www.aemo.com.au/-/media/files/gas/integration-guide-copy.pdf"
 _PDF_BYTES = b"%PDF integration\n%%EOF\n"
 _XLSX_URL = "https://www.aemo.com.au/-/media/files/gas/integration-workbook.xlsx"
 _XLSX_BYTES = b"PK\x03\x04 integration workbook\n"
@@ -51,12 +52,14 @@ def test_aemo_gas_document_metadata_writes_delta_and_archives_media(
     <html><body>
       <h1>Integration</h1>
       <a href="{_PDF_URL}">Integration Guide v1.0</a>
+      <a href="{_PDF_COPY_URL}">Integration Guide copy</a>
       <a href="{_XLSX_URL}">Integration Workbook</a>
     </body></html>
     """
     responses = {
         _PAGE_URL: _response(url=_PAGE_URL, text=html),
         _PDF_URL: _response(url=_PDF_URL, content=_PDF_BYTES),
+        _PDF_COPY_URL: _response(url=_PDF_COPY_URL, content=_PDF_BYTES),
         _XLSX_URL: _response(
             url=_XLSX_URL,
             content=_XLSX_BYTES,
@@ -118,12 +121,18 @@ def test_aemo_gas_document_metadata_writes_delta_and_archives_media(
     media_rows = frame.filter(pl.col("content_sha256").is_not_null())
     decisions = set(frame["include_decision"].to_list())
 
-    assert frame.height == 3
+    assert frame.height == 4
     assert decisions == {"include"}
     assert set(media_rows["storage_uri"].to_list()) == {
         f"s3://{ARCHIVE_BUCKET}/{expected_pdf_key}",
         f"s3://{ARCHIVE_BUCKET}/{expected_xlsx_key}",
     }
+    assert (
+        media_rows["storage_uri"]
+        .to_list()
+        .count(f"s3://{ARCHIVE_BUCKET}/{expected_pdf_key}")
+        == 2
+    )
     assert set(media_rows["document_version_id"].to_list()) == {
         hashlib.sha256(_PDF_BYTES).hexdigest(),
         hashlib.sha256(_XLSX_BYTES).hexdigest(),
