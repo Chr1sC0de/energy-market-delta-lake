@@ -5,9 +5,10 @@ It currently provides the Python package layout, bronze source manifest command,
 archive-prefix completeness audit, archive PDF cache fetcher,
 Docling-based silver document extraction,
 Docling Hybrid silver chunk generation, retrieval index validation,
-gold **Market context** citation validation, generated-artifact policy, seed
-gold glossary Markdown rendering helpers, seed gold glossary artifacts, and
-**Unit test** lane.
+gold **Market context** citation validation, generated-artifact policy, a shared
+corpus core for reusable bronze/silver/gold mechanics, seed gold glossary
+Markdown rendering helpers, seed gold glossary artifacts, and **Unit test**
+lane.
 
 The CLI is available inside this Subproject with `uv run`:
 
@@ -146,6 +147,20 @@ normal body lines, malformed gold citation lists, broken gold chunk or source
 document links, missing source hashes, or stale glossary index references. The
 command does not create embeddings or vector storage.
 
+## Shared Corpus Core
+
+Reusable corpus mechanics live under
+`src/gas_market_knowledge_base/corpus_core/`. That package owns artifact-root
+layout, source manifest row shape, document identity and output path planning,
+silver document and chunk rendering, retrieval index validation, and gold
+Markdown citation validation. Gas-specific filtering, AEMO gas metadata table
+defaults, bucket naming, CLI wording, and **Market context** terminology stay in
+the gas wrapper modules and command surface.
+
+Future corpus tools, such as an AEMO major publications corpus, should pass
+their own `CorpusArtifactLayout` and source metadata policy into the shared
+core instead of copying the Gas market wrappers.
+
 ## Local QA
 
 Run from this directory:
@@ -205,6 +220,8 @@ artifact output rather than maintained router documentation.
 - `src/gas_market_knowledge_base/archive_audit.py`: archive-prefix completeness
   audit against the bronze source manifest.
 - `src/gas_market_knowledge_base/cli.py`: CLI entrypoint.
+- `src/gas_market_knowledge_base/corpus_core/`: reusable corpus artifact
+  layout, manifest row, silver, retrieval index, and gold Markdown mechanics.
 - `src/gas_market_knowledge_base/corpus_paths.py`: external generated corpus
   artifact root and default path policy.
 - `src/gas_market_knowledge_base/docling_adapter.py`: Docling PDF-to-Markdown
@@ -242,6 +259,12 @@ artifact output rather than maintained router documentation.
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/__init__.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/archive_audit.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/__init__.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/gold_context.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/manifest.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/paths.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/silver_chunks.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/silver_documents.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_paths.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/docling_adapter.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/gold_context.py`
@@ -251,6 +274,7 @@ artifact output rather than maintained router documentation.
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/source_manifest.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_archive_audit.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_cli.py`
+  - `tools/gas-market-knowledge-base/tests/unit/test_corpus_core.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_corpus_paths.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_gold_context.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_pdf_cache.py`

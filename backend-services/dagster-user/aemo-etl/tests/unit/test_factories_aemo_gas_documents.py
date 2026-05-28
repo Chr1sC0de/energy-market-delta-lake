@@ -1,4 +1,5 @@
 import datetime as dt
+import hashlib
 from collections.abc import Callable
 from typing import cast
 from unittest.mock import MagicMock
@@ -16,7 +17,8 @@ from aemo_etl.factories.aemo_gas_documents.assets import (
     AEMO_GAS_DOCUMENT_REQUEST_TIMEOUT_SECONDS,
     DELTA_MERGE_OPTIONS,
     AEMOGasDocumentSourceWriteResult,
-    _land_pdf_once,
+    _land_media_once,
+    _media_key,
     land_aemo_gas_document_observations,
     _stable_hash,
     records_to_lazyframe,
@@ -58,11 +60,13 @@ from aemo_etl.factories.aemo_gas_documents.scraper import (
 
 _OBSERVED_AT = dt.datetime(2026, 5, 7, 1, 2, 3, tzinfo=dt.UTC)
 _PDF_BYTES = b"%PDF-1.7\nexample\n%%EOF\n"
+_XLSX_BYTES = b"PK\x03\x04 workbook\n"
 _PAGE_URL = "https://www.aemo.com.au/energy-systems/gas/example"
 _PDF_URL = (
     "https://www.aemo.com.au/-/media/files/gas/example/gas-guide-v2.1.pdf"
     "?rev=ABC&sc_lang=en"
 )
+_XLSX_URL = "https://www.aemo.com.au/-/media/files/gas/example/workbook.xlsx"
 
 
 def _response(
@@ -106,14 +110,14 @@ def test_request_get_aemo_gas_document_uses_browser_compatible_headers(
     )
 
 
-def test_discover_observations_classifies_pdf_non_pdf_and_review_links() -> None:
+def test_discover_observations_classifies_media_and_review_links() -> None:
     html = f"""
     <html>
       <body>
         <h1>Example Gas Page</h1>
         <h2>Guides</h2>
         <a href="{_PDF_URL}">1 May 2026 Gas Guide v2.1 (1.2 MB)</a>
-        <a href="/-/media/files/gas/example/template.xlsx">Spreadsheet template</a>
+        <a href="{_XLSX_URL}">Spreadsheet template</a>
         <a href="https://portal.prod.nemnet.net.au/help">Portal help</a>
         <a href="https://example.com/gas-guide.pdf">External PDF</a>
       </body>
@@ -158,8 +162,8 @@ def test_discover_observations_classifies_pdf_non_pdf_and_review_links() -> None
 
     assert (_PDF_URL, "include") in decisions
     assert (
-        "https://www.aemo.com.au/-/media/files/gas/example/template.xlsx",
-        "exclude",
+        _XLSX_URL,
+        "include",
     ) in decisions
     assert ("https://portal.prod.nemnet.net.au/help", "exclude") in decisions
     assert ("https://example.com/gas-guide.pdf", "exclude") in decisions
@@ -177,6 +181,10 @@ def test_discover_observations_classifies_pdf_non_pdf_and_review_links() -> None
     assert pdf_observation.published_date == "1 May 2026"
     assert pdf_observation.media_revision == "ABC"
     assert pdf_observation.document_kind == "guide"
+    xlsx_observation = next(
+        item for item in observations if item.source_url == _XLSX_URL
+    )
+    assert xlsx_observation.should_download is True
 
 
 def test_discover_observations_records_failed_source_page_and_continues() -> None:
@@ -802,12 +810,13 @@ def test_discover_observations_deduplicates_pages_and_discovers_children() -> No
     assert any(item.source_page_url == child_url for item in observations)
 
 
-def test_scrape_and_land_downloads_included_pdfs_and_records_metadata() -> None:
+def test_scrape_and_land_downloads_included_media_and_records_metadata() -> None:
     html = f"""
     <html><body>
       <h1>Example Gas Page</h1>
       <a href="{_PDF_URL}">Gas Guide v2.1</a>
-      <a href="/-/media/files/gas/example/workbook.xlsx">Workbook</a>
+      <a href="{_XLSX_URL}">Workbook</a>
+      <a href="https://example.com/workbook.xlsx">External workbook</a>
     </body></html>
     """
     s3_client = MagicMock()
@@ -843,6 +852,16 @@ def test_scrape_and_land_downloads_included_pdfs_and_records_metadata() -> None:
                         "Last-Modified": "Thu, 07 May 2026 00:00:00 GMT",
                     },
                 ),
+                _XLSX_URL: _response(
+                    url=_XLSX_URL,
+                    content=_XLSX_BYTES,
+                    headers={
+                        "Content-Type": (
+                            "application/vnd.openxmlformats-officedocument."
+                            "spreadsheetml.sheet"
+                        ),
+                    },
+                ),
             }
         ),
         landing_bucket="landing",
@@ -850,24 +869,31 @@ def test_scrape_and_land_downloads_included_pdfs_and_records_metadata() -> None:
         observed_at=_OBSERVED_AT,
     )
 
-    pdf_records = [record for record in result.records if record.content_sha256]
+    media_records = [record for record in result.records if record.content_sha256]
 
-    assert result.included_pdf_count == 1
+    assert result.included_media_count == 2
     assert result.excluded_observation_count == 1
     assert result.needs_human_review_observation_count == 1
-    assert len(result.landed_keys) == 1
-    assert result.landed_keys[0].startswith(f"{AEMO_GAS_DOCUMENTS_PREFIX}/")
-    assert result.landed_keys[0].endswith(".pdf")
-    s3_client.upload_fileobj.assert_called_once()
-    assert pdf_records[0].content_type == "application/pdf"
-    assert pdf_records[0].content_length == len(_PDF_BYTES)
-    assert pdf_records[0].resolved_url == f"{_PDF_URL}&resolved=true"
-    assert pdf_records[0].storage_uri == f"s3://archive/{result.landed_keys[0]}"
-    assert pdf_records[0].document_version_id == pdf_records[0].content_sha256
+    assert len(result.landed_keys) == 2
+    assert all(
+        key.startswith(f"{AEMO_GAS_DOCUMENTS_PREFIX}/") for key in result.landed_keys
+    )
+    assert {key.rsplit(".", 1)[-1] for key in result.landed_keys} == {"pdf", "xlsx"}
+    assert s3_client.upload_fileobj.call_count == 2
+    assert media_records[0].content_type == "application/pdf"
+    assert media_records[0].content_length == len(_PDF_BYTES)
+    assert media_records[0].resolved_url == f"{_PDF_URL}&resolved=true"
+    assert media_records[0].storage_uri == f"s3://archive/{result.landed_keys[0]}"
+    assert media_records[0].document_version_id == media_records[0].content_sha256
+    assert media_records[1].content_type == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert media_records[1].target_s3_key is not None
+    assert media_records[1].target_s3_key.endswith(".xlsx")
 
     frame = records_to_lazyframe(result.records, ingested_timestamp=_OBSERVED_AT)
     collected = frame.collect()
-    assert collected.height == 4
+    assert collected.height == 5
     assert dict(collected.schema)["content_length"] == pl.Int64
     assert set(collected["include_decision"].to_list()) == {
         "include",
@@ -876,27 +902,40 @@ def test_scrape_and_land_downloads_included_pdfs_and_records_metadata() -> None:
     }
 
 
-def test_land_manifest_observations_downloads_only_direct_media_urls() -> None:
+def test_land_manifest_observations_downloads_included_hub_media_urls() -> None:
+    hub_pdf_url = (
+        "https://www.aemo.com.au/-/media/files/major-publications/isp/report.pdf"
+    )
+    hub_xlsx_url = (
+        "https://www.aemo.com.au/-/media/files/major-publications/isp/workbook.xlsx"
+    )
     observations = observations_from_manifest_payload(
         {
             "schema_version": 1,
             "generated_at": "2026-05-10T00:00:00Z",
             "source_pages": [
                 {
-                    "corpus_source": "example",
-                    "source_page_url": _PAGE_URL,
-                    "source_page_title": "Example Gas Page",
+                    "corpus_source": AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+                    "source_page_url": AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+                    "source_page_title": "Major publications",
                     "include_decision": "include",
                 }
             ],
             "media_links": [
                 {
-                    "corpus_source": "example",
-                    "source_page_url": _PAGE_URL,
+                    "corpus_source": AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+                    "source_page_url": AEMO_MAJOR_PUBLICATIONS_HUB_URL,
                     "source_link_text": "Gas Guide v2.1",
-                    "source_url": _PDF_URL,
+                    "source_url": hub_pdf_url,
                     "include_decision": "include",
-                }
+                },
+                {
+                    "corpus_source": AEMO_MAJOR_PUBLICATIONS_CORPUS_SOURCE,
+                    "source_page_url": AEMO_MAJOR_PUBLICATIONS_HUB_URL,
+                    "source_link_text": "Workbook",
+                    "source_url": hub_xlsx_url,
+                    "include_decision": "include",
+                },
             ],
         },
         observed_at=_OBSERVED_AT,
@@ -910,13 +949,24 @@ def test_land_manifest_observations_downloads_only_direct_media_urls() -> None:
 
     def _get(url: str) -> Response:
         requested_urls.append(url)
-        if url != _PDF_URL:
-            raise AssertionError(f"unexpected source-page request: {url}")
-        return _response(
-            url=url,
-            content=_PDF_BYTES,
-            headers={"Content-Type": "application/pdf"},
-        )
+        if url == hub_pdf_url:
+            return _response(
+                url=url,
+                content=_PDF_BYTES,
+                headers={"Content-Type": "application/pdf"},
+            )
+        if url == hub_xlsx_url:
+            return _response(
+                url=url,
+                content=_XLSX_BYTES,
+                headers={
+                    "Content-Type": (
+                        "application/vnd.openxmlformats-officedocument."
+                        "spreadsheetml.sheet"
+                    )
+                },
+            )
+        raise AssertionError(f"unexpected source-page request: {url}")
 
     result = land_aemo_gas_document_observations(
         s3_client=s3_client,
@@ -926,10 +976,10 @@ def test_land_manifest_observations_downloads_only_direct_media_urls() -> None:
         archive_bucket="archive",
     )
 
-    assert requested_urls == [_PDF_URL]
-    assert result.included_pdf_count == 1
+    assert requested_urls == [hub_pdf_url, hub_xlsx_url]
+    assert result.included_media_count == 2
     assert result.excluded_observation_count == 0
-    assert len(result.records) == 2
+    assert len(result.records) == 3
 
 
 def test_land_manifest_observations_records_runtime_download_failures() -> None:
@@ -982,7 +1032,7 @@ def test_land_manifest_observations_records_runtime_download_failures() -> None:
 
     assert requested_urls == [_PDF_URL]
     assert result.failed_download_count == 1
-    assert result.included_pdf_count == 0
+    assert result.included_media_count == 0
     assert result.landed_keys == []
     assert failed_record.content_sha256 is None
     assert failed_record.target_s3_key is None
@@ -997,13 +1047,13 @@ def test_land_manifest_observations_records_runtime_download_failures() -> None:
     s3_client.upload_fileobj.assert_not_called()
 
 
-def test_scrape_and_land_deduplicates_landed_pdf_bytes() -> None:
-    pdf_url_two = "https://www.aemo.com.au/-/media/files/gas/example/gas-guide-copy.pdf"
+def test_scrape_and_land_deduplicates_landed_media_bytes() -> None:
+    csv_url = "https://www.aemo.com.au/-/media/files/gas/example/workbook-copy.csv"
     html = f"""
     <html><body>
       <h1>Example Gas Page</h1>
-      <a href="{_PDF_URL}">Gas Guide v2.1</a>
-      <a href="{pdf_url_two}">Gas Guide copy v2.1</a>
+      <a href="{_XLSX_URL}">Workbook</a>
+      <a href="{csv_url}">Workbook copy</a>
     </body></html>
     """
     s3_client = MagicMock()
@@ -1024,12 +1074,16 @@ def test_scrape_and_land_deduplicates_landed_pdf_bytes() -> None:
         request_getter=_request_getter(
             {
                 _PAGE_URL: _response(url=_PAGE_URL, text=html),
-                _PDF_URL: _response(
+                _XLSX_URL: _response(
                     url="",
-                    content=_PDF_BYTES,
+                    content=_XLSX_BYTES,
                     headers={"Content-Length": "not-a-number"},
                 ),
-                pdf_url_two: _response(url=pdf_url_two, content=_PDF_BYTES),
+                csv_url: _response(
+                    url=csv_url,
+                    content=_XLSX_BYTES,
+                    headers={"Content-Type": "text/csv"},
+                ),
             }
         ),
         landing_bucket="landing",
@@ -1037,25 +1091,27 @@ def test_scrape_and_land_deduplicates_landed_pdf_bytes() -> None:
         observed_at=_OBSERVED_AT,
     )
 
-    pdf_records = [record for record in result.records if record.content_sha256]
+    media_records = [record for record in result.records if record.content_sha256]
 
-    assert result.included_pdf_count == 2
+    assert result.included_media_count == 2
     assert len(result.landed_keys) == 1
+    assert result.landed_keys[0].endswith(".xlsx")
     s3_client.upload_fileobj.assert_called_once()
-    assert pdf_records[0].content_length == len(_PDF_BYTES)
-    assert pdf_records[0].resolved_url == _PDF_URL
-    assert pdf_records[0].target_s3_key == pdf_records[1].target_s3_key
+    assert media_records[0].content_length == len(_XLSX_BYTES)
+    assert media_records[0].resolved_url == _XLSX_URL
+    assert media_records[0].target_s3_key == media_records[1].target_s3_key
 
 
-def test_land_pdf_once_skips_existing_objects_and_raises_unexpected_errors() -> None:
+def test_land_media_once_skips_existing_objects_and_raises_unexpected_errors() -> None:
     s3_client = MagicMock()
 
     assert (
-        _land_pdf_once(
+        _land_media_once(
             s3_client=s3_client,
             landing_bucket="landing",
             key="bronze/aemo_gas_documents/existing.pdf",
             content=_PDF_BYTES,
+            content_type="application/pdf",
         )
         is False
     )
@@ -1066,11 +1122,12 @@ def test_land_pdf_once_skips_existing_objects_and_raises_unexpected_errors() -> 
         "HeadObject",
     )
     with pytest.raises(ClientError):
-        _land_pdf_once(
+        _land_media_once(
             s3_client=s3_client,
             landing_bucket="landing",
             key="bronze/aemo_gas_documents/error.pdf",
             content=_PDF_BYTES,
+            content_type="application/pdf",
         )
 
 
@@ -1083,6 +1140,36 @@ def test_records_to_lazyframe_preserves_empty_schema() -> None:
 
 def test_stable_hash_accepts_datetimes() -> None:
     assert _stable_hash([_OBSERVED_AT]) == _stable_hash([_OBSERVED_AT])
+
+
+def test_media_key_preserves_safe_extension_or_content_type_suffix() -> None:
+    content_sha256 = hashlib.sha256(_XLSX_BYTES).hexdigest()
+
+    assert _media_key(
+        content_sha256=content_sha256,
+        source_url="https://www.aemo.com.au/-/media/files/report.XLSX?rev=1",
+        content_type="application/octet-stream",
+    ).endswith(".xlsx")
+    assert _media_key(
+        content_sha256=content_sha256,
+        source_url="https://www.aemo.com.au/-/media/files/download?rev=1",
+        content_type="text/csv; charset=utf-8",
+    ).endswith(".csv")
+    assert _media_key(
+        content_sha256=content_sha256,
+        source_url="https://www.aemo.com.au/-/media/files/download",
+        content_type="application/json",
+    ).endswith(".json")
+    assert _media_key(
+        content_sha256=content_sha256,
+        source_url="https://www.aemo.com.au/-/media/files/download",
+        content_type="application/x-not-a-real-content-type",
+    ).endswith(".bin")
+    assert _media_key(
+        content_sha256=content_sha256,
+        source_url="https://www.aemo.com.au/-/media/files/download",
+        content_type=None,
+    ).endswith(".bin")
 
 
 def test_write_aemo_gas_document_sources_batch_appends_when_table_missing(

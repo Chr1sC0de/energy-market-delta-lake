@@ -79,6 +79,14 @@ def is_pdf_url(url: str) -> bool:
     return urlparse(url).path.lower().endswith(PDF_SUFFIX)
 
 
+def is_downloadable_media_url(url: str) -> bool:
+    """Return whether a public AEMO URL points to directly downloadable media."""
+    path = urlparse(url).path.lower()
+    return is_aemo_public_url(url) and (
+        MEDIA_PATH_FRAGMENT in path or path.endswith(PDF_SUFFIX)
+    )
+
+
 def is_aemo_public_url(url: str) -> bool:
     """Return whether the URL is an unauthenticated public AEMO URL."""
     parsed = urlparse(url)
@@ -268,8 +276,8 @@ def _link_decision(
             source_page.exclude_reason,
             False,
         )
-    if not is_pdf_url(absolute_url):
-        return "exclude", None, "Non-PDF link excluded from this corpus slice.", False
+    if not is_downloadable_media_url(absolute_url):
+        return "exclude", None, "Non-media link excluded from this corpus slice.", False
     return "include", source_page.include_reason, None, True
 
 

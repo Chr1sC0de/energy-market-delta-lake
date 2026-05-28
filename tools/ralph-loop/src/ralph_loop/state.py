@@ -13,6 +13,23 @@ FAILURE_SUMMARY_ARTIFACT_MAX_BYTES = 256_000
 FAILURE_SUMMARY_MAX_CHARS = 1_000
 FAILURE_SUMMARY_MAX_LINES = 8
 FAILURE_SUMMARY_MARKDOWN_MAX_CHARS = 420
+ADAPTIVE_EVENT_TYPES: frozenset[str] = frozenset(
+    {"hard_stop", "gated_retry", "residual_update"}
+)
+ADAPTIVE_EVENT_DEFAULTS: dict[str, dict[str, bool]] = {
+    "hard_stop": {
+        "automatic_retry_allowed": False,
+        "consumes_attempt_budget": False,
+    },
+    "gated_retry": {
+        "automatic_retry_allowed": True,
+        "consumes_attempt_budget": True,
+    },
+    "residual_update": {
+        "automatic_retry_allowed": False,
+        "consumes_attempt_budget": False,
+    },
+}
 
 
 def utc_now_text() -> str:
@@ -184,6 +201,7 @@ class RunManifest:
             "pushes": {},
             "github_metadata": {"status": "not_started"},
             "failure": None,
+            "adaptive_events": [],
             "events": [],
         }
         manifest = cls(run_dir / MANIFEST_NAME, data)
@@ -362,6 +380,7 @@ class RunManifest:
             "pushes": {},
             "github_metadata": {"status": "not_started", "issues": []},
             "failure": None,
+            "adaptive_events": [],
             "events": [],
         }
         manifest = cls(run_dir / MANIFEST_NAME, data)
@@ -420,6 +439,7 @@ class RunManifest:
             "pushes": {},
             "github_metadata": {"status": "not_started", "issues": []},
             "failure": None,
+            "adaptive_events": [],
             "events": [],
         }
         manifest = cls(run_dir / MANIFEST_NAME, data)
@@ -448,6 +468,62 @@ class RunManifest:
             raise RalphError("Manifest events field is not a list.")
         events.append(event)
         self._write()
+
+    def record_adaptive_event(
+        self,
+        event_type: str,
+        *,
+        trigger_reason: str,
+        issue_number: int | None = None,
+        residual_work_summary: str | None = None,
+        automatic_retry_allowed: bool | None = None,
+        consumes_attempt_budget: bool | None = None,
+    ) -> dict[str, Any]:
+        if event_type not in ADAPTIVE_EVENT_TYPES:
+            supported_types = ", ".join(sorted(ADAPTIVE_EVENT_TYPES))
+            raise RalphError(
+                f"Unsupported adaptive event type: {event_type}. "
+                f"Expected one of: {supported_types}."
+            )
+        if trigger_reason.strip() == "":
+            raise RalphError("Adaptive event trigger_reason must not be empty.")
+
+        defaults = ADAPTIVE_EVENT_DEFAULTS[event_type]
+        retry_allowed = (
+            defaults["automatic_retry_allowed"]
+            if automatic_retry_allowed is None
+            else automatic_retry_allowed
+        )
+        budget_consumed = (
+            defaults["consumes_attempt_budget"]
+            if consumes_attempt_budget is None
+            else consumes_attempt_budget
+        )
+        if event_type == "hard_stop" and (retry_allowed or budget_consumed):
+            raise RalphError(
+                "Adaptive hard_stop events must not allow automatic Codex retry "
+                "or consume the per-issue attempt budget."
+            )
+
+        entry: dict[str, Any] = {
+            "timestamp": utc_now_text(),
+            "event_type": event_type,
+            "trigger_reason": trigger_reason,
+            "issue_number": (
+                issue_number
+                if issue_number is not None
+                else self._manifest_issue_number_or_none()
+            ),
+            "residual_work_summary": residual_work_summary,
+            "automatic_retry_allowed": retry_allowed,
+            "consumes_attempt_budget": budget_consumed,
+        }
+        adaptive_events = self.data.setdefault("adaptive_events", [])
+        if not isinstance(adaptive_events, list):
+            raise RalphError("Manifest adaptive_events field is not a list.")
+        adaptive_events.append(entry)
+        self.record_event(f"adaptive_{event_type}", details=entry)
+        return entry
 
     def record_changed_files(self, changed_files: list[str], *, stage: str) -> None:
         self.data["changed_files"] = list(changed_files)
@@ -1460,6 +1536,15 @@ class RunManifest:
                 items[index] = entry
                 return
         items.append(entry)
+
+    def _manifest_issue_number_or_none(self) -> int | None:
+        issue = self.data.get("issue")
+        if not isinstance(issue, dict):
+            return None
+        try:
+            return int(issue["number"])
+        except (KeyError, TypeError, ValueError):
+            return None
 
     def _write(self) -> None:
         self.data["updated_at"] = utc_now_text()

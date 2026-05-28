@@ -2,11 +2,15 @@
 
 import hashlib
 import json
+import mimetypes
+import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from io import BytesIO
+from pathlib import PurePosixPath
 from typing import Unpack, cast
+from urllib.parse import urlparse
 
 import requests
 from botocore.exceptions import ClientError
@@ -73,6 +77,20 @@ AEMO_GAS_DOCUMENT_REQUEST_HEADERS: Mapping[str, str] = {
     "Accept-Language": "en-AU,en;q=0.9",
 }
 AEMO_GAS_DOCUMENT_REQUEST_TIMEOUT_SECONDS = 60
+SAFE_MEDIA_EXTENSION_PATTERN = re.compile(r"^\.[a-z0-9][a-z0-9]{0,15}$")
+DEFAULT_MEDIA_EXTENSION = ".bin"
+CONTENT_TYPE_EXTENSION_OVERRIDES: Mapping[str, str] = {
+    "application/gzip": ".gz",
+    "application/msword": ".doc",
+    "application/octet-stream": DEFAULT_MEDIA_EXTENSION,
+    "application/pdf": ".pdf",
+    "application/vnd.ms-excel": ".xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/x-zip-compressed": ".zip",
+    "application/zip": ".zip",
+    "text/csv": ".csv",
+}
 
 type AEMOGasDocumentObservationLoader = Callable[
     [datetime],
@@ -127,7 +145,7 @@ DESCRIPTIONS = {
     "source_page_observed_at": "UTC timestamp when the source page was observed",
     "source_link_text": "Visible source-link text from the AEMO page",
     "source_url": "Exact source href after absolutizing relative links",
-    "resolved_url": "Final URL after the PDF GET request follows redirects",
+    "resolved_url": "Final URL after the media GET request follows redirects",
     "normalized_source_url": "Lowercase normalized URL used as a dedupe aid",
     "source_url_query": "Retained query string from the source URL",
     "document_family_id": "Stable corpus and normalized-title document family ID",
@@ -136,11 +154,11 @@ DESCRIPTIONS = {
     "include_decision": "include, exclude, or needs_human_review",
     "include_reason": "Audit reason for including or holding the observation",
     "exclude_reason": "Audit reason for excluding a link or scope",
-    "content_type": "HTTP content type from the PDF GET response",
-    "content_length": "Downloaded byte length for included PDF rows",
-    "etag": "HTTP ETag from the PDF GET response",
-    "last_modified": "HTTP Last-Modified value from the PDF GET response",
-    "content_sha256": "SHA-256 hash of downloaded PDF bytes",
+    "content_type": "HTTP content type from the media GET response",
+    "content_length": "Downloaded byte length for included media rows",
+    "etag": "HTTP ETag from the media GET response",
+    "last_modified": "HTTP Last-Modified value from the media GET response",
+    "content_sha256": "SHA-256 hash of downloaded media bytes",
     "document_version": "Visible version token parsed from link text or URL",
     "document_version_id": "Content hash version ID for byte-level deduplication",
     "published_date": "Visible publication date parsed from link text",
@@ -148,7 +166,7 @@ DESCRIPTIONS = {
     "media_revision": "AEMO media-library rev query parameter when present",
     "landing_storage_uri": "Landing S3 URI used before metadata table write",
     "archive_storage_uri": "Archive S3 URI used after metadata table write",
-    "storage_uri": "Durable storage URI for the archived PDF bytes",
+    "storage_uri": "Durable storage URI for the archived media bytes",
     "target_s3_key": "S3 object key under bronze/aemo_gas_documents",
     "surrogate_key": f"SHA-256 key from {SURROGATE_KEY_COLUMNS}",
     "source_content_hash": "SHA-256 hash of the metadata row content",
@@ -170,11 +188,11 @@ class AEMOGasDocumentSourceWriteResult:
 
 @dataclass(frozen=True, slots=True)
 class AEMOGasDocumentScrapeResult:
-    """Result of scraping metadata and landing included PDF bytes."""
+    """Result of scraping metadata and landing included media bytes."""
 
     records: list[AEMOGasDocumentSourceRecord]
     landed_keys: list[str]
-    included_pdf_count: int
+    included_media_count: int
     excluded_observation_count: int
     needs_human_review_observation_count: int
     failed_download_count: int
@@ -305,9 +323,59 @@ def _object_exists(
     return True
 
 
-def _pdf_key(content_sha256: str) -> str:
-    """Return the canonical S3 key for a downloaded PDF byte version."""
-    return f"{AEMO_GAS_DOCUMENTS_PREFIX}/{content_sha256}.pdf"
+def _content_type_base(content_type: str | None) -> str | None:
+    """Return a normalized media type without parameters."""
+    if content_type is None:
+        return None
+    base = content_type.split(";", 1)[0].strip().lower()
+    return base or None
+
+
+def _safe_media_extension(extension: str | None) -> str | None:
+    """Return a normalized safe file extension when one is usable."""
+    if extension is None:
+        return None
+    normalized = extension.lower()
+    if SAFE_MEDIA_EXTENSION_PATTERN.fullmatch(normalized) is None:
+        return None
+    return normalized
+
+
+def _url_media_extension(source_url: str) -> str | None:
+    """Return a safe extension from a URL path when available."""
+    suffix = PurePosixPath(urlparse(source_url).path).suffix
+    return _safe_media_extension(suffix)
+
+
+def _content_type_media_extension(content_type: str | None) -> str | None:
+    """Return a safe extension inferred from an HTTP content type."""
+    base = _content_type_base(content_type)
+    if base is None:
+        return None
+    extension = CONTENT_TYPE_EXTENSION_OVERRIDES.get(base)
+    if extension is None:
+        extension = mimetypes.guess_extension(base)
+    return _safe_media_extension(extension)
+
+
+def _media_extension(*, source_url: str, content_type: str | None) -> str:
+    """Return the storage suffix for downloaded media bytes."""
+    return (
+        _url_media_extension(source_url)
+        or _content_type_media_extension(content_type)
+        or DEFAULT_MEDIA_EXTENSION
+    )
+
+
+def _media_key(
+    *,
+    content_sha256: str,
+    source_url: str,
+    content_type: str | None,
+) -> str:
+    """Return the canonical S3 key for a downloaded media byte version."""
+    extension = _media_extension(source_url=source_url, content_type=content_type)
+    return f"{AEMO_GAS_DOCUMENTS_PREFIX}/{content_sha256}{extension}"
 
 
 def _empty_record(
@@ -365,7 +433,7 @@ def _download_failed_record(
     *,
     error: RequestException,
 ) -> AEMOGasDocumentSourceRecord:
-    """Build a metadata-only row for an included PDF that failed to download."""
+    """Build a metadata-only row for included media that failed to download."""
     return _empty_record(
         replace(
             observation,
@@ -385,7 +453,7 @@ def _downloaded_record(
     archive_bucket: str,
     key: str,
 ) -> AEMOGasDocumentSourceRecord:
-    """Build a metadata row for a downloaded included PDF observation."""
+    """Build a metadata row for a downloaded included media observation."""
     headers = cast(Mapping[str, str], response.headers)
     landing_uri = f"s3://{landing_bucket}/{key}"
     archive_uri = f"s3://{archive_bucket}/{key}"
@@ -431,21 +499,25 @@ def _downloaded_record(
     return _with_source_content_hash(record)
 
 
-def _land_pdf_once(
+def _land_media_once(
     *,
     s3_client: S3Client,
     landing_bucket: str,
     key: str,
     content: bytes,
+    content_type: str | None,
 ) -> bool:
-    """Land PDF bytes when the content-addressed object is not already present."""
+    """Land media bytes when the content-addressed object is not already present."""
     if _object_exists(s3_client, bucket=landing_bucket, key=key):
         return False
+    extra_args = {}
+    if content_type is not None:
+        extra_args["ContentType"] = content_type
     s3_client.upload_fileobj(
         BytesIO(content),
         landing_bucket,
         key,
-        ExtraArgs={"ContentType": "application/pdf"},
+        ExtraArgs=extra_args,
     )
     return True
 
@@ -459,7 +531,7 @@ def scrape_and_land_aemo_gas_document_sources(
     archive_bucket: str = ARCHIVE_BUCKET,
     observed_at: datetime | None = None,
 ) -> AEMOGasDocumentScrapeResult:
-    """Scrape metadata rows and land included PDF bytes to S3-compatible storage."""
+    """Scrape metadata rows and land included media bytes to S3-compatible storage."""
     observations = discover_aemo_gas_document_observations(
         source_pages=source_pages,
         request_getter=request_getter,
@@ -483,11 +555,11 @@ def land_aemo_gas_document_observations(
     archive_bucket: str = ARCHIVE_BUCKET,
     logger: object | None = None,
 ) -> AEMOGasDocumentScrapeResult:
-    """Land included PDF bytes and return metadata for pending observations."""
+    """Land included media bytes and return metadata for pending observations."""
     records: list[AEMOGasDocumentSourceRecord] = []
     landed_keys: list[str] = []
-    landed_hashes: set[str] = set()
-    included_pdf_count = 0
+    landed_keys_by_hash: dict[str, str] = {}
+    included_media_count = 0
     excluded_observation_count = 0
     needs_human_review_observation_count = 0
     failed_download_count = 0
@@ -517,17 +589,27 @@ def land_aemo_gas_document_observations(
 
         content = response.content
         content_sha256 = hashlib.sha256(content).hexdigest()
-        key = _pdf_key(content_sha256)
-        included_pdf_count += 1
-        if content_sha256 not in landed_hashes:
-            _land_pdf_once(
+        headers = cast(Mapping[str, str], response.headers)
+        content_type = _headers_get(headers, "Content-Type")
+        resolved_url = _response_url(response, observation.source_url)
+        key = landed_keys_by_hash.get(content_sha256)
+        if key is None:
+            key = _media_key(
+                content_sha256=content_sha256,
+                source_url=resolved_url,
+                content_type=content_type,
+            )
+        included_media_count += 1
+        if content_sha256 not in landed_keys_by_hash:
+            _land_media_once(
                 s3_client=s3_client,
                 landing_bucket=landing_bucket,
                 key=key,
                 content=content,
+                content_type=content_type,
             )
             landed_keys.append(key)
-            landed_hashes.add(content_sha256)
+            landed_keys_by_hash[content_sha256] = key
         records.append(
             _downloaded_record(
                 observation,
@@ -543,7 +625,7 @@ def land_aemo_gas_document_observations(
     return AEMOGasDocumentScrapeResult(
         records=records,
         landed_keys=landed_keys,
-        included_pdf_count=included_pdf_count,
+        included_media_count=included_media_count,
         excluded_observation_count=excluded_observation_count,
         needs_human_review_observation_count=needs_human_review_observation_count,
         failed_download_count=failed_download_count,
@@ -634,7 +716,7 @@ def _archive_landed_keys(
     archive_bucket: str,
     landed_keys: Iterable[str],
 ) -> list[str]:
-    """Move landed PDF bytes into archive storage after metadata write."""
+    """Move landed media bytes into archive storage after metadata write."""
     archived_keys: list[str] = []
     for key in landed_keys:
         s3_client.copy_object(
@@ -658,14 +740,14 @@ def _asset_metadata(
         "dagster/row_count": write_result.row_count,
         "write_mode": write_result.write_mode,
         "wrote_table": write_result.wrote_table,
-        "included_pdf_count": scrape_result.included_pdf_count,
+        "included_media_count": scrape_result.included_media_count,
         "excluded_observation_count": scrape_result.excluded_observation_count,
         "needs_human_review_observation_count": (
             scrape_result.needs_human_review_observation_count
         ),
         "failed_download_count": scrape_result.failed_download_count,
-        "landed_pdf_count": len(scrape_result.landed_keys),
-        "archived_pdf_count": len(archived_keys),
+        "landed_media_count": len(scrape_result.landed_keys),
+        "archived_media_count": len(archived_keys),
         "archived_keys": MetadataValue.json(archived_keys),
     }
 
@@ -700,8 +782,8 @@ def aemo_gas_document_sources_asset_factory(
     asset_kwargs.setdefault(
         "description",
         (
-            "Bronze metadata table for public AEMO gas PDF source-page and "
-            "source-link observations. Included PDF bytes are landed to S3 and "
+            "Bronze metadata table for public AEMO gas media source-page and "
+            "source-link observations. Included media bytes are landed to S3 and "
             "archived only after the metadata Delta write succeeds."
         ),
     )

@@ -3,8 +3,8 @@
 The Operator has chosen the first architecture for the **Gas market knowledge
 base** before implementation starts. The current AEMO gas document ingestion
 path already discovers configured AEMO source pages, downloads included direct
-media PDF bytes, writes `bronze_aemo_gas_document_sources` metadata, and
-archives the bytes in S3-compatible storage. That path stops at PDF bytes and
+media bytes, writes `bronze_aemo_gas_document_sources` metadata, and archives
+the bytes in S3-compatible storage. That path stops at media bytes and
 metadata. It does not extract text, build retrieval chunks, create wiki pages,
 write embeddings, or update a vector store.
 Observation-only configured source pages can still add `needs_human_review`
@@ -26,8 +26,8 @@ the package layout, local command surface, generated-artifact policy, and
 artifacts are added.
 
 AEMO ETL remains responsible for source-page discovery, direct-media download,
-bronze metadata, and archive storage. Raw PDF bytes stay in S3 or in a local
-cache used by the knowledge-base tool. The repository must not commit raw PDFs.
+bronze metadata, and archive storage. Raw PDF bytes used by the knowledge-base
+tool stay in S3 or in a local cache. The repository must not commit raw PDFs.
 
 The knowledge-base Subproject writes generated text artifacts to an external
 corpus artifact root by default. `ENERGY_MARKET_CORPUS_ROOT` selects that root;
@@ -61,6 +61,13 @@ authored from retrieved and inspected source text, with citations back to the
 extracted artifacts. Agents may draft those pages, but the architecture treats
 them as cited review artifacts rather than fully automated truth.
 
+Reusable corpus mechanics belong in a shared core inside the Subproject rather
+than in Gas-market-only modules. The shared core owns artifact-root layout,
+source manifest row shape, document identity and output path planning, silver
+document and chunk rendering, retrieval index validation, and gold Markdown
+citation validation. Gas-specific filtering, AEMO gas metadata table defaults,
+bucket naming, and CLI terminology remain outside that core.
+
 ## Considered Options
 
 - Keep all work inside AEMO ETL: rejected because PDF extraction, corpus review,
@@ -87,9 +94,13 @@ command surface, dependency files, and maintained README. Future implementation
 issues should add the PDF extraction, chunking, citation, and review workflows
 without moving those side effects into AEMO ETL.
 
+Future corpus tools, including an AEMO major publications corpus, should reuse
+the shared core with their own layout and source metadata policy instead of
+copying the Gas market corpus wrappers.
+
 AEMO ETL must not grow Docling dependencies or extraction side effects under
 this decision. `bronze_aemo_gas_document_sources` remains the boundary for
-document discovery, raw PDF landing/archive, and source metadata.
+document discovery, raw media landing/archive, and source metadata.
 
 The external corpus root and any explicit repo `generated/` corpus are
 intentionally separate from maintained repository docs. Future **Market
@@ -121,6 +132,12 @@ its own ADR.
   - `docs/repository/workflow.md`
   - `tools/gas-market-knowledge-base/.pre-commit-config.yaml`
   - `tools/gas-market-knowledge-base/README.md`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/__init__.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/gold_context.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/manifest.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/paths.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/silver_chunks.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/silver_documents.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_paths.py`
   - `docs/repository/documentation-sync.md`
   - `backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md`

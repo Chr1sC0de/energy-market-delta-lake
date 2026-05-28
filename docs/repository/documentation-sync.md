@@ -413,6 +413,12 @@ These commands support the intended flow:
   - `tools/gas-market-knowledge-base/pyproject.toml`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/archive_audit.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/__init__.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/gold_context.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/manifest.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/paths.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/silver_chunks.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/silver_documents.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_paths.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/docling_adapter.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/gold_context.py`
@@ -422,6 +428,7 @@ These commands support the intended flow:
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/source_manifest.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_archive_audit.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_cli.py`
+  - `tools/gas-market-knowledge-base/tests/unit/test_corpus_core.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_corpus_paths.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_gold_context.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_pdf_cache.py`

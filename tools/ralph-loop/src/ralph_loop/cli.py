@@ -9585,6 +9585,59 @@ def issue_completion_review_evidence(manifest: RunManifest) -> str:
     return "; ".join(parts)
 
 
+def adaptive_event_entries(manifest: RunManifest) -> list[dict[str, Any]]:
+    events = manifest.data.get("adaptive_events")
+    if not isinstance(events, list):
+        return []
+    return [event for event in events if isinstance(event, dict)]
+
+
+def latest_adaptive_event(manifest: RunManifest) -> dict[str, Any] | None:
+    events = adaptive_event_entries(manifest)
+    if not events:
+        return None
+    return events[-1]
+
+
+def adaptive_bool_text(value: Any) -> str:
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    return "unknown"
+
+
+def adaptive_event_summary(entry: dict[str, Any]) -> str:
+    event_type = str(entry.get("event_type") or "unknown")
+    issue_number = entry.get("issue_number")
+    issue_text = f" issue #{issue_number}" if issue_number is not None else ""
+    trigger_reason = str(entry.get("trigger_reason") or "not_recorded")
+    retry_text = adaptive_bool_text(entry.get("automatic_retry_allowed"))
+    budget_text = adaptive_bool_text(entry.get("consumes_attempt_budget"))
+    residual_work = str(entry.get("residual_work_summary") or "")
+    parts = [
+        f"{event_type}{issue_text}: {trigger_reason}",
+        f"automatic_retry={retry_text}",
+        f"consumes_attempt_budget={budget_text}",
+    ]
+    if residual_work:
+        parts.append(f"residual_work={residual_work}")
+    return "; ".join(parts)
+
+
+def adaptive_hard_stop_recovery_guidance(manifest: RunManifest) -> str | None:
+    latest_event = latest_adaptive_event(manifest)
+    if latest_event is None or latest_event.get("event_type") != "hard_stop":
+        return None
+    trigger_reason = str(latest_event.get("trigger_reason") or "not_recorded")
+    residual_work = str(latest_event.get("residual_work_summary") or "")
+    residual_text = f" Residual work: {residual_work}." if residual_work else ""
+    return (
+        f"Hard stop recorded: {trigger_reason}.{residual_text} Do not run an "
+        "automatic Codex retry or consume per-issue attempt budget; inspect the "
+        "run manifest, logs, branch state, and GitHub Issue metadata before "
+        "manual recovery."
+    )
+
+
 def changed_files_summary(manifest: RunManifest) -> str:
     changed_files = manifest.data.get("changed_files")
     if not isinstance(changed_files, list):
@@ -9640,9 +9693,17 @@ def recommended_run_action(manifest: RunManifest) -> str:
                 "commit the resolution so it is clean, then run "
                 f"`{exploratory_acceptance_continue_command(run_dir)}`."
             )
+        hard_stop_guidance = adaptive_hard_stop_recovery_guidance(manifest)
+        if hard_stop_guidance is not None:
+            return hard_stop_guidance
         if status == "succeeded":
             return "No recovery needed according to the manifest."
         return "Inspect the Exploratory acceptance manifest and artifacts manually."
+
+    hard_stop_guidance = adaptive_hard_stop_recovery_guidance(manifest)
+    if hard_stop_guidance is not None:
+        return hard_stop_guidance
+
     if run_kind != "implementation":
         return "Inspect the Promotion manifest manually; --recover-run is for implementation runs."
 
@@ -9726,6 +9787,13 @@ def inspect_run(run_dir: Path) -> None:
     emit(f"Metadata status: {metadata_status_value(manifest)}")
     emit(f"Issue completion review status: {issue_completion_review_summary(manifest)}")
     emit(f"Ready issue refresh status: {ready_issue_refresh_status_value(manifest)}")
+    adaptive_events = adaptive_event_entries(manifest)
+    if adaptive_events:
+        emit("Adaptive events:")
+        for event in adaptive_events:
+            emit(f"- {adaptive_event_summary(event)}")
+    else:
+        emit("Adaptive events: none")
     emit_requeue_inspection(manifest)
     if str(manifest.data.get("status") or "") == EXPLORATORY_ACCEPTANCE_CONFLICT_STATUS:
         acceptance_path = manifest_acceptance_worktree_path(manifest)

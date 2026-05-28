@@ -2590,6 +2590,98 @@ class RalphHelperTests(unittest.TestCase):
         self.assertIs(ralph.RunManifest, ralph_state.RunManifest)
         self.assertIs(ralph.OperatorRunManifest, ralph_state.OperatorRunManifest)
 
+    def test_run_manifest_records_adaptive_events(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, FakeRunner())
+            issue = make_issue({ralph.READY_LABEL}, IMPLEMENTATION_BODY)
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch="agent/issue-42-implement-thing",
+                worktree_path=tmp_path / "worktrees" / "issue",
+                integration_path=tmp_path / "worktrees" / "integration",
+                config=loop.config,
+            )
+
+            manifest.record_adaptive_event(
+                "hard_stop",
+                trigger_reason="Integration target verification failed.",
+                residual_work_summary="Operator must inspect branch and issue metadata.",
+            )
+            manifest.record_adaptive_event(
+                "gated_retry",
+                trigger_reason="Unit test failed before Local integration.",
+            )
+            manifest.record_adaptive_event(
+                "residual_update",
+                trigger_reason="Ready issue refresh found stale blocker text.",
+                issue_number=43,
+                residual_work_summary="Refresh #43 blocker evidence.",
+            )
+            loaded = ralph.load_run_manifest(run_dir)
+
+        adaptive_events = loaded.data["adaptive_events"]
+        self.assertEqual(
+            [event["event_type"] for event in adaptive_events],
+            ["hard_stop", "gated_retry", "residual_update"],
+        )
+        hard_stop = adaptive_events[0]
+        self.assertEqual(hard_stop["issue_number"], 42)
+        self.assertFalse(hard_stop["automatic_retry_allowed"])
+        self.assertFalse(hard_stop["consumes_attempt_budget"])
+        self.assertIn("Operator must inspect", hard_stop["residual_work_summary"])
+        gated_retry = adaptive_events[1]
+        self.assertTrue(gated_retry["automatic_retry_allowed"])
+        self.assertTrue(gated_retry["consumes_attempt_budget"])
+        residual_update = adaptive_events[2]
+        self.assertEqual(residual_update["issue_number"], 43)
+        self.assertFalse(residual_update["automatic_retry_allowed"])
+        self.assertFalse(residual_update["consumes_attempt_budget"])
+        self.assertTrue(
+            any(
+                event["stage"] == "adaptive_hard_stop"
+                for event in loaded.data["events"]
+            )
+        )
+
+    def test_run_manifest_rejects_hard_stop_budget_consumption(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, FakeRunner())
+            issue = make_issue({ralph.READY_LABEL}, IMPLEMENTATION_BODY)
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=tmp_path / "logs" / "issue-42-test",
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch="agent/issue-42-implement-thing",
+                worktree_path=tmp_path / "worktrees" / "issue",
+                integration_path=tmp_path / "worktrees" / "integration",
+                config=loop.config,
+            )
+
+            with self.assertRaises(ralph.RalphError) as caught:
+                manifest.record_adaptive_event(
+                    "hard_stop",
+                    trigger_reason="Unsafe recovery boundary.",
+                    automatic_retry_allowed=True,
+                    consumes_attempt_budget=True,
+                )
+
+        self.assertIn("must not allow automatic Codex retry", str(caught.exception))
+
     def test_next_ready_issue_remains_oldest_first_without_deploy_repair_state(
         self,
     ) -> None:
@@ -6614,10 +6706,49 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
         self.assertIn("QA status: passed (1/1)", text)
         self.assertIn("Push status: pushed (main @ abc1234)", text)
         self.assertIn("Metadata status: completion_commented", text)
+        self.assertIn("Adaptive events: none", text)
         self.assertIn("Requeue eligibility: not eligible", text)
         self.assertIn("manifest already records integration_commit", text)
         self.assertIn("manifest records a pushed Integration target", text)
         self.assertIn("--recover-run", text)
+
+    def test_inspect_run_reports_adaptive_event_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = write_recovery_manifest(
+                Path(tmp),
+                metadata_status="failed",
+            )
+            manifest_path = run_dir / "ralph-run.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["adaptive_events"] = [
+                {
+                    "timestamp": "2026-05-28T00:00:00Z",
+                    "event_type": "hard_stop",
+                    "trigger_reason": "Post-push boundary could not be verified.",
+                    "issue_number": 42,
+                    "residual_work_summary": "Inspect issue metadata and branch state.",
+                    "automatic_retry_allowed": False,
+                    "consumes_attempt_budget": False,
+                }
+            ]
+            manifest_path.write_text(
+                json.dumps(manifest, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_run(run_dir)
+
+        text = output.getvalue()
+        self.assertIn("Adaptive events:", text)
+        self.assertIn("hard_stop issue #42", text)
+        self.assertIn("automatic_retry=no", text)
+        self.assertIn("consumes_attempt_budget=no", text)
+        self.assertIn("residual_work=Inspect issue metadata and branch state.", text)
+        self.assertIn("Hard stop recorded: Post-push boundary", text)
+        self.assertIn("Do not run an automatic Codex retry", text)
+        self.assertNotIn("Verify the recorded commit", text)
 
     def test_inspect_run_reports_requeue_eligible_pre_push_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
