@@ -1043,10 +1043,14 @@ After QA passes and the branch is current with its base, Ralph evaluates the
 inventory includes deployable paths from the deployment classifier,
 **Agent workflow changes**, when the issue uses **Trunk delivery**, or when the
 issue body contains high-stiffness evidence. The review agent receives the issue
-contract, final changed files, QA evidence, **Delivery mode**, **Integration
-target**, run manifest path, and trigger reasons. It gets read-only GitHub Issue
-commands and writes `issue-completion-review.md` plus
-`codex-issue-completion-review.jsonl` in the implementation run directory.
+contract, a bounded changed-file inventory summary, QA evidence,
+**Delivery mode**, **Integration target**, run manifest path, and trigger
+reasons. Small inventories are listed verbatim. Large inventories are grouped
+and sampled while risk-relevant deployable and **Agent workflow changes** stay
+verbatim; the full final changed-file inventory remains in `ralph-run.json`.
+It gets read-only GitHub Issue commands and writes
+`issue-completion-review.md` plus `codex-issue-completion-review.jsonl` in the
+implementation run directory.
 
 Passing **Issue completion review** allows **Local integration**, Trunk closure,
 or Exploratory handoff to continue. Failing review findings become the next

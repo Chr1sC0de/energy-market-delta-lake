@@ -2590,6 +2590,170 @@ class RalphHelperTests(unittest.TestCase):
         self.assertIs(ralph.RunManifest, ralph_state.RunManifest)
         self.assertIs(ralph.OperatorRunManifest, ralph_state.OperatorRunManifest)
 
+    def test_issue_completion_review_prompt_keeps_small_changed_file_list(
+        self,
+    ) -> None:
+        issue = make_issue({ralph.READY_LABEL}, IMPLEMENTATION_BODY)
+        delivery_plan = ralph.DeliveryPlan(
+            mode=ralph.GITFLOW_MODE,
+            target_branch=ralph.DEFAULT_GITFLOW_BRANCH,
+            label=ralph.DELIVERY_GITFLOW_LABEL,
+            add_labels=(),
+            remove_labels=(),
+        )
+        changed_files = ["README.md", "docs/agents/ralph-loop.md"]
+        trigger = ralph.issue_completion_review_trigger(
+            issue=issue,
+            delivery_plan=delivery_plan,
+            changed_files=changed_files,
+        )
+
+        prompt = ralph.issue_completion_review_prompt(
+            repo="example/repo",
+            issue=issue,
+            delivery_plan=delivery_plan,
+            changed_files=changed_files,
+            qa_results=[],
+            run_dir=Path("/tmp/ralph-run"),
+            trigger=trigger,
+        )
+
+        self.assertIn("- `README.md`\n- `docs/agents/ralph-loop.md`", prompt)
+        self.assertNotIn("Total changed files", prompt)
+
+    def test_issue_completion_review_prompt_summarizes_large_changed_file_list(
+        self,
+    ) -> None:
+        issue = make_issue({ralph.READY_LABEL}, IMPLEMENTATION_BODY)
+        delivery_plan = ralph.DeliveryPlan(
+            mode=ralph.GITFLOW_MODE,
+            target_branch=ralph.DEFAULT_GITFLOW_BRANCH,
+            label=ralph.DELIVERY_GITFLOW_LABEL,
+            add_labels=(),
+            remove_labels=(),
+        )
+        generated_files = [
+            "tools/gas-market-knowledge-base/generated/silver/chunks/"
+            f"chunk-{index:03}.md"
+            for index in range(600)
+        ]
+        changed_files = [
+            *generated_files,
+            "docs/agents/ralph-loop.md",
+            "infrastructure/aws-pulumi/components/ecs_services.py",
+        ]
+        trigger = ralph.issue_completion_review_trigger(
+            issue=issue,
+            delivery_plan=delivery_plan,
+            changed_files=changed_files,
+        )
+
+        prompt = ralph.issue_completion_review_prompt(
+            repo="example/repo",
+            issue=issue,
+            delivery_plan=delivery_plan,
+            changed_files=changed_files,
+            qa_results=[],
+            run_dir=Path("/tmp/ralph-run"),
+            trigger=trigger,
+        )
+
+        self.assertLess(len(prompt), ralph.ISSUE_COMPLETION_REVIEW_PROMPT_CHAR_LIMIT)
+        self.assertIn("- Total changed files: `602`", prompt)
+        self.assertIn("`tools/gas-market-knowledge-base/generated/**`: 600", prompt)
+        self.assertIn("- Risk-relevant paths kept verbatim:", prompt)
+        self.assertIn("- `docs/agents/ralph-loop.md`", prompt)
+        self.assertIn(
+            "- `infrastructure/aws-pulumi/components/ecs_services.py`",
+            prompt,
+        )
+        self.assertIn('"non_triggering_paths": {', prompt)
+        self.assertIn('"total_count": 601', prompt)
+        self.assertNotIn("chunk-599.md", prompt)
+
+    def test_issue_completion_review_repair_prompt_summarizes_large_changed_file_list(
+        self,
+    ) -> None:
+        generated_files = [
+            "tools/gas-market-knowledge-base/generated/silver/chunks/"
+            f"chunk-{index:03}.md"
+            for index in range(600)
+        ]
+        changed_files = [
+            *generated_files,
+            "docs/agents/ralph-loop.md",
+        ]
+
+        prompt = ralph.issue_completion_review_repair_prompt(
+            issue=make_issue({ralph.READY_LABEL}, IMPLEMENTATION_BODY),
+            changed_files=changed_files,
+            qa_results=[],
+            findings="- Missing generated corpus policy update.",
+            artifact_path=Path("/tmp/issue-completion-review.md"),
+        )
+
+        self.assertIn("Changed files before repair:", prompt)
+        self.assertIn("- Total changed files: `601`", prompt)
+        self.assertIn("`tools/gas-market-knowledge-base/generated/**`: 600", prompt)
+        self.assertIn("- `docs/agents/ralph-loop.md`", prompt)
+        self.assertNotIn("chunk-599.md", prompt)
+
+    def test_issue_completion_review_prompt_size_guard_fails_before_codex(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({ralph.READY_LABEL}, IMPLEMENTATION_BODY)
+            worktree_path, run_dir, manifest, _ = implementation_attempt_context(
+                tmp_path,
+                loop,
+                issue,
+            )
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            changed_files = ["docs/agents/ralph-loop.md"]
+            trigger = ralph.issue_completion_review_trigger(
+                issue=issue,
+                delivery_plan=delivery_plan,
+                changed_files=changed_files,
+            )
+
+            with patch.object(ralph, "ISSUE_COMPLETION_REVIEW_PROMPT_CHAR_LIMIT", 10):
+                with self.assertRaisesRegex(
+                    ralph.IssueFailure,
+                    "Issue completion review prompt exceeded",
+                ):
+                    loop._run_issue_completion_review(
+                        issue,
+                        delivery_plan=delivery_plan,
+                        changed_files=changed_files,
+                        qa_results=[],
+                        worktree_path=worktree_path,
+                        run_dir=run_dir,
+                        manifest=manifest,
+                        trigger=trigger,
+                        review_attempt=1,
+                    )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        self.assertFalse(
+            any(call.args[:2] == ("codex", "exec") for call in runner.calls)
+        )
+        self.assertEqual(
+            manifest_payload["issue_completion_review"]["status"],
+            "failed_prompt_too_large",
+        )
+        self.assertIn(
+            "Issue completion review prompt exceeded",
+            manifest_payload["issue_completion_review"]["failure"]["message"],
+        )
+
     def test_run_manifest_records_adaptive_events(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

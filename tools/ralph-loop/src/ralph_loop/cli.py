@@ -34,6 +34,11 @@ from .workflow import *  # noqa: F403
 
 TYPER_HELP_WIDTH = 140
 typer_rich_utils.MAX_WIDTH = TYPER_HELP_WIDTH
+ISSUE_COMPLETION_REVIEW_PROMPT_CHAR_LIMIT = 900_000
+ISSUE_COMPLETION_REVIEW_CHANGED_FILE_VERBATIM_LIMIT = 200
+ISSUE_COMPLETION_REVIEW_CHANGED_FILE_SAMPLE_LIMIT = 40
+ISSUE_COMPLETION_REVIEW_CHANGED_FILE_GROUP_LIMIT = 20
+ISSUE_COMPLETION_REVIEW_CLASSIFIER_PATH_LIMIT = 80
 
 
 def discover_repo_root(runner: CommandRunner) -> Path:
@@ -6333,16 +6338,35 @@ class RalphLoop:
             artifact_path=artifact_path,
             review_attempt=review_attempt,
         )
-        result = self._run_codex(
-            issue_completion_review_prompt(
-                repo=self.config.repo,
-                issue=issue,
-                delivery_plan=delivery_plan,
-                changed_files=changed_files,
-                qa_results=qa_results,
-                run_dir=run_dir,
+        prompt = issue_completion_review_prompt(
+            repo=self.config.repo,
+            issue=issue,
+            delivery_plan=delivery_plan,
+            changed_files=changed_files,
+            qa_results=qa_results,
+            run_dir=run_dir,
+            trigger=trigger,
+        )
+        if len(prompt) > ISSUE_COMPLETION_REVIEW_PROMPT_CHAR_LIMIT:
+            prompt_path = log_path.with_suffix(".prompt.md")
+            if not self.runner.dry_run:
+                prompt_path.write_text(prompt, encoding="utf-8")
+            failure = issue_completion_review_prompt_size_failure(
+                prompt_length=len(prompt),
+                limit=ISSUE_COMPLETION_REVIEW_PROMPT_CHAR_LIMIT,
+                prompt_path=prompt_path,
+            )
+            manifest.record_issue_completion_review(
+                "failed_prompt_too_large",
                 trigger=trigger,
-            ),
+                log_path=prompt_path,
+                artifact_path=artifact_path,
+                review_attempt=review_attempt,
+                error=str(failure),
+            )
+            raise failure
+        result = self._run_codex(
+            prompt,
             worktree_path,
             log_path,
             phase=f"#{issue.number}: Issue completion review",
@@ -11342,6 +11366,162 @@ def markdown_bullet_lines(values: list[str]) -> str:
     return "\n".join(f"- `{value}`" for value in values)
 
 
+def changed_file_group(path: str) -> str:
+    parts = [part for part in path.split("/") if part != ""]
+    if len(parts) >= 3 and parts[0] in {"backend-services", "tools"}:
+        return "/".join(parts[:3]) + "/**"
+    if len(parts) >= 2 and parts[0] in {"docs", "infrastructure"}:
+        return "/".join(parts[:2]) + "/**"
+    if len(parts) >= 2:
+        return f"{parts[0]}/**"
+    return path
+
+
+def ordered_unique(values: list[str] | tuple[str, ...]) -> list[str]:
+    seen: set[str] = set()
+    unique_values: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique_values.append(value)
+    return unique_values
+
+
+def changed_file_group_counts(changed_files: list[str]) -> list[tuple[str, int]]:
+    counts: dict[str, int] = {}
+    for path in changed_files:
+        group = changed_file_group(path)
+        counts[group] = counts.get(group, 0) + 1
+    return sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+
+
+def bounded_changed_file_sample(
+    changed_files: list[str],
+    *,
+    excluded: set[str],
+) -> list[str]:
+    sample: list[str] = []
+    for path in changed_files:
+        if path in excluded:
+            continue
+        sample.append(path)
+        if len(sample) >= ISSUE_COMPLETION_REVIEW_CHANGED_FILE_SAMPLE_LIMIT:
+            break
+    return sample
+
+
+def issue_completion_review_changed_file_lines(
+    changed_files: list[str],
+    *,
+    classification: PostPromotionDeploymentClassification,
+    run_dir: Path | None = None,
+) -> str:
+    if len(changed_files) <= ISSUE_COMPLETION_REVIEW_CHANGED_FILE_VERBATIM_LIMIT:
+        return markdown_bullet_lines(changed_files)
+
+    risk_paths = ordered_unique(
+        [
+            *classification.deployable_paths,
+            *classification.user_code_redeploy_paths,
+            *classification.full_workflow_paths,
+            *classification.agent_workflow_paths,
+        ]
+    )
+    risk_path_set = set(risk_paths)
+    group_lines = [
+        f"- `{group}`: {count}"
+        for group, count in changed_file_group_counts(changed_files)[
+            :ISSUE_COMPLETION_REVIEW_CHANGED_FILE_GROUP_LIMIT
+        ]
+    ]
+    if not group_lines:
+        group_lines = ["- None"]
+    sample = bounded_changed_file_sample(changed_files, excluded=risk_path_set)
+    sample_lines = markdown_bullet_lines(sample)
+    risk_lines = markdown_bullet_lines(risk_paths)
+    manifest_hint = (
+        f"- Full inventory: `{run_dir / MANIFEST_NAME}` (`changed_files`)"
+        if run_dir is not None
+        else "- Full inventory: run manifest `changed_files`"
+    )
+    return "\n".join(
+        [
+            f"- Total changed files: `{len(changed_files)}`",
+            manifest_hint,
+            "- Grouped path counts:",
+            *group_lines,
+            "- Risk-relevant paths kept verbatim:",
+            risk_lines,
+            "- Sample changed files:",
+            sample_lines,
+        ]
+    )
+
+
+def bounded_path_prompt_value(paths: tuple[str, ...]) -> list[str] | dict[str, object]:
+    if len(paths) <= ISSUE_COMPLETION_REVIEW_CLASSIFIER_PATH_LIMIT:
+        return list(paths)
+
+    sample = list(paths[:ISSUE_COMPLETION_REVIEW_CLASSIFIER_PATH_LIMIT])
+    groups = [
+        {"prefix": group, "count": count}
+        for group, count in changed_file_group_counts(list(paths))[
+            :ISSUE_COMPLETION_REVIEW_CHANGED_FILE_GROUP_LIMIT
+        ]
+    ]
+    return {
+        "total_count": len(paths),
+        "sample": sample,
+        "groups": groups,
+        "omitted_count": len(paths) - len(sample),
+    }
+
+
+def issue_completion_review_classifier_prompt_manifest(
+    classification: PostPromotionDeploymentClassification,
+) -> dict[str, object]:
+    return {
+        "tier": classification.tier,
+        "reason": classification.reason,
+        "recommended_action": classification.recommended_action,
+        "deployable_paths": bounded_path_prompt_value(classification.deployable_paths),
+        "user_code_redeploy_paths": bounded_path_prompt_value(
+            classification.user_code_redeploy_paths
+        ),
+        "full_workflow_paths": bounded_path_prompt_value(
+            classification.full_workflow_paths
+        ),
+        "agent_workflow_paths": bounded_path_prompt_value(
+            classification.agent_workflow_paths
+        ),
+        "non_triggering_paths": bounded_path_prompt_value(
+            classification.non_triggering_paths
+        ),
+    }
+
+
+def issue_completion_review_prompt_size_failure(
+    *,
+    prompt_length: int,
+    limit: int,
+    prompt_path: Path,
+) -> IssueFailure:
+    return IssueFailure(
+        (
+            "Issue completion review prompt exceeded Ralph's bounded prompt size "
+            f"limit: {prompt_length} characters > {limit}. "
+            "Summarize additional prompt sections before rerunning Ralph."
+        ),
+        log_path=prompt_path,
+        failure_type="issue_completion_review_prompt_too_large",
+        recovery_guidance=(
+            "Inspect the saved Issue completion review prompt and run manifest, "
+            "then reduce prompt content or add summarization before rerunning Ralph."
+        ),
+    )
+
+
 def ready_issue_refresh_qa_evidence_lines(qa_results: list[QAResult]) -> str:
     if not qa_results:
         return "- None"
@@ -11897,11 +12077,17 @@ def issue_completion_review_prompt(
     run_dir: Path,
     trigger: IssueCompletionReviewTrigger,
 ) -> str:
-    changed_lines = markdown_bullet_lines(changed_files)
+    changed_lines = issue_completion_review_changed_file_lines(
+        changed_files,
+        classification=trigger.deployment_classification,
+        run_dir=run_dir,
+    )
     qa_lines = ready_issue_refresh_qa_evidence_lines(qa_results)
     trigger_lines = "\n".join(f"- {reason}" for reason in trigger.reasons) or "- None"
     classification_text = json.dumps(
-        trigger.deployment_classification.to_manifest(),
+        issue_completion_review_classifier_prompt_manifest(
+            trigger.deployment_classification
+        ),
         indent=2,
         sort_keys=True,
     )
@@ -11985,7 +12171,10 @@ def issue_completion_review_repair_prompt(
     findings: str,
     artifact_path: Path | None,
 ) -> str:
-    changed_lines = markdown_bullet_lines(changed_files)
+    changed_lines = issue_completion_review_changed_file_lines(
+        changed_files,
+        classification=classify_post_promotion_deployment(changed_files),
+    )
     qa_lines = ready_issue_refresh_qa_evidence_lines(qa_results)
     artifact_text = str(artifact_path) if artifact_path is not None else "not recorded"
     return textwrap.dedent(
