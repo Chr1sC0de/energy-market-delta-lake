@@ -51,8 +51,15 @@ The gate treats these as step-size or stiffness signals:
 - vague blockers or placeholder context
 - supplied context evidence spread across many unrelated repo areas
 
-High stiffness recommends `split`. Medium stiffness remains visible in the
-report so the Operator can tune scope before publishing.
+The gate computes both a legacy 0-100 stiffness score and an explicit
+Stiffness ratio. The score remains for compatibility with older reports and
+threshold language. The ratio is the primary structured evidence for Step size
+pressure: `hidden_coupling_pressure / safe_feedback_step`, with bands
+`low < 1.5`, `medium < 2.5`, `high < 4.0`, and `extreme >= 4.0` unless the
+Operator changes the command thresholds. Medium ratio evidence remains visible
+for scope tuning, high ratio evidence requires a split or Operator override,
+and extreme ratio evidence requires split or **Exploratory delivery** with
+`## Review focus` plus **Issue completion review**.
 
 The stiffness scan is section-aware. It reads implementation-relevant sections:
 `## What to build`, `## Acceptance criteria`, `## Current context`, and
@@ -79,17 +86,28 @@ areas remain separate scoring surfaces.
   surfaces, and any Operator approval evidence found in issue bodies. Each
   issue entry includes a `source_digest`; the top-level `bundle_digest` lets the
   publisher refuse stale bundle/report pairs.
+- `report.json` ratio fields: top-level `thresholds` includes
+  `ratio_medium`, `ratio_high`, and `ratio_extreme`. Each
+  `issues[].stiffness` entry includes the legacy `score` and `level` plus
+  `step_size`, `safe_feedback_step`, `hidden_coupling_pressure`, `ratio`,
+  `ratio_level`, and `recommended_action`.
 - `report.md`: Operator-readable evidence for the issue bundle, including the
   assessor provider, corpus digest, per-issue context verdicts, cited paths, and
-  stiffness evidence.
+  stiffness evidence. It lists the ratio bands and, for each issue, Markdown
+  fields for Step size, Safe feedback step, Hidden-coupling pressure,
+  Stiffness ratio, Ratio level, and Recommended routing action.
 - `issue-drafts.md`: pre-publication review Markdown in publisher order. It
   includes each draft title, labels, blocker references by draft id, gate
   action, stiffness summary, **Issue context assessor** status, deterministic
-  source-marker information, and the full draft body.
+  source-marker information, and the full draft body. The draft metadata uses
+  the same structured Markdown ratio fields as `report.md`.
 - `issue-drafts/<issue-id>.md`: one per-draft review file using the stable draft
   id in the file name. Each file includes the same reviewer metadata plus source
   marker, bundle reference, source digest, and full draft body so the Operator
   can connect it back to `bundle.json` before publication.
+- Published draft bodies replace or append `## Stiffness estimate` with the
+  structured Markdown ratio fields, followed by `Computed stiffness score` and
+  `Computed stiffness level` for legacy compatibility.
 
 ## Publication Policy
 

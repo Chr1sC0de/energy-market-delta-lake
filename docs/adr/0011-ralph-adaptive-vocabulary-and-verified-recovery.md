@@ -13,13 +13,15 @@ Ralph documentation uses these terms:
   execution step. Smaller steps have bounded changed files, clear **Test lane**
   evidence, and recovery that stays inside one issue or queue update.
 - **Stiffness ratio**: hidden-coupling and blast-radius pressure divided by the
-  slice's safe feedback step. The current `$shape-issues` gate expresses this as
-  a 0-100 stiffness score.
+  slice's safe feedback step. The current `$shape-issues` gate emits explicit
+  `step_size`, `safe_feedback_step`, `hidden_coupling_pressure`, `ratio`,
+  `ratio_level`, and `recommended_action` fields, while retaining the legacy
+  0-100 stiffness score and level for compatibility.
 - **Residual work**: the verified remaining delta after **Local integration**,
   failed metadata publication, failed **Promotion**, or **Ready issue refresh**.
 - **Adaptive event**: one of `hard_stop`, `gated_retry`, or `residual_update`.
 
-The initial routing thresholds use the existing `$shape-issues` gate score:
+The initial score thresholds use the existing `$shape-issues` gate score:
 
 - score below `55`: normal issue shaping can continue when the **Issue context
   assessor** passes and the issue declares one **Delivery mode**.
@@ -28,6 +30,12 @@ The initial routing thresholds use the existing `$shape-issues` gate score:
 - score `70` or higher: route to `split` by default. The Operator may choose
   **Exploratory delivery** only when durable human review is the reason and the
   issue includes `## Review focus`.
+
+The structured Stiffness ratio bands are `low < 1.5`, `medium < 2.5`,
+`high < 4.0`, and `extreme >= 4.0` by default. Medium ratio evidence remains
+visible for Operator review. High ratio evidence requires split or an Operator
+override, and extreme ratio evidence requires split or **Exploratory delivery**
+with `## Review focus` plus **Issue completion review**.
 
 High-stiffness evidence in an already ready issue does not rewrite the
 **Delivery mode**. It triggers **Issue completion review** after QA and before
@@ -87,8 +95,10 @@ queue-local issue metadata updates; they are not a policy publication channel.
 
 Issue shaping can discuss Step size and Stiffness ratio without changing the
 canonical **Delivery mode** vocabulary. The `$shape-issues` gate remains the
-first routing surface: low scores can proceed, medium scores need human review
-or narrowing, and high scores split unless an Operator records an override.
+first routing surface: low score or ratio evidence can proceed, medium evidence
+needs human review or narrowing, and high score or ratio evidence splits unless
+an Operator records an override. Extreme ratio evidence needs split or
+**Exploratory delivery** with explicit review focus.
 
 Ralph run manifests record adaptive-event evidence without changing recovery
 policy. `gated_retry` remains tied to the per-issue Codex attempt budget and

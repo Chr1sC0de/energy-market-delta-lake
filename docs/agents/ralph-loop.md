@@ -1788,8 +1788,11 @@ needs recovery that cannot be limited to one issue. Step size is not the Python
 loop iteration, a Codex attempt number, or a single shell command.
 
 **Stiffness ratio** is hidden-coupling and blast-radius pressure divided by the
-slice's safe feedback step. The current `$shape-issues` gate records this as a
-0-100 stiffness score. Initial routing uses these bands:
+slice's safe feedback step. The current `$shape-issues` gate records explicit
+ratio evidence as `step_size`, `safe_feedback_step`,
+`hidden_coupling_pressure`, `ratio`, `ratio_level`, and
+`recommended_action`, while retaining the legacy 0-100 stiffness score and
+level for compatibility. Initial score routing uses these bands:
 
 - score below `55`: keep the issue eligible for normal triage and the declared
   **Delivery mode** when the **Issue context assessor** passes.
@@ -1804,6 +1807,12 @@ High-stiffness evidence in an already ready issue triggers **Issue completion
 review** after QA and before **Local integration**, a Trunk push, or
 Exploratory handoff. It does not change the issue's **Delivery mode** by
 itself.
+
+Structured ratio routing uses the current default bands `low < 1.5`,
+`medium < 2.5`, `high < 4.0`, and `extreme >= 4.0`. Medium ratio evidence is
+published for Operator review. High ratio evidence requires a split or Operator
+override, and extreme ratio evidence requires split or **Exploratory delivery**
+with `## Review focus` plus **Issue completion review**.
 
 **Residual work** is the verified remaining delta after Ralph crosses a boundary
 and compares the result with the issue or queue contract. Residual work can come
