@@ -5691,6 +5691,33 @@ class RalphLoop:
         run_dir: Path,
         manifest: RunManifest,
     ) -> list[dict[str, Any]]:
+        media = [
+            *self._capture_marimo_review_package_media(
+                issue,
+                changed_files=changed_files,
+                worktree_path=worktree_path,
+                run_dir=run_dir,
+                manifest=manifest,
+            ),
+            *self._capture_caddy_review_package_media(
+                issue,
+                changed_files=changed_files,
+                worktree_path=worktree_path,
+                run_dir=run_dir,
+                manifest=manifest,
+            ),
+        ]
+        return media
+
+    def _capture_marimo_review_package_media(
+        self,
+        issue: Issue,
+        *,
+        changed_files: list[str],
+        worktree_path: Path,
+        run_dir: Path,
+        manifest: RunManifest,
+    ) -> list[dict[str, Any]]:
         routes = changed_marimo_notebook_routes(changed_files)
         if not routes:
             return []
@@ -5773,6 +5800,119 @@ class RalphLoop:
         if missing:
             failure = ReviewPackageFailure(
                 "Marimo Review package media capture did not create expected "
+                f"artifact(s): {', '.join(str(path) for path in missing)}",
+                log_path=log_path,
+            )
+            manifest.record_review_package(
+                "failed",
+                html_path=run_dir / REVIEW_PACKAGE_ARTIFACT_NAME,
+                generator_log_path=None,
+                media=media,
+                validation_status="not_started",
+                failure_reason=str(failure),
+            )
+            raise failure
+        return media
+
+    def _capture_caddy_review_package_media(
+        self,
+        issue: Issue,
+        *,
+        changed_files: list[str],
+        worktree_path: Path,
+        run_dir: Path,
+        manifest: RunManifest,
+    ) -> list[dict[str, Any]]:
+        routes = changed_caddy_root_portfolio_routes(changed_files)
+        if not routes:
+            return []
+
+        artifact_dir = run_dir
+        caddy_root = worktree_path / CADDY_PREFIX
+        log_path = run_dir / "caddy-review-package-media.log"
+        build_log_path = run_dir / "caddy-review-package-media-build.log"
+        browser_install_log_path = (
+            run_dir / "caddy-review-package-media-playwright-install.log"
+        )
+        browser_install_command = [
+            "uv",
+            "run",
+            "--with",
+            "playwright",
+            "playwright",
+            "install",
+            "chromium",
+        ]
+        command = [
+            "uv",
+            "run",
+            "--with",
+            "playwright",
+            "python",
+            "-m",
+            "ralph_loop.review_package_media",
+            "--serve-dir",
+            str(caddy_root / "dist"),
+            "--artifact-dir",
+            str(artifact_dir),
+            "--route",
+            "/",
+            "--name-prefix",
+            "caddy__root",
+        ]
+
+        emit(
+            f"#{issue.number}: recording Caddy root portfolio Review package "
+            f"media for {', '.join(routes)}"
+        )
+        try:
+            self.runner.run(
+                ["npm", "run", "build"],
+                cwd=caddy_root,
+                log_path=build_log_path,
+                phase=f"#{issue.number}: Caddy Review package media build",
+                timeout_seconds=CADDY_REVIEW_MEDIA_TIMEOUT_SECONDS,
+            )
+            self.runner.run(
+                browser_install_command,
+                cwd=worktree_path / RALPH_LOOP_PREFIX,
+                log_path=browser_install_log_path,
+                phase=f"#{issue.number}: Caddy Review package media browser setup",
+                timeout_seconds=CADDY_REVIEW_MEDIA_BROWSER_SETUP_TIMEOUT_SECONDS,
+            )
+            self.runner.run(
+                command,
+                cwd=worktree_path / RALPH_LOOP_PREFIX,
+                log_path=log_path,
+                phase=f"#{issue.number}: Caddy Review package media",
+                timeout_seconds=CADDY_REVIEW_MEDIA_TIMEOUT_SECONDS,
+            )
+        except CommandFailure as error:
+            failure = ReviewPackageFailure(
+                f"Caddy Review package media capture failed for #{issue.number}: "
+                f"{error}",
+                log_path=error.log_path or log_path,
+            )
+            manifest.record_review_package(
+                "failed",
+                html_path=run_dir / REVIEW_PACKAGE_ARTIFACT_NAME,
+                generator_log_path=None,
+                media=[],
+                validation_status="not_started",
+                failure_reason=str(failure),
+            )
+            raise failure from error
+
+        media = caddy_review_media_manifest_entries(routes, artifact_dir)
+        missing = [
+            entry["path"]
+            for entry in media
+            if not Path(str(entry["path"])).exists()
+            or Path(str(entry["path"])).stat().st_size <= 0
+        ]
+        if missing:
+            failure = ReviewPackageFailure(
+                "Caddy Review package media capture did not create expected "
                 f"artifact(s): {', '.join(str(path) for path in missing)}",
                 log_path=log_path,
             )
@@ -13026,6 +13166,33 @@ def marimo_review_media_manifest_entries(
     return media
 
 
+def caddy_review_video_name(route: str, viewport: str) -> str:
+    if route != "/":
+        raise ValueError(f"Unsupported Caddy Review package route: {route}")
+    return f"caddy__root__{viewport}.webm"
+
+
+def caddy_review_media_manifest_entries(
+    routes: tuple[str, ...],
+    artifact_dir: Path,
+) -> list[dict[str, Any]]:
+    media: list[dict[str, Any]] = []
+    for route in routes:
+        for viewport in ("desktop", "narrow"):
+            video_path = artifact_dir / caddy_review_video_name(route, viewport)
+            media.append(
+                {
+                    "kind": "video",
+                    "format": "webm",
+                    "route": route,
+                    "viewport": viewport,
+                    "path": str(video_path),
+                    "review_package_href": video_path.name,
+                }
+            )
+    return media
+
+
 def append_review_package_media_links(
     html_path: Path,
     media: list[dict[str, Any]],
@@ -13044,7 +13211,7 @@ def append_review_package_media_links(
     )
     section = (
         "\n  <h2>Review package media</h2>\n"
-        "  <p>Recorded Marimo route videos are stored next to this Review package.</p>\n"
+        "  <p>Recorded route videos are stored next to this Review package.</p>\n"
         "  <ul>\n"
         f"{items}\n"
         "  </ul>\n"

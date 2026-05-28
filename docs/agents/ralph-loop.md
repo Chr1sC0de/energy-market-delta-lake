@@ -1104,6 +1104,14 @@ capture, so the configured media recipe does not depend on an undeclared Marimo
 Subproject dependency. Media capture failure fails the issue before **Local
 integration**, Trunk push, or Exploratory handoff.
 
+Changed Caddy portfolio and static-serving inputs documented by
+`backend-services/caddy/README.md` map to the root `/` route. Ralph runs
+`npm run build` from the Caddy Subproject, serves the built `dist/` directory
+from the issue worktree with its generic Review package media helper, and
+records desktop and narrow `.webm` videos next to the package artifacts. The
+Caddy recipe is Ralph-owned and does not require a Caddy-specific
+browser-review helper.
+
 For Gitflow and Trunk delivery, Ralph then generates a **Review package** at
 `review-package.html` in the run directory and links recorded sibling media from
 that package. The generator receives the final changed-file inventory, QA
@@ -2058,6 +2066,7 @@ ordinary issue failure or retryable QA failure.
   - `tools/ralph-loop/README.md`
   - `tools/ralph-loop/pyproject.toml`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/review_package_media.py`
   - `tools/ralph-loop/src/ralph_loop/state.py`
   - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `tools/ralph-loop/tests/unit/test_ralph.py`

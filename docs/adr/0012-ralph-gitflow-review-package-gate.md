@@ -8,9 +8,10 @@ directory. It gives the operator a human-facing static summary of the issue
 contract, changed files, QA evidence, and review state before the work becomes
 part of the **Integration target**. Configured Review package media recipes may
 add sibling artifacts, such as Marimo dashboard `.webm` recordings for changed
-notebook routes. Exploratory delivery does not generate the HTML package, but
-it still runs configured media recipes before publishing the Exploratory
-handoff.
+notebook routes or Caddy root portfolio `.webm` recordings for changed
+portfolio/static-serving inputs. Exploratory delivery does not generate the
+HTML package, but it still runs configured media recipes before publishing the
+Exploratory handoff.
 
 ## Decision
 
@@ -57,6 +58,7 @@ marked `agent-reviewing`.
   - `docs/agents/issue-tracker.md`
   - `docs/agents/ralph-loop.md`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/review_package_media.py`
   - `tools/ralph-loop/src/ralph_loop/state.py`
   - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `tools/ralph-loop/tests/unit/test_ralph.py`

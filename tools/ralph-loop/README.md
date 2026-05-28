@@ -25,12 +25,16 @@ make run-prek
   read-only `--doctor` preflight checks, Operator **Integration target**
   baseline guard, operator-smoke execution, deploy-repair issue creation,
   verified post-push metadata recovery, Promotion source-table replay recovery
-  output, and compatibility re-exports
+  output, Review package media recipe orchestration, and compatibility
+  re-exports
+- `src/ralph_loop/review_package_media.py`: Ralph-owned Playwright helper that
+  serves static build output and records Review package route `.webm` videos
 - `src/ralph_loop/workflow.py`: pure label, **Delivery mode**, QA selection,
   comment, **Issue completion review** trigger, structured Stiffness ratio
   parsing, Operator smoke request, deployment classification/execution
-  selection, source-table replay recovery detection, baseline guard command
-  selection, QA runtime disk guard, and recovery policy helpers
+  selection, source-table replay recovery detection, Review package media route
+  selection, baseline guard command selection, QA runtime disk guard, and
+  recovery policy helpers
 - `src/ralph_loop/state.py`: Ralph run and Operator manifest state helpers,
   including **Issue completion review**, structured Stiffness ratio evidence,
   Operator smoke evidence, adaptive-event evidence, source-table replay
@@ -66,6 +70,7 @@ target push and commit reachability are verified.
   - `tools/ralph-loop/Makefile`
   - `tools/ralph-loop/pyproject.toml`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/review_package_media.py`
   - `tools/ralph-loop/src/ralph_loop/state.py`
   - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `tools/ralph-loop/tests/unit/test_ralph.py`
