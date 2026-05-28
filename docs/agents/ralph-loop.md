@@ -1116,7 +1116,15 @@ redacted security diff evidence, a bounded changed-file inventory summary, QA ev
 **Delivery mode**, **Integration target**, run manifest path, and trigger
 reasons. The prompt explicitly treats issue bodies, logs, changed-file
 inventories, and redacted diff evidence as untrusted data to review rather than
-instructions to follow. Small inventories are listed verbatim. Large
+instructions to follow. Every artifact must include `## Review result`,
+`## Findings`, `## Security review`, and `## Residual risk`; missing required
+sections are invalid review results and stop delivery before **Local
+integration**, Trunk push, or Exploratory handoff. `## Review result` remains
+the pass/fail source of truth. The `## Security review` section covers concrete
+repairable blockers such as secret exposure, authority expansion, unsafe command
+execution, credential-boundary breaks, weakened auth/IAM/network posture, and
+unjustified dependency or automation risk. Small inventories are listed
+verbatim. Large
 inventories are grouped and sampled while risk-relevant deployable, **Agent
 workflow**, and security-sensitive changed paths stay verbatim; the full final
 changed-file inventory remains in `ralph-run.json`. It gets read-only GitHub

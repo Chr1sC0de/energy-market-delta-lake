@@ -56,6 +56,13 @@ It must not create issues directly, comment, label, close, reopen, edit GitHub
 Issues, commit, push, or update refs. Ralph's outer loop owns any later GitHub
 Issue metadata mutation allowed by other phases.
 
+Every accepted **Issue completion review** artifact includes a
+`## Security review` section. That section records concrete repairable security
+blockers and residual security risk, while `## Review result` remains the
+pass/fail source of truth. Missing `## Security review` is treated as an
+invalid review result before **Local integration**, Trunk push, or Exploratory
+handoff.
+
 ## Considered options
 
 - Add a separate security gate after QA: this would duplicate **Issue
@@ -73,9 +80,11 @@ Issue metadata mutation allowed by other phases.
 
 Operators have one place to inspect risky issue review outcomes:
 `issue-completion-review.md`, `codex-issue-completion-review.jsonl`, and the
-`issue_completion_review` section in `ralph-run.json`. Security-sensitive paths
-and redacted diff matches are evidence for why the gate ran, not a new
-**Delivery mode**, label, CLI flag, or GitHub Issue permission.
+`issue_completion_review` section in `ralph-run.json`. The artifact's
+`## Security review` section makes the security assessment explicit for every
+review run. Security-sensitive paths and redacted diff matches are evidence for
+why the gate ran, not a new **Delivery mode**, label, CLI flag, or GitHub Issue
+permission.
 
 The evidence trigger can produce conservative review coverage for automation,
 credentials, dependency, and infrastructure-adjacent changes without granting

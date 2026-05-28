@@ -13102,6 +13102,14 @@ def issue_completion_review_prompt(
         For `fail`, list concrete repair findings with file paths, commands, or
         issue acceptance criteria. For `pass`, write `No blocking findings.`
 
+        ## Security review
+
+        Review secret exposure, authority expansion, unsafe command execution,
+        credential-boundary breaks, weakened auth/IAM/network posture, and
+        unjustified dependency or automation risk. Fail only for concrete
+        repairable security blockers. For `pass`, write `No blocking security
+        findings.` and summarize any non-blocking residual security risk.
+
         ## Residual risk
 
         Issue details:
@@ -13330,6 +13338,11 @@ def issue_completion_review_result(markdown: str) -> str:
     if section is None:
         raise IssueFailure(
             "Issue completion review did not include `## Review result`.",
+            failure_type="issue_completion_review_invalid_result",
+        )
+    if section_body(markdown, "Security review") is None:
+        raise IssueFailure(
+            "Issue completion review did not include `## Security review`.",
             failure_type="issue_completion_review_invalid_result",
         )
     first_line = ""
