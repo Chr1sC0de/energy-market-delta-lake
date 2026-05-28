@@ -71,4 +71,8 @@ def test_console_script_entrypoint_is_declared() -> None:
 
     scripts = pyproject["project"]["scripts"]
 
+    assert (
+        scripts["aemo-publications-corpus"]
+        == "gas_market_knowledge_base.aemo_publications.cli:main"
+    )
     assert scripts["gas-market-kb"] == "gas_market_knowledge_base.cli:main"

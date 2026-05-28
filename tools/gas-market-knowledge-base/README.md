@@ -7,22 +7,25 @@ Docling-based silver document extraction,
 Docling Hybrid silver chunk generation, retrieval index validation,
 gold **Market context** citation validation, generated-artifact policy, a shared
 corpus core for reusable bronze/silver/gold mechanics, seed gold glossary
-Markdown rendering helpers, external generated corpus roots, and **Unit test**
-lane.
+Markdown rendering helpers, the AEMO major publications corpus fixture command
+surface, external generated corpus roots, and **Unit test** lanes.
 
 The CLI is available inside this Subproject with `uv run`:
 
 ```bash
 uv run gas-market-kb --help
+uv run aemo-publications-corpus --help
 ```
 
 Generated corpus defaults use `ENERGY_MARKET_CORPUS_ROOT` as the artifact
 root. If the variable is unset or empty, the root defaults to
 `~/energy-market-delta-lake-artifacts/corpora`. The Gas market corpus lives
-under `$ENERGY_MARKET_CORPUS_ROOT/gas-market/{bronze,silver,gold}`. Explicit
-CLI path options such as `--output-path`, `--manifest-path`, `--output-dir`,
-`--document-dir`, `--chunk-dir`, `--index-path`, and `--gold-dir` still
-override those defaults.
+under `$ENERGY_MARKET_CORPUS_ROOT/gas-market/{bronze,silver,gold}`. The AEMO
+major publications fixture corpus lives under
+`$ENERGY_MARKET_CORPUS_ROOT/aemo-major-publications/{bronze,silver,gold}`.
+Explicit CLI path options such as `--output-path`, `--manifest-path`,
+`--source-cache-dir`, `--output-dir`, `--document-dir`, `--chunk-dir`,
+`--index-path`, and `--gold-dir` still override those defaults.
 
 Build the bronze source manifest from the AEMO gas document metadata table
 contract:
@@ -155,11 +158,42 @@ layout, source manifest row shape, document identity and output path planning,
 silver document and chunk rendering, retrieval index validation, and gold
 Markdown citation validation. Gas-specific filtering, AEMO gas metadata table
 defaults, bucket naming, CLI wording, and **Market context** terminology stay in
-the gas wrapper modules and command surface.
+the gas wrapper modules and command surface. AEMO major publications fixture
+metadata and CLI wording stay in
+`src/gas_market_knowledge_base/aemo_publications/`.
 
-Future corpus tools, such as an AEMO major publications corpus, should pass
-their own `CorpusArtifactLayout` and source metadata policy into the shared
-core instead of copying the Gas market wrappers.
+Corpus tools should pass their own `CorpusArtifactLayout` and source metadata
+policy into the shared core instead of copying the Gas market wrappers.
+
+## AEMO Major Publications Fixture
+
+The `aemo-publications-corpus` CLI is the AEMO major publications corpus tool
+surface. The current command surface is fixture-only and does not consume live
+AEMO ETL metadata from `bronze_aemo_major_publications_hub_downloads`.
+
+Build the local fixture corpus:
+
+```bash
+uv run aemo-publications-corpus build-fixture
+```
+
+The command writes:
+
+- `$ENERGY_MARKET_CORPUS_ROOT/aemo-major-publications/bronze/source_manifest.jsonl`
+- `$ENERGY_MARKET_CORPUS_ROOT/aemo-major-publications/bronze/fixture-pdfs`
+- `$ENERGY_MARKET_CORPUS_ROOT/aemo-major-publications/silver/documents`
+- `$ENERGY_MARKET_CORPUS_ROOT/aemo-major-publications/silver/chunks`
+- `$ENERGY_MARKET_CORPUS_ROOT/aemo-major-publications/silver/index/chunks.jsonl`
+- `$ENERGY_MARKET_CORPUS_ROOT/aemo-major-publications/gold`
+
+`build-fixture` converts deterministic fixture publications into the shared
+`SourceManifestRow` shape, writes fixture source bytes to the bronze fixture
+cache, renders silver documents and silver Hybrid chunks through the shared
+core, validates the silver retrieval index, renders cited gold glossary pages,
+and validates gold citations. It accepts `--artifact-root` for a whole-corpus
+root override, plus path overrides for the bronze manifest, bronze fixture
+cache, silver document directory, silver chunk directory, silver index path,
+and gold directory.
 
 ## Local QA
 
@@ -167,9 +201,11 @@ Run from this directory:
 
 ```bash
 make unit-test
+make aemo-publications-unit-test
 make docling-adapter-test
 make fast-test
 make run-prek
+make aemo-publications-run-prek
 ```
 
 `make unit-test` is the gas-market-knowledge-base **Unit test** lane.
@@ -179,7 +215,11 @@ Docling adapter **Test lane**. It runs `DoclingMarkdownExtractor` against a
 small generated PDF and may require local or downloadable Docling model
 artifacts. `make fast-test` currently aliases the **Unit test** lane until the
 Subproject has a wider **Fast check** surface. `make run-prek` is the
-Subproject **Commit check**.
+Subproject **Commit check**. `make aemo-publications-unit-test` is the AEMO
+publications corpus **Unit test** lane for artifact-root defaults, explicit path
+overrides, fixture manifest conversion, silver output, index validation, and
+gold formatting. `make aemo-publications-run-prek` runs the same Subproject
+**Commit check** surface for AEMO publications corpus handoff evidence.
 
 ## Generated Artifacts
 
@@ -195,6 +235,18 @@ Corpus text artifacts belong under these generated roots:
   row per silver chunk.
 - `$ENERGY_MARKET_CORPUS_ROOT/gas-market/gold`: cited, agent-authored
   **Market context** pages.
+- `$ENERGY_MARKET_CORPUS_ROOT/aemo-major-publications/bronze`: fixture source
+  manifest inventory and fixture source bytes for the AEMO major publications
+  corpus.
+- `$ENERGY_MARKET_CORPUS_ROOT/aemo-major-publications/silver/documents`:
+  fixture silver document Markdown tied to source document identity and source
+  hash.
+- `$ENERGY_MARKET_CORPUS_ROOT/aemo-major-publications/silver/chunks`: fixture
+  silver Hybrid chunks prepared for retrieval.
+- `$ENERGY_MARKET_CORPUS_ROOT/aemo-major-publications/silver/index/chunks.jsonl`:
+  one index row per fixture silver chunk.
+- `$ENERGY_MARKET_CORPUS_ROOT/aemo-major-publications/gold`: cited fixture gold
+  glossary pages.
 
 Default runs write outside the repository, and current repo policy treats
 generated bronze, silver, and gold corpus files as external artifact output.
@@ -217,6 +269,9 @@ artifact output rather than maintained router documentation.
 
 - `src/gas_market_knowledge_base/archive_audit.py`: archive-prefix completeness
   audit against the bronze source manifest.
+- `src/gas_market_knowledge_base/aemo_publications/`: AEMO major publications
+  fixture corpus command surface, path defaults, manifest conversion, fixture
+  silver build, retrieval index validation, and gold glossary rendering.
 - `src/gas_market_knowledge_base/cli.py`: CLI entrypoint.
 - `src/gas_market_knowledge_base/corpus_core/`: reusable corpus artifact
   layout, manifest row, silver, retrieval index, and gold Markdown mechanics.
@@ -235,6 +290,8 @@ artifact output rather than maintained router documentation.
 - `src/gas_market_knowledge_base/source_manifest.py`: bronze source manifest
   writer for AEMO gas document metadata rows.
 - `tests/unit/`: package import, command-surface, and manifest writer tests.
+- `tests/unit/test_aemo_publications.py`: AEMO major publications corpus
+  fixture **Unit test** lane.
 - `tests/docling/`: real Docling adapter smoke tests that are intentionally
   outside the **Unit test** lane.
 - `generated/bronze`, `generated/silver`, `generated/gold`: ignored legacy
@@ -256,6 +313,10 @@ artifact output rather than maintained router documentation.
   - `tools/gas-market-knowledge-base/pyproject.toml`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/__init__.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/archive_audit.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/__init__.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/cli.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/corpus_paths.py`
+  - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/aemo_publications/fixture_corpus.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/cli.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/__init__.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/corpus_core/gold_context.py`
@@ -271,6 +332,7 @@ artifact output rather than maintained router documentation.
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/silver_documents.py`
   - `tools/gas-market-knowledge-base/src/gas_market_knowledge_base/source_manifest.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_archive_audit.py`
+  - `tools/gas-market-knowledge-base/tests/unit/test_aemo_publications.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_cli.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_corpus_core.py`
   - `tools/gas-market-knowledge-base/tests/unit/test_corpus_paths.py`
@@ -287,7 +349,10 @@ artifact output rather than maintained router documentation.
   - `git diff --name-only`
   - `rg -n "<changed-file-path>" OPERATOR.md README.md docs backend-services infrastructure tools`
   - `make unit-test`
+  - `make aemo-publications-unit-test`
   - `make docling-adapter-test`
   - `make run-prek`
+  - `make aemo-publications-run-prek`
   - `uv run gas-market-kb validate`
-  - `verify external generated-artifact roots, ENERGY_MARKET_CORPUS_ROOT fallback behavior, raw-PDF ignore policy, CLI help, source manifest fixture behavior, archive-prefix audit fixture behavior, PDF cache fixture behavior, silver document extraction fixture behavior, real Docling adapter smoke lane, chunk index validation, gold citation validation, and no embedding or vector storage behavior`
+  - `uv run aemo-publications-corpus build-fixture`
+  - `verify external generated-artifact roots, ENERGY_MARKET_CORPUS_ROOT fallback behavior, raw-PDF ignore policy, CLI help, source manifest fixture behavior, AEMO major publications fixture behavior, archive-prefix audit fixture behavior, PDF cache fixture behavior, silver document extraction fixture behavior, real Docling adapter smoke lane, chunk index validation, gold citation validation, and no embedding or vector storage behavior`

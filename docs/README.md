@@ -59,7 +59,7 @@ and behavior belong on the owning Subproject or repository page.
   [infrastructure/aws-pulumi/docs/README.md](../infrastructure/aws-pulumi/docs/README.md)
 - Ralph loop:
   [tools/ralph-loop/README.md](../tools/ralph-loop/README.md)
-- Gas market knowledge base:
+- Gas market knowledge base and AEMO major publications corpus fixture:
   [tools/gas-market-knowledge-base/README.md](../tools/gas-market-knowledge-base/README.md)
 
 ## Repository pages

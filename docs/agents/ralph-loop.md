@@ -1791,6 +1791,14 @@ make unit-test
 make run-prek
 ```
 
+For AEMO publications corpus fixture changes inside the same **Subproject**,
+the issue-specific **Unit test** lane and **Commit check** surface are:
+
+```bash
+make aemo-publications-unit-test
+make aemo-publications-run-prek
+```
+
 Generated corpus Markdown under `ENERGY_MARKET_CORPUS_ROOT` is artifact output
 rather than maintained router documentation, so it does not trigger the root
 doc **Commit check**. The legacy
