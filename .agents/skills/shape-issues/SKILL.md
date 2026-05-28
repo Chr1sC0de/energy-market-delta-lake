@@ -319,13 +319,19 @@ make reruns skip issues that were already created.
 - `ready`: the issue is ready to hand to `$ralph-triage` as AFK-drainable.
 - `needs-context`: required sections, labels, anchors, QA, or **Issue context
   assessor** `pass` evidence are missing.
-- `split`: the issue is too stiff or oversized for default AFK drain.
+- `split`: the issue is too stiff, oversized, or high-ratio for default AFK
+  drain.
 - `exploratory`: use only when the issue explicitly needs durable human review
-  and includes `## Review focus`.
+  and includes `## Review focus`. Extreme-ratio drafts can route here only
+  after the draft has Review focus and passing context evidence.
 - `human-review`: the issue is clear enough to discuss but should not be AFK.
 
-High stiffness defaults to `split`. The Operator may override that only by
-recording an `operator_overrides` entry in the bundle.
+High stiffness and high Stiffness ratio default to `split`. The Operator may
+override high-stiffness or high-ratio routing only by recording an
+`operator_overrides` entry in the bundle; the gate records that override and
+marks **Issue completion review** as required in the report and draft review
+Markdown. Extreme-ratio drafts cannot become normal `ready` through an
+override; they must split or use valid **Exploratory delivery**.
 
 `operator_overrides` is only for stiffness/step-size decisions. Do not use it
 for security, network, dependency-download, or unsandboxed execution approval.
@@ -348,8 +354,10 @@ scope: `.agents/`, root `tests/`, `OPERATOR.md`, `AGENTS.md`,
 infrastructure paths still count as separate surfaces.
 
 The report includes computed stiffness level, declared stiffness level, whether
-the declared estimate mismatches the computed score, positive evidence reasons,
-ignored excluded-term mentions, and surface areas used for scoring.
+the declared estimate mismatches the computed score, Step size, safe feedback
+step, hidden-coupling pressure, Stiffness ratio, routing reasons, any required
+**Issue completion review**, positive evidence reasons, ignored excluded-term
+mentions, and surface areas used for scoring.
 
 ## Subagent Audit
 
