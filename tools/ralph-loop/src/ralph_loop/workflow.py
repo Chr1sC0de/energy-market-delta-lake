@@ -1108,6 +1108,7 @@ class IssueCompletionReviewTrigger:
     required: bool
     reasons: tuple[str, ...]
     deployment_classification: PostPromotionDeploymentClassification
+    security_sensitive_paths: tuple[str, ...]
     high_stiffness_evidence: tuple[str, ...]
     stiffness_ratio_evidence: StiffnessRatioEvidence
 
@@ -1116,6 +1117,7 @@ class IssueCompletionReviewTrigger:
             "required": self.required,
             "reasons": list(self.reasons),
             "deployment_classification": self.deployment_classification.to_manifest(),
+            "security_sensitive_paths": list(self.security_sensitive_paths),
             "high_stiffness_evidence": list(self.high_stiffness_evidence),
             "stiffness_ratio_evidence": self.stiffness_ratio_evidence.to_manifest(),
         }
@@ -3473,6 +3475,70 @@ def is_agent_workflow_path(changed_file: str) -> bool:
     )
 
 
+def is_dependency_manifest_path(changed_file: str) -> bool:
+    name = Path(changed_file).name
+    return name in {
+        "Pipfile",
+        "Pipfile.lock",
+        "package.json",
+        "package-lock.json",
+        "poetry.lock",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "pyproject.toml",
+        "requirements.txt",
+        "requirements-dev.txt",
+        "uv.lock",
+    }
+
+
+def is_docker_path(changed_file: str) -> bool:
+    name = Path(changed_file).name
+    return (
+        name == "Dockerfile"
+        or name.endswith(".Dockerfile")
+        or name == ".dockerignore"
+        or name.startswith("docker-compose.")
+    )
+
+
+def is_broad_automation_path(changed_file: str) -> bool:
+    return changed_file in {
+        ".pre-commit-config.yaml",
+        "Makefile",
+        "justfile",
+        "Taskfile.yml",
+        "Taskfile.yaml",
+    }
+
+
+def is_security_sensitive_path(changed_file: str) -> bool:
+    if is_maintained_doc_path(changed_file):
+        return False
+    return (
+        is_agent_workflow_path(changed_file)
+        or is_broad_automation_path(changed_file)
+        or is_dependency_manifest_path(changed_file)
+        or is_docker_path(changed_file)
+        or changed_file.startswith(".github/workflows/")
+        or changed_file.startswith(".github/actions/")
+        or changed_file.startswith("scripts/")
+        or changed_file.startswith("backend-services/scripts/")
+        or changed_file.startswith("backend-services/authentication/")
+        or changed_file.startswith("infrastructure/")
+        or changed_file.startswith("tools/ralph-loop/")
+        or changed_file.startswith("tools/shape-issues/")
+    )
+
+
+def security_sensitive_changed_paths(changed_files: list[str]) -> tuple[str, ...]:
+    return tuple(
+        path
+        for path in normalized_changed_file_inventory(changed_files)
+        if is_security_sensitive_path(path)
+    )
+
+
 def is_deployed_aemo_etl_user_code_path(changed_file: str) -> bool:
     if not changed_file.startswith(AEMO_ETL_PREFIX):
         return False
@@ -3979,11 +4045,14 @@ def issue_completion_review_trigger(
     changed_files: list[str],
 ) -> IssueCompletionReviewTrigger:
     classification = classify_post_promotion_deployment(changed_files)
+    security_sensitive_paths = security_sensitive_changed_paths(changed_files)
     reasons: list[str] = []
     if classification.deployable_paths:
         reasons.append("deployable changed paths")
     if classification.agent_workflow_paths:
         reasons.append("Agent workflow changes")
+    if security_sensitive_paths:
+        reasons.append("Security-sensitive change")
     if delivery_plan.mode == TRUNK_MODE:
         reasons.append("Trunk delivery")
 
@@ -3996,6 +4065,7 @@ def issue_completion_review_trigger(
         required=bool(reasons),
         reasons=tuple(dict.fromkeys(reasons)),
         deployment_classification=classification,
+        security_sensitive_paths=security_sensitive_paths,
         high_stiffness_evidence=high_stiffness_evidence,
         stiffness_ratio_evidence=ratio_evidence,
     )
@@ -4532,6 +4602,20 @@ def local_branch_fast_forward_recovery_command(
 ) -> str:
     return format_command(
         ["git", "-C", str(worktree_path), "pull", "--ff-only", "origin", branch]
+    )
+
+
+def local_branch_not_fast_forward_recovery_guidance(
+    *,
+    branch: str,
+    current_commit: str,
+    target_commit: str,
+) -> str:
+    return (
+        f"Manual recovery required for local {branch}: current commit "
+        f"{current_commit} is not an ancestor of Promotion commit {target_commit}. "
+        "Inspect the local commits, then intentionally rebase, cherry-pick, "
+        "or drop them before moving the branch to the Promotion commit."
     )
 
 

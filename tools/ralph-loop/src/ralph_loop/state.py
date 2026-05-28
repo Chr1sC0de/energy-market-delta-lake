@@ -155,6 +155,7 @@ class RunManifest:
                 "status": "not_started",
                 "reasons": [],
                 "deployment_classification": None,
+                "security_sensitive_paths": [],
                 "high_stiffness_evidence": [],
                 "stiffness_ratio_evidence": None,
                 "log_path": None,
@@ -741,6 +742,9 @@ class RunManifest:
             review["reasons"] = trigger_payload["reasons"]
             review["deployment_classification"] = trigger_payload[
                 "deployment_classification"
+            ]
+            review["security_sensitive_paths"] = trigger_payload[
+                "security_sensitive_paths"
             ]
             review["high_stiffness_evidence"] = trigger_payload[
                 "high_stiffness_evidence"

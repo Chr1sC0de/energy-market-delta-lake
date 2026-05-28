@@ -3405,6 +3405,42 @@ class RalphHelperTests(unittest.TestCase):
             classification.non_triggering_paths,
         )
 
+    def test_security_sensitive_changed_paths_classifies_risky_paths(self) -> None:
+        changed_paths = [
+            ".github/workflows/push-check.yml",
+            ".pre-commit-config.yaml",
+            "Makefile",
+            "scripts/ralph.py",
+            "backend-services/scripts/aemo-etl-e2e",
+            "backend-services/authentication/main.py",
+            "infrastructure/aws-pulumi/Pulumi.yaml",
+            "backend-services/caddy/Dockerfile",
+            "docker-compose.yml",
+            "backend-services/caddy/package.json",
+            "tools/ralph-loop/src/ralph_loop/workflow.py",
+            ".agents/skills/shape-issues/SKILL.md",
+            ".shape-issues/runs/plan/bundle.json",
+        ]
+
+        self.assertEqual(
+            ralph.security_sensitive_changed_paths(changed_paths),
+            tuple(sorted(changed_paths)),
+        )
+
+    def test_security_sensitive_changed_paths_excludes_ordinary_docs(self) -> None:
+        self.assertEqual(
+            ralph.security_sensitive_changed_paths(
+                [
+                    "README.md",
+                    "docs/agents/ralph-loop.md",
+                    "infrastructure/aws-pulumi/README.md",
+                    "tools/ralph-loop/README.md",
+                    "backend-services/authentication/README.md",
+                ]
+            ),
+            (),
+        )
+
     def test_issue_completion_review_triggers_for_risk_signals(self) -> None:
         delivery_plan = ralph.DeliveryPlan(
             mode=ralph.GITFLOW_MODE,
@@ -3425,6 +3461,7 @@ class RalphHelperTests(unittest.TestCase):
             changed_files=[
                 "backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",
                 "docs/agents/ralph-loop.md",
+                ".github/workflows/push-check.yml",
             ],
         )
 
@@ -3434,12 +3471,43 @@ class RalphHelperTests(unittest.TestCase):
             (
                 "deployable changed paths",
                 "Agent workflow changes",
+                "Security-sensitive change",
                 "high-stiffness issue evidence",
             ),
         )
         self.assertEqual(
             trigger.deployment_classification.deployable_paths,
             ("backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",),
+        )
+        self.assertEqual(
+            trigger.security_sensitive_paths,
+            (".github/workflows/push-check.yml",),
+        )
+
+    def test_issue_completion_review_triggers_for_security_sensitive_change(
+        self,
+    ) -> None:
+        trigger = ralph.issue_completion_review_trigger(
+            issue=make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY),
+            delivery_plan=ralph.DeliveryPlan(
+                mode=ralph.GITFLOW_MODE,
+                target_branch="dev",
+                label=ralph.DELIVERY_GITFLOW_LABEL,
+                add_labels=(),
+                remove_labels=(),
+            ),
+            changed_files=[".github/workflows/push-check.yml", "README.md"],
+        )
+
+        self.assertTrue(trigger.required)
+        self.assertEqual(trigger.reasons, ("Security-sensitive change",))
+        self.assertEqual(
+            trigger.security_sensitive_paths,
+            (".github/workflows/push-check.yml",),
+        )
+        self.assertEqual(
+            trigger.to_manifest()["security_sensitive_paths"],
+            [".github/workflows/push-check.yml"],
         )
 
     def test_stiffness_ratio_evidence_parses_structured_high_ratio(self) -> None:
@@ -12324,7 +12392,15 @@ Build it.
             self.assertEqual(manifest["issue_completion_review"]["status"], "passed")
             self.assertEqual(
                 manifest["issue_completion_review"]["reasons"],
-                ["Agent workflow changes", "Trunk delivery"],
+                [
+                    "Agent workflow changes",
+                    "Security-sensitive change",
+                    "Trunk delivery",
+                ],
+            )
+            self.assertEqual(
+                manifest["issue_completion_review"]["security_sensitive_paths"],
+                ["scripts/ralph.py"],
             )
             self.assertEqual(
                 manifest["issue_completion_review"]["artifact_path"],
@@ -14299,7 +14375,11 @@ Build it.
             self.assertIs(manifest["issue_completion_review"]["required"], True)
             self.assertEqual(
                 manifest["issue_completion_review"]["reasons"],
-                ["Agent workflow changes"],
+                ["Agent workflow changes", "Security-sensitive change"],
+            )
+            self.assertEqual(
+                manifest["issue_completion_review"]["security_sensitive_paths"],
+                ["scripts/ralph.py"],
             )
             self.assertEqual(
                 manifest["issue_completion_review"]["artifact_path"],
@@ -16297,6 +16377,82 @@ Build it.
                 ["git", "-C", str(main_path), "pull", "--ff-only", "origin", "main"]
             ),
         )
+
+    def test_promotion_records_manual_recovery_for_non_fast_forward_checked_out_local_branch(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            main_path = tmp_path / "main-worktree"
+            current_commit = "a1d147d3aaf715db92eb8ab352dc32fc1069df8f"
+            target_commit = "8fbea4b179a4a035cbbca89d32d7e2d84d2b984b"
+            ancestor_command = (
+                "git",
+                "merge-base",
+                "--is-ancestor",
+                current_commit,
+                target_commit,
+            )
+            runner = FakeRunner(
+                diff_outputs=["scripts/ralph.py\n"],
+                rev_parse_outputs=["source-sha\n", target_commit + "\n"],
+                status_outputs=[""],
+                command_outputs={
+                    ("git", "worktree", "list", "--porcelain"): [
+                        "\n".join(
+                            [
+                                f"worktree {main_path}",
+                                f"HEAD {current_commit}",
+                                "branch refs/heads/main",
+                                "",
+                            ]
+                        )
+                    ],
+                    (
+                        "git",
+                        "for-each-ref",
+                        "--format=%(objectname)",
+                        "--count=1",
+                        "refs/heads/dev",
+                    ): ["dev-old\n"],
+                },
+                fail_commands={ancestor_command: 1},
+            )
+            loop = make_loop(
+                tmp_path,
+                runner,
+                promote=True,
+                skip_post_promotion_review=True,
+            )
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._promote()
+
+            manifest = load_run_manifest(tmp_path, run_glob="promote-*")
+
+        self.assertFalse(
+            any(
+                call.args == ("git", "merge", "--ff-only", target_commit)
+                for call in runner.calls
+            )
+        )
+        target_fast_forward = manifest["local_branch_fast_forwards"][
+            "integration_target"
+        ]
+        self.assertEqual(target_fast_forward["status"], "skipped_not_fast_forward")
+        self.assertEqual(target_fast_forward["worktree_path"], str(main_path))
+        self.assertEqual(target_fast_forward["current_commit"], current_commit)
+        self.assertEqual(target_fast_forward["target_commit"], target_commit)
+        self.assertIn(current_commit, target_fast_forward["reason"])
+        self.assertIn(target_commit, target_fast_forward["reason"])
+        recovery_guidance = target_fast_forward["recovery_command"]
+        self.assertIn(current_commit, recovery_guidance)
+        self.assertIn(target_commit, recovery_guidance)
+        self.assertIn("Inspect", recovery_guidance)
+        self.assertIn("rebase", recovery_guidance)
+        self.assertIn("cherry-pick", recovery_guidance)
+        self.assertIn("drop", recovery_guidance)
+        self.assertNotIn("pull --ff-only", recovery_guidance)
 
     def test_promotion_from_unrelated_worktree_updates_checked_out_target_only(
         self,
