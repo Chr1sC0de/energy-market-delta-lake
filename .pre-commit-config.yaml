@@ -29,11 +29,11 @@ repos:
       - id: rumdl # Lint only (fails on issues)
         args:
           - --disable=MD013
-          - --exclude=specs/**,tools/gas-market-knowledge-base/generated/silver/**
+          - --exclude=specs/**
       - id: rumdl-fmt # Auto-format and fail if issues remain
         args:
           - --disable=MD013
-          - --exclude=specs/**,tools/gas-market-knowledge-base/generated/silver/**
+          - --exclude=specs/**
   - repo: local
     hooks:
       - id: lychee

@@ -237,8 +237,8 @@ deploy-repair issue creation after failed checkpointed deployment evidence.
   owns the bronze source manifest command, archive-prefix completeness audit,
   archive PDF cache fetcher, Docling-based silver document extraction, Docling
   Hybrid retrieval chunks, silver chunk index validation, gold
-  **Market context** citation validation, seed glossary artifacts,
-  generated-artifact roots, and raw-PDF ignore policy. ADR
+  **Market context** citation validation, seed glossary rendering helpers,
+  external generated corpus roots, and raw-PDF ignore policy. ADR
   [0010](../adr/0010-gas-market-knowledge-base.md) records the corpus
   architecture for extraction, retrieval chunks, and cited **Market context**
   pages.

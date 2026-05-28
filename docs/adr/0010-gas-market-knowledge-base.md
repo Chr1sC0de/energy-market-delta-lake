@@ -13,9 +13,10 @@ without landing publication bytes until a later approved slice expands scope.
 When live source-page scraping is used outside the packaged manifest path,
 failed HTTP page loads remain auditable metadata-only source-page observations.
 
-The knowledge-base work needs a repo-owned corpus that agents can review in
-diffs and cite in future gas-market issues. It also needs to keep raw PDFs out
-of git and keep AEMO ETL focused on ingestion.
+The knowledge-base work needs a repo-owned corpus toolchain with inspectable
+external artifacts that agents can cite in future gas-market issues. It also
+needs to keep generated corpus outputs and raw PDFs out of git and keep AEMO
+ETL focused on ingestion.
 
 ## Decision
 
@@ -41,19 +42,13 @@ under `$ENERGY_MARKET_CORPUS_ROOT/gas-market/{bronze,silver,gold}`:
 - `gas-market/silver/chunks`: Docling Hybrid chunks prepared for retrieval.
 - `gas-market/gold`: cited, agent-authored **Market context** pages.
 
-Existing tracked artifacts under `tools/gas-market-knowledge-base/generated/`
-remain valid review history and are not removed or rewritten by this decision.
-Explicit CLI path overrides may still target repo paths when a future issue
-intentionally creates reviewable corpus artifact diffs.
-
-Generated silver document Markdown explicitly kept under the repo
-`generated/silver/documents/**/*.md` tree may exceed the generic 500 KB
-large-file hook limit because each file can contain full Docling Markdown
-extraction output for one source document. The Gas market knowledge base
-**Commit check** therefore exempts only those silver document Markdown files
-from `check-added-large-files`; raw PDFs, binary artifacts, generated chunks,
-generated gold pages, and unrelated large files remain blocked by the raw-PDF
-repository ignore rules or the generic large-file limit.
+The current tree does not track generated corpus artifacts under
+`tools/gas-market-knowledge-base/generated/`. That legacy path is ignored, and
+the Gas market knowledge base **Commit check** rejects staged generated
+bronze, silver, or gold corpus artifacts from that tree. Explicit CLI path
+overrides may still target repo paths for local inspection, but those generated
+files must stay out of git. Earlier tracked generated corpus artifacts remain
+only as history until a separate guarded purge issue rewrites history.
 
 Docling is the accepted PDF-to-Markdown extraction tool. Docling Hybrid chunks
 are the accepted silver retrieval unit. Gold **Market context** pages are
@@ -76,10 +71,10 @@ bucket naming, and CLI terminology remain outside that core.
 - Commit raw PDFs: rejected because the archive already stores source bytes,
   PDF diffs are not useful for review, and raw document storage would add bulk
   without improving citation quality.
-- Store all text evidence outside git with no reviewable artifact path:
-  rejected because agents and operators still need a way to create intentional
-  text diffs for extracted Markdown, retrieval chunks, and cited
-  **Market context** pages.
+- Store all text evidence outside git with no stable artifact path: rejected
+  because agents and operators still need inspectable bronze, silver, and gold
+  outputs. The accepted policy keeps those outputs under the external corpus
+  artifact root instead of making them reviewable tracked repo output.
 - Start with embeddings: rejected because embeddings are not inspectable source
   evidence. The project needs extracted text, stable chunks, and citation
   discipline before any vector-store slice.
@@ -102,12 +97,11 @@ AEMO ETL must not grow Docling dependencies or extraction side effects under
 this decision. `bronze_aemo_gas_document_sources` remains the boundary for
 document discovery, raw media landing/archive, and source metadata.
 
-The external corpus root and any explicit repo `generated/` corpus are
-intentionally separate from maintained repository docs. Future **Market
-context** pages can be tracked artifacts under `generated/gold` only when an
-issue intentionally targets reviewable artifact diffs, but router docs and
-Subproject docs still need normal **Documentation sync** metadata outside that
-generated corpus.
+The external corpus root and ignored repo `generated/` tree are intentionally
+separate from maintained repository docs. Future **Market context** pages are
+external generated corpus output unless a later ADR changes the tracking
+policy. Router docs and Subproject docs still need normal **Documentation
+sync** metadata outside generated corpus output.
 Runtime dashboards may carry registry-only Market context IDs, source chunk
 IDs, source hashes, and optional external artifact references as citation
 metadata. These identifiers are metadata only: dashboards must not require

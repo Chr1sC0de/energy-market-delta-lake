@@ -25,24 +25,44 @@ def _generated_path(path: Path) -> str:
     return path.as_posix()
 
 
-def _write_silver_fixture(root: Path, *, chunk_id: str = "chunk-gas-day") -> Path:
-    chunk_path = root / "generated" / "silver" / "chunks" / "fixture" / f"{chunk_id}.md"
+def _write_silver_fixture(
+    root: Path,
+    *,
+    chunk_id: str = "chunk-gas-day",
+    extra_chunk_ids: tuple[str, ...] = (),
+) -> Path:
     document_path = root / "generated" / "silver" / "documents" / "fixture.md"
     index_path = root / "generated" / "silver" / "index" / "chunks.jsonl"
     document_path.parent.mkdir(parents=True, exist_ok=True)
     document_path.write_text("# Fixture source document\n", encoding="utf-8")
-    chunk_path.parent.mkdir(parents=True, exist_ok=True)
-    chunk_path.write_text(
-        "# Fixture source chunk\n\nGas day evidence.\n", encoding="utf-8"
-    )
-    row = {
-        "chunk_id": chunk_id,
-        "content_sha256": SOURCE_HASH,
-        "path": chunk_path.as_posix(),
-        "source_document_markdown_path": document_path.as_posix(),
-    }
+    rows = []
+    for current_chunk_id in (chunk_id, *extra_chunk_ids):
+        chunk_path = (
+            root
+            / "generated"
+            / "silver"
+            / "chunks"
+            / "fixture"
+            / f"{current_chunk_id}.md"
+        )
+        chunk_path.parent.mkdir(parents=True, exist_ok=True)
+        chunk_path.write_text(
+            f"# Fixture source chunk\n\n{current_chunk_id} evidence.\n",
+            encoding="utf-8",
+        )
+        rows.append(
+            {
+                "chunk_id": current_chunk_id,
+                "content_sha256": SOURCE_HASH,
+                "path": chunk_path.as_posix(),
+                "source_document_markdown_path": document_path.as_posix(),
+            }
+        )
     index_path.parent.mkdir(parents=True, exist_ok=True)
-    index_path.write_text(f"{json.dumps(row, sort_keys=True)}\n", encoding="utf-8")
+    index_path.write_text(
+        "".join(f"{json.dumps(row, sort_keys=True)}\n" for row in rows),
+        encoding="utf-8",
+    )
     return index_path
 
 
@@ -118,6 +138,44 @@ def _gold_fixture_page(gold_dir: Path) -> Path:
     return gold_dir / "glossary" / "gas-day.md"
 
 
+def _write_capacity_gold_page(gold_dir: Path) -> None:
+    chunk_id = "chunk-capacity"
+    glossary_index_path = gold_dir / "glossary" / "README.md"
+    page_path = gold_dir / "glossary" / "capacity.md"
+    _replace_gold_page_text(
+        glossary_index_path,
+        "- [Gas Day](gas-day.md)\n",
+        "- [Gas Day](gas-day.md)\n- [Capacity](capacity.md)\n",
+    )
+    source_citation = GoldSourceCitation(
+        chunk_id=chunk_id,
+        chunk_path=f"../../silver/chunks/fixture/{chunk_id}.md",
+        source_document_path="../../silver/documents/fixture.md",
+        source_hash=SOURCE_HASH,
+    )
+    _write_json_frontmatter(
+        page_path,
+        {
+            "schema_version": 1,
+            "context_type": "glossary-page",
+            "title": "Capacity",
+            "slug": "capacity",
+            "generated_path": _generated_path(page_path),
+            "source_chunk_ids": [chunk_id],
+            "source_hashes": [SOURCE_HASH],
+            "related_concepts": [],
+        },
+        render_gold_glossary_body(
+            title="Capacity",
+            definition=(
+                f"Capacity is represented by the cited fixture source. "
+                f"[[chunk:{chunk_id}]] [[source:sha256:{SOURCE_HASH}]]"
+            ),
+            source_citations=[source_citation],
+        ),
+    )
+
+
 def _replace_gold_page_text(page_path: Path, old: str, new: str) -> None:
     text = page_path.read_text(encoding="utf-8")
     assert old in text
@@ -138,13 +196,12 @@ def test_validate_gold_context_accepts_cited_glossary(tmp_path: Path) -> None:
     assert result.glossary_page_count == 1
 
 
-def test_validate_gold_context_accepts_generated_gas_day_and_capacity() -> None:
-    subproject_root = Path(__file__).resolve().parents[2]
-    gold_dir = subproject_root / "generated" / "gold"
-    index_path = subproject_root / "generated" / "silver" / "index" / "chunks.jsonl"
-
-    assert (gold_dir / "glossary" / "gas-day.md").exists()
-    assert (gold_dir / "glossary" / "capacity.md").exists()
+def test_validate_gold_context_accepts_multiple_fixture_glossary_pages(
+    tmp_path: Path,
+) -> None:
+    index_path = _write_silver_fixture(tmp_path, extra_chunk_ids=("chunk-capacity",))
+    gold_dir = _write_gold_fixture(tmp_path)
+    _write_capacity_gold_page(gold_dir)
 
     result = validate_gold_context(gold_dir=gold_dir, index_path=index_path)
 

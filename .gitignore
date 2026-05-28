@@ -19,19 +19,9 @@ dist/
 !.agents/skills/repo-knowledge-base/SKILL.md
 !.gitkeep
 
-# Gas market knowledge base generated text artifacts are intentionally reviewable.
+# Gas market knowledge base generated corpus artifacts stay outside git.
 !tools/gas-market-knowledge-base/.pre-commit-config.yaml
-!tools/gas-market-knowledge-base/generated/
-!tools/gas-market-knowledge-base/generated/bronze/
-!tools/gas-market-knowledge-base/generated/silver/
-!tools/gas-market-knowledge-base/generated/gold/
-!tools/gas-market-knowledge-base/generated/**/.gitkeep
-!tools/gas-market-knowledge-base/generated/**/*.json
-!tools/gas-market-knowledge-base/generated/**/*.jsonl
-!tools/gas-market-knowledge-base/generated/**/*.md
-!tools/gas-market-knowledge-base/generated/**/*.txt
-!tools/gas-market-knowledge-base/generated/**/*.yaml
-!tools/gas-market-knowledge-base/generated/**/*.yml
+tools/gas-market-knowledge-base/generated/
 
 # Raw PDF caches stay local to the Gas market knowledge base Subproject.
 tools/gas-market-knowledge-base/.cache/

@@ -31,7 +31,8 @@ context** corpus architecture. The
 bronze source manifest command, archive-prefix completeness audit, archive PDF
 cache fetcher, Docling-based silver document extraction, Docling Hybrid silver
 chunk generation, silver chunk index validation, gold **Market context**
-citation validation, seed glossary artifacts, and generated-artifact policy.
+citation validation, seed glossary rendering helpers, and external
+generated-artifact policy.
 
 ## Sync metadata
 
