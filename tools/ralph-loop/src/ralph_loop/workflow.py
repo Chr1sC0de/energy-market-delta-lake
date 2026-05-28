@@ -27,6 +27,10 @@ DEPLOY_FAILURE_ANALYSIS_ARTIFACT_NAME = "deploy-failure-analysis.md"
 ISSUE_COMPLETION_REVIEW_ARTIFACT_NAME = "issue-completion-review.md"
 ISSUE_COMPLETION_REVIEW_FAILURE_TYPE = "issue_completion_review_failed"
 HIGH_STIFFNESS_SCORE_THRESHOLD = 70
+MEDIUM_STIFFNESS_RATIO_THRESHOLD = 1.5
+HIGH_STIFFNESS_RATIO_THRESHOLD = 2.5
+EXTREME_STIFFNESS_RATIO_THRESHOLD = 4.0
+HIGH_STIFFNESS_RATIO_LEVELS = frozenset({"high", "extreme"})
 
 READY_LABEL = "ready-for-agent"
 NEEDS_TRIAGE_LABEL = "needs-triage"
@@ -979,11 +983,36 @@ class DFFromS3KeysSourceTableDefinition:
 
 
 @dataclass(frozen=True)
+class StiffnessRatioEvidence:
+    ratio_value: float | None
+    ratio_level: str | None
+    recommended_action: str | None
+    operator_override: str | None
+    operator_override_requires_review: bool
+    completion_review_required: bool
+    evidence: tuple[str, ...]
+
+    def to_manifest(self) -> dict[str, Any]:
+        return {
+            "ratio_value": self.ratio_value,
+            "ratio_level": self.ratio_level,
+            "recommended_action": self.recommended_action,
+            "operator_override": self.operator_override,
+            "operator_override_requires_review": (
+                self.operator_override_requires_review
+            ),
+            "completion_review_required": self.completion_review_required,
+            "evidence": list(self.evidence),
+        }
+
+
+@dataclass(frozen=True)
 class IssueCompletionReviewTrigger:
     required: bool
     reasons: tuple[str, ...]
     deployment_classification: PostPromotionDeploymentClassification
     high_stiffness_evidence: tuple[str, ...]
+    stiffness_ratio_evidence: StiffnessRatioEvidence
 
     def to_manifest(self) -> dict[str, Any]:
         return {
@@ -991,6 +1020,7 @@ class IssueCompletionReviewTrigger:
             "reasons": list(self.reasons),
             "deployment_classification": self.deployment_classification.to_manifest(),
             "high_stiffness_evidence": list(self.high_stiffness_evidence),
+            "stiffness_ratio_evidence": self.stiffness_ratio_evidence.to_manifest(),
         }
 
 
@@ -3540,6 +3570,9 @@ def declared_high_stiffness_evidence(markdown: str) -> tuple[str, ...]:
     if section is not None and re.search(r"\bhigh\b", section, flags=re.IGNORECASE):
         evidence.append("Declared `Stiffness estimate` is high.")
 
+    ratio_evidence = stiffness_ratio_evidence(markdown)
+    evidence.extend(ratio_evidence.evidence)
+
     for match in re.finditer(
         r"(?im)\bstiffness(?:\s+summary)?\s*:\s*`?(?P<score>\d{1,3})`?"
         r"(?:\s*\((?P<level>[^)]+)\))?",
@@ -3551,6 +3584,152 @@ def declared_high_stiffness_evidence(markdown: str) -> tuple[str, ...]:
             evidence.append(match.group(0).strip())
 
     return tuple(dict.fromkeys(evidence))
+
+
+def stiffness_ratio_evidence(markdown: str) -> StiffnessRatioEvidence:
+    section = section_body(markdown, "Stiffness estimate") or ""
+    ratio_text = stiffness_estimate_field(section, "Stiffness ratio")
+    ratio_value = parsed_stiffness_ratio_value(ratio_text)
+    ratio_level = normalized_stiffness_ratio_level(
+        stiffness_estimate_field(section, "Ratio level")
+    )
+    if ratio_level is None:
+        ratio_level = normalized_stiffness_ratio_level(ratio_text)
+    if ratio_level is None and ratio_value is not None:
+        ratio_level = stiffness_ratio_level_for_value(ratio_value)
+
+    recommended_action = normalized_stiffness_estimate_value(
+        stiffness_estimate_field(
+            section,
+            "Recommended routing action",
+            "Recommended action",
+        )
+    )
+    operator_override = normalized_stiffness_estimate_value(
+        stiffness_estimate_field(section, "Operator override")
+    )
+    completion_review_required_text = normalized_stiffness_estimate_value(
+        stiffness_estimate_field(
+            section,
+            "Issue completion review requirement",
+            "Issue completion review",
+            "Completion review",
+        )
+    )
+    explicit_completion_review_required = stiffness_review_required_value(
+        completion_review_required_text,
+        allow_bare_required=True,
+    )
+    operator_override_requires_review = stiffness_review_required_value(
+        operator_override,
+        allow_bare_required=False,
+    )
+    high_ratio_level = ratio_level in HIGH_STIFFNESS_RATIO_LEVELS
+    completion_review_required = (
+        high_ratio_level
+        or explicit_completion_review_required
+        or operator_override_requires_review
+    )
+
+    evidence: list[str] = []
+    if high_ratio_level:
+        if ratio_value is None:
+            evidence.append(f"Declared Stiffness ratio level is `{ratio_level}`.")
+        else:
+            evidence.append(
+                f"Declared Stiffness ratio is `{ratio_value:g}` ({ratio_level})."
+            )
+    elif ratio_value is not None and ratio_value >= HIGH_STIFFNESS_RATIO_THRESHOLD:
+        evidence.append(f"Declared Stiffness ratio is `{ratio_value:g}`.")
+
+    if explicit_completion_review_required:
+        evidence.append("Declared Issue completion review requirement requires review.")
+    if operator_override_requires_review:
+        evidence.append("Operator override requires Issue completion review.")
+
+    return StiffnessRatioEvidence(
+        ratio_value=ratio_value,
+        ratio_level=ratio_level,
+        recommended_action=recommended_action,
+        operator_override=operator_override,
+        operator_override_requires_review=operator_override_requires_review,
+        completion_review_required=completion_review_required,
+        evidence=tuple(dict.fromkeys(evidence)),
+    )
+
+
+def stiffness_estimate_field(section: str, *names: str) -> str | None:
+    for name in names:
+        match = re.search(
+            rf"(?im)^\s*(?:[-*]\s*)?{re.escape(name)}\s*:\s*(?P<value>.+?)\s*$",
+            section,
+        )
+        if match is not None:
+            return match.group("value")
+    return None
+
+
+def normalized_stiffness_estimate_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().strip("`").strip()
+    return normalized or None
+
+
+def parsed_stiffness_ratio_value(value: str | None) -> float | None:
+    normalized = normalized_stiffness_estimate_value(value)
+    if normalized is None:
+        return None
+    match = re.search(r"-?\d+(?:\.\d+)?", normalized)
+    if match is None:
+        return None
+    return float(match.group(0))
+
+
+def normalized_stiffness_ratio_level(value: str | None) -> str | None:
+    normalized = normalized_stiffness_estimate_value(value)
+    if normalized is None:
+        return None
+    match = re.search(r"\b(low|medium|high|extreme)\b", normalized, flags=re.I)
+    if match is None:
+        return None
+    return match.group(1).lower()
+
+
+def stiffness_review_required_value(
+    value: str | None, *, allow_bare_required: bool
+) -> bool:
+    if value is None:
+        return False
+    negative_requirement = re.search(
+        r"\b(no|not|without)\b.{0,40}\b(require[sd]?|required|requires)\b"
+        r"|\b(require[sd]?|required|requires)\b.{0,40}\b(no|not|without)\b",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if negative_requirement is not None:
+        return False
+    review_required = re.search(
+        r"\b(require[sd]?|required|requires|yes|true)\b.{0,80}\breview\b"
+        r"|\breview\b.{0,80}\b(require[sd]?|required|requires|yes|true)\b",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if review_required is not None:
+        return True
+    if not allow_bare_required:
+        return False
+    return re.search(r"\b(yes|true|required|requires)\b", value, flags=re.I) is not None
+
+
+def stiffness_ratio_level_for_value(value: float) -> str:
+    if value >= EXTREME_STIFFNESS_RATIO_THRESHOLD:
+        return "extreme"
+    if value >= HIGH_STIFFNESS_RATIO_THRESHOLD:
+        return "high"
+    if value >= MEDIUM_STIFFNESS_RATIO_THRESHOLD:
+        return "medium"
+    return "low"
 
 
 def issue_completion_review_trigger(
@@ -3568,6 +3747,7 @@ def issue_completion_review_trigger(
     if delivery_plan.mode == TRUNK_MODE:
         reasons.append("Trunk delivery")
 
+    ratio_evidence = stiffness_ratio_evidence(issue.body)
     high_stiffness_evidence = declared_high_stiffness_evidence(issue.body)
     if high_stiffness_evidence:
         reasons.append("high-stiffness issue evidence")
@@ -3577,6 +3757,7 @@ def issue_completion_review_trigger(
         reasons=tuple(dict.fromkeys(reasons)),
         deployment_classification=classification,
         high_stiffness_evidence=high_stiffness_evidence,
+        stiffness_ratio_evidence=ratio_evidence,
     )
 
 

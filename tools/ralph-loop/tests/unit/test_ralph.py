@@ -3075,6 +3075,164 @@ class RalphHelperTests(unittest.TestCase):
             ("backend-services/dagster-user/aemo-etl/src/aemo_etl/definitions.py",),
         )
 
+    def test_stiffness_ratio_evidence_parses_structured_high_ratio(self) -> None:
+        body = (
+            IMPLEMENTATION_BODY
+            + """
+## Stiffness estimate
+
+- Step size: `1.0`
+- Safe feedback step: `1.0`
+- Hidden-coupling pressure: `2.5`
+- Stiffness ratio: `2.5`
+- Ratio level: `high`
+- Recommended routing action: `human-review`
+"""
+        )
+
+        evidence = ralph.stiffness_ratio_evidence(body)
+
+        self.assertEqual(evidence.ratio_value, 2.5)
+        self.assertEqual(evidence.ratio_level, "high")
+        self.assertEqual(evidence.recommended_action, "human-review")
+        self.assertTrue(evidence.completion_review_required)
+        self.assertEqual(
+            evidence.evidence,
+            ("Declared Stiffness ratio is `2.5` (high).",),
+        )
+
+    def test_stiffness_ratio_evidence_parses_extreme_ratio_value(self) -> None:
+        body = (
+            IMPLEMENTATION_BODY
+            + """
+## Stiffness estimate
+
+- Stiffness ratio: `4.0`
+- Recommended action: `split`
+"""
+        )
+
+        evidence = ralph.stiffness_ratio_evidence(body)
+
+        self.assertEqual(evidence.ratio_value, 4.0)
+        self.assertEqual(evidence.ratio_level, "extreme")
+        self.assertEqual(evidence.recommended_action, "split")
+        self.assertTrue(evidence.completion_review_required)
+
+    def test_declared_high_stiffness_evidence_keeps_legacy_score(self) -> None:
+        body = IMPLEMENTATION_BODY + "\nStiffness: `70` (medium)\n"
+
+        self.assertEqual(
+            ralph.declared_high_stiffness_evidence(body),
+            ("Stiffness: `70` (medium)",),
+        )
+
+    def test_issue_completion_review_triggers_for_structured_ratio(self) -> None:
+        trigger = ralph.issue_completion_review_trigger(
+            issue=make_issue(
+                {"ready-for-agent"},
+                IMPLEMENTATION_BODY
+                + """
+## Stiffness estimate
+
+- Stiffness ratio: `4.2`
+- Ratio level: `extreme`
+- Recommended routing action: `split`
+""",
+            ),
+            delivery_plan=ralph.DeliveryPlan(
+                mode=ralph.GITFLOW_MODE,
+                target_branch="dev",
+                label=ralph.DELIVERY_GITFLOW_LABEL,
+                add_labels=(),
+                remove_labels=(),
+            ),
+            changed_files=["README.md"],
+        )
+
+        self.assertTrue(trigger.required)
+        self.assertEqual(trigger.reasons, ("high-stiffness issue evidence",))
+        self.assertEqual(
+            trigger.high_stiffness_evidence,
+            ("Declared Stiffness ratio is `4.2` (extreme).",),
+        )
+        self.assertEqual(
+            trigger.to_manifest()["stiffness_ratio_evidence"],
+            {
+                "ratio_value": 4.2,
+                "ratio_level": "extreme",
+                "recommended_action": "split",
+                "operator_override": None,
+                "operator_override_requires_review": False,
+                "completion_review_required": True,
+                "evidence": ["Declared Stiffness ratio is `4.2` (extreme)."],
+            },
+        )
+
+    def test_issue_completion_review_triggers_for_override_required(self) -> None:
+        trigger = ralph.issue_completion_review_trigger(
+            issue=make_issue(
+                {"ready-for-agent"},
+                IMPLEMENTATION_BODY
+                + """
+## Stiffness estimate
+
+- Stiffness ratio: `1.2`
+- Ratio level: `low`
+- Recommended routing action: `ready`
+- Operator override: Requires Issue completion review before Local integration.
+""",
+            ),
+            delivery_plan=ralph.DeliveryPlan(
+                mode=ralph.GITFLOW_MODE,
+                target_branch="dev",
+                label=ralph.DELIVERY_GITFLOW_LABEL,
+                add_labels=(),
+                remove_labels=(),
+            ),
+            changed_files=["README.md"],
+        )
+
+        self.assertTrue(trigger.required)
+        self.assertEqual(trigger.reasons, ("high-stiffness issue evidence",))
+        self.assertEqual(
+            trigger.high_stiffness_evidence,
+            ("Operator override requires Issue completion review.",),
+        )
+        self.assertTrue(
+            trigger.stiffness_ratio_evidence.operator_override_requires_review
+        )
+
+    def test_issue_completion_review_ignores_non_required_override(self) -> None:
+        trigger = ralph.issue_completion_review_trigger(
+            issue=make_issue(
+                {"ready-for-agent"},
+                IMPLEMENTATION_BODY
+                + """
+## Stiffness estimate
+
+- Stiffness ratio: `1.2`
+- Ratio level: `low`
+- Recommended routing action: `ready`
+- Operator override: Review is not required for this bounded issue.
+""",
+            ),
+            delivery_plan=ralph.DeliveryPlan(
+                mode=ralph.GITFLOW_MODE,
+                target_branch="dev",
+                label=ralph.DELIVERY_GITFLOW_LABEL,
+                add_labels=(),
+                remove_labels=(),
+            ),
+            changed_files=["README.md"],
+        )
+
+        self.assertFalse(trigger.required)
+        self.assertEqual(trigger.high_stiffness_evidence, ())
+        self.assertFalse(
+            trigger.stiffness_ratio_evidence.operator_override_requires_review
+        )
+
     def test_issue_completion_review_triggers_for_trunk_delivery(self) -> None:
         trigger = ralph.issue_completion_review_trigger(
             issue=make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY),
