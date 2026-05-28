@@ -156,11 +156,11 @@ def fixture_publications() -> tuple[FixturePublication, ...]:
             published_date="2026-01-15",
             effective_date="2026-01-15",
             source_url=(
-                "https://aemo.com.au/energy-systems/major-publications/"
+                "https://www.aemo.com.au/energy-systems/major-publications/"
                 "integrated-system-plan-isp"
             ),
             source_page_url=(
-                "https://aemo.com.au/energy-systems/major-publications/"
+                "https://www.aemo.com.au/energy-systems/major-publications/"
                 "integrated-system-plan-isp"
             ),
             source_page_title="Integrated System Plan",
@@ -203,14 +203,11 @@ def fixture_publications() -> tuple[FixturePublication, ...]:
             published_date="2025-08-28",
             effective_date="2025-08-28",
             source_url=(
-                "https://aemo.com.au/energy-systems/major-publications/"
+                "https://www.aemo.com.au/energy-systems/major-publications/"
                 "electricity-statement-of-opportunities"
             ),
-            source_page_url=(
-                "https://aemo.com.au/energy-systems/major-publications/"
-                "electricity-statement-of-opportunities"
-            ),
-            source_page_title="Electricity Statement of Opportunities",
+            source_page_url=("https://www.aemo.com.au/library/major-publications"),
+            source_page_title="Major publications library",
             source_link_text="2025 Electricity Statement of Opportunities fixture",
             source_bytes=(
                 b"%PDF-1.7\n"

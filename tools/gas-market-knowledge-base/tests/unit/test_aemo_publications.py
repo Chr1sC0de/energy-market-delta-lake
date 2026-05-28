@@ -21,6 +21,9 @@ from gas_market_knowledge_base.aemo_publications.source_manifest import (
     build_aemo_publication_manifest_rows,
     write_aemo_publication_manifest,
 )
+from gas_market_knowledge_base.aemo_publications.validation import (
+    validate_aemo_publications_corpus,
+)
 from gas_market_knowledge_base.corpus_core.silver_documents import (
     load_source_document_manifest,
 )
@@ -38,6 +41,16 @@ def _frontmatter(path: Path) -> Mapping[str, object]:
     text = path.read_text(encoding="utf-8")
     end_index = text.find("\n---\n", len("---\n"))
     return cast(Mapping[str, object], json.loads(text[len("---\n") : end_index]))
+
+
+def _write_frontmatter(path: Path, frontmatter: Mapping[str, object]) -> None:
+    text = path.read_text(encoding="utf-8")
+    end_index = text.find("\n---\n", len("---\n"))
+    body = text[end_index + len("\n---\n") :]
+    path.write_text(
+        f"---\n{json.dumps(frontmatter, indent=2, sort_keys=True)}\n---\n{body}",
+        encoding="utf-8",
+    )
 
 
 def _download_metadata_row(**overrides: object) -> dict[str, object]:
@@ -361,6 +374,155 @@ def test_build_fixture_corpus_writes_silver_index_and_gold(
     assert gold_frontmatter["source_chunk_ids"] == [index_rows[0]["chunk_id"]]
     assert "\n## Source Citations\n\n- `chunk-" in gold_text
     assert "[[source:sha256:" in gold_text
+
+
+def test_aemo_publications_validation_reports_coverage_and_artifact_counts(
+    tmp_path: Path,
+) -> None:
+    artifact_root = tmp_path / "corpora"
+    build_fixture_corpus(
+        artifact_root=artifact_root,
+        min_text_chars=20,
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "validate",
+            "--artifact-root",
+            str(artifact_root),
+            "--min-text-chars",
+            "20",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "hub_source_families=1" in result.output
+    assert "library_source_families=1" in result.output
+    assert "supported_media=2" in result.output
+    assert "unsupported_media=0" in result.output
+    assert "silver_index_rows=2" in result.output
+    assert "silver_chunk_files=2" in result.output
+    assert "gold_pages=4" in result.output
+
+
+def test_aemo_publications_validation_counts_unsupported_metadata_rows(
+    tmp_path: Path,
+) -> None:
+    paths = default_corpus_paths(artifact_root=tmp_path / "corpora")
+    library_hash = "b" * 64
+    write_aemo_publication_manifest(
+        [
+            _download_metadata_row(),
+            _download_metadata_row(
+                content_sha256=library_hash,
+                document_family_id="electricity-statement-of-opportunities",
+                document_title="Electricity Statement of Opportunities",
+                source_page_url="https://www.aemo.com.au/library/major-publications",
+                source_url="https://www.aemo.com.au/media/esoo.pdf",
+                resolved_url="https://www.aemo.com.au/media/esoo.pdf",
+                archive_storage_uri=(
+                    "s3://dev-energy-market-archive/bronze/"
+                    f"aemo_major_publications/{library_hash}.pdf"
+                ),
+                storage_uri=(
+                    "s3://dev-energy-market-archive/bronze/"
+                    f"aemo_major_publications/{library_hash}.pdf"
+                ),
+                target_s3_key=f"bronze/aemo_major_publications/{library_hash}.pdf",
+            ),
+            _download_metadata_row(
+                content_sha256="c" * 64,
+                content_type="application/vnd.ms-excel",
+                source_url="https://www.aemo.com.au/media/input-workbook.xlsx",
+                resolved_url="https://www.aemo.com.au/media/input-workbook.xlsx",
+            ),
+        ],
+        paths=paths,
+    )
+
+    result = validate_aemo_publications_corpus(paths=paths, min_text_chars=20)
+
+    assert result.coverage.hub_source_family_count == 1
+    assert result.coverage.library_source_family_count == 1
+    assert result.coverage.supported_media_count == 2
+    assert result.coverage.unsupported_media_count == 1
+    assert result.coverage.review_needed_count == 1
+
+
+def test_aemo_publications_validation_reports_missing_downloaded_metadata(
+    tmp_path: Path,
+) -> None:
+    paths = default_corpus_paths(artifact_root=tmp_path / "corpora")
+
+    result = validate_aemo_publications_corpus(paths=paths)
+
+    assert result.error_count == 1
+    assert result.errors == (
+        f"downloaded metadata missing: source manifest not found at "
+        f"{paths.source_manifest_path}",
+    )
+
+
+def test_aemo_publications_validation_reports_missing_source_files(
+    tmp_path: Path,
+) -> None:
+    paths = default_corpus_paths(artifact_root=tmp_path / "corpora")
+    write_aemo_publication_manifest([_download_metadata_row()], paths=paths)
+
+    result = validate_aemo_publications_corpus(paths=paths, min_text_chars=20)
+
+    assert any(
+        "missing source file: manifest row 1" in error for error in result.errors
+    )
+
+
+def test_aemo_publications_validation_reports_stale_index_rows(
+    tmp_path: Path,
+) -> None:
+    result = build_fixture_corpus(
+        artifact_root=tmp_path / "corpora",
+        min_text_chars=20,
+    )
+    index_rows = _jsonl_rows(result.paths.silver_index_path)
+    stale_row = dict(index_rows[0])
+    stale_row["document_title"] = "Stale title"
+    result.paths.silver_index_path.write_text(
+        "\n".join(
+            json.dumps(row, sort_keys=True) for row in (stale_row, *index_rows[1:])
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    validation_result = validate_aemo_publications_corpus(
+        paths=result.paths,
+        min_text_chars=20,
+    )
+
+    assert any("is stale" in error for error in validation_result.errors)
+
+
+def test_aemo_publications_validation_reports_broken_gold_citations(
+    tmp_path: Path,
+) -> None:
+    result = build_fixture_corpus(
+        artifact_root=tmp_path / "corpora",
+        min_text_chars=20,
+    )
+    gold_page = (
+        result.paths.gold_dir / "glossary" / "electricity-statement-of-opportunities.md"
+    )
+    frontmatter = dict(_frontmatter(gold_page))
+    frontmatter["source_chunk_ids"] = ["chunk-missing"]
+    _write_frontmatter(gold_page, frontmatter)
+
+    validation_result = validate_aemo_publications_corpus(
+        paths=result.paths,
+        min_text_chars=20,
+    )
+
+    assert any("chunk-missing" in error for error in validation_result.errors)
 
 
 def test_build_fixture_command_accepts_artifact_root_override(
