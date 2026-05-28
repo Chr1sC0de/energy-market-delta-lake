@@ -11,8 +11,12 @@ from gas_market_knowledge_base.aemo_publications.corpus_paths import (
     default_corpus_paths,
 )
 from gas_market_knowledge_base.aemo_publications.source_manifest import (
+    AEMO_GSOO_CORPUS_SOURCE,
+    AEMO_GSOO_URL,
     AEMO_MAJOR_PUBLICATIONS_HUB_URL,
     AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL,
+    AEMO_WA_GSOO_CORPUS_SOURCE,
+    AEMO_WA_GSOO_URL,
 )
 from gas_market_knowledge_base.corpus_core.gold_context import (
     GoldContextValidationResult,
@@ -36,6 +40,8 @@ class AemoPublicationCoverageSummary:
     manifest_row_count: int
     hub_source_family_count: int
     library_source_family_count: int
+    gsoo_source_family_count: int
+    wa_gsoo_source_family_count: int
     supported_media_count: int
     unsupported_media_count: int
     review_needed_count: int
@@ -147,19 +153,26 @@ def _coverage_summary(
 ) -> AemoPublicationCoverageSummary:
     hub_families: set[str] = set()
     library_families: set[str] = set()
+    gsoo_families: set[str] = set()
+    wa_gsoo_families: set[str] = set()
     supported_media_count = 0
     unsupported_media_count = 0
     review_needed_count = 0
 
     for row in rows:
+        corpus_source = _optional_text(row, "corpus_source")
         family_id = _optional_text(row, "document_family_id")
         source_page_url = _optional_text(row, "source_page_url")
         if family_id is not None and source_page_url is not None:
-            source_family = _source_family(source_page_url)
+            source_family = _source_family(source_page_url, corpus_source=corpus_source)
             if source_family == "hub":
                 hub_families.add(family_id)
             elif source_family == "library":
                 library_families.add(family_id)
+            elif source_family == "gsoo":
+                gsoo_families.add(family_id)
+            elif source_family == "wa_gsoo":
+                wa_gsoo_families.add(family_id)
 
         review_status = _optional_text(row, "review_status")
         include_decision = _optional_text(row, "include_decision")
@@ -177,6 +190,8 @@ def _coverage_summary(
         manifest_row_count=len(rows),
         hub_source_family_count=len(hub_families),
         library_source_family_count=len(library_families),
+        gsoo_source_family_count=len(gsoo_families),
+        wa_gsoo_source_family_count=len(wa_gsoo_families),
         supported_media_count=supported_media_count,
         unsupported_media_count=unsupported_media_count,
         review_needed_count=review_needed_count,
@@ -213,12 +228,22 @@ def _source_file_errors(
     return errors
 
 
-def _source_family(source_page_url: str) -> str | None:
+def _source_family(source_page_url: str, *, corpus_source: str | None) -> str | None:
     normalized = source_page_url.rstrip("/") + "/"
+    if normalized.startswith(AEMO_GSOO_URL.rstrip("/") + "/"):
+        return "gsoo"
+    if normalized.startswith(AEMO_WA_GSOO_URL.rstrip("/") + "/"):
+        return "wa_gsoo"
     if normalized.startswith(AEMO_MAJOR_PUBLICATIONS_HUB_URL):
         return "hub"
     if normalized.startswith(AEMO_MAJOR_PUBLICATIONS_LIBRARY_URL.rstrip("/") + "/"):
         return "library"
+    if corpus_source is None or corpus_source == "major_publications":
+        return None
+    if corpus_source == AEMO_GSOO_CORPUS_SOURCE:
+        return "gsoo"
+    if corpus_source == AEMO_WA_GSOO_CORPUS_SOURCE:
+        return "wa_gsoo"
     return None
 
 

@@ -232,6 +232,8 @@ def validate(
         f"manifest_rows={result.coverage.manifest_row_count} "
         f"hub_source_families={result.coverage.hub_source_family_count} "
         f"library_source_families={result.coverage.library_source_family_count} "
+        f"gsoo_source_families={result.coverage.gsoo_source_family_count} "
+        f"wa_gsoo_source_families={result.coverage.wa_gsoo_source_family_count} "
         f"supported_media={result.coverage.supported_media_count} "
         f"unsupported_media={result.coverage.unsupported_media_count} "
         f"review_needed={result.coverage.review_needed_count} "
