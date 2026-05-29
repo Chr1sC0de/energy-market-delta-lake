@@ -5674,6 +5674,7 @@ class RalphLoop:
             validation_status="passed",
         )
         return {
+            "status": "passed",
             "html_path": str(html_path),
             "generator_log_path": str(log_path),
             "summary": summary_payload,
@@ -13601,6 +13602,7 @@ def promotion_commit_inventory_review_package_lines(entry: dict[str, Any]) -> li
         lines.append(
             f"  - Review package for #{issue_number}: "
             f"`{package.get('status')}`; "
+            f"validation `{package.get('validation_status') or 'not recorded'}`; "
             f"HTML `{package.get('html_path') or 'not recorded'}`; "
             f"media count {package.get('media_count')}; "
             f"summary: {package.get('summary_text')}"
@@ -13763,7 +13765,9 @@ def post_promotion_review_issue_line(
     return (
         line
         + "; Review package "
-        + f"`{package.get('status')}`; HTML `{package.get('html_path') or 'not recorded'}`; "
+        + f"`{package.get('status')}`; "
+        + f"validation `{package.get('validation_status') or 'not recorded'}`; "
+        + f"HTML `{package.get('html_path') or 'not recorded'}`; "
         + f"media count {package.get('media_count')}; summary: {package.get('summary_text')}"
     )
 
