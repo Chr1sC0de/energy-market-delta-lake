@@ -179,7 +179,7 @@ repository:
 - `backend-services/dagster-user/aemo-etl` for the default gRPC user-code
   service declared in `backend-services/dagster-core/code-locations.aws.toml`
 - `backend-services/authentication` for the auth service
-- `backend-services/caddy` for the public reverse proxy and Astro portfolio
+- `backend-services/caddy` for the public reverse proxy and Astro command center
 - `backend-services/marimo` for the curated Marimo dashboard image
 
 The Pulumi deployment uses the AWS-targeted Dagster configuration by building
@@ -197,8 +197,9 @@ preview or deployment.
 
 Key deployed behaviors visible in the infrastructure code:
 
-- Caddy runs on a public EC2 instance, serves the Astro portfolio at the root
-  URL, and proxies to:
+- Caddy runs on a public EC2 instance, serves the Astro command center at the
+  root URL, serves the protected exact `/marimo` dashboard listing, and proxies
+  application traffic to:
   - `webserver-admin.dagster:3000`
   - `webserver-guest.dagster:3000`
   - `marimo-dashboard.dagster:2718`
@@ -210,9 +211,10 @@ Key deployed behaviors visible in the infrastructure code:
 - the curated Marimo dashboard runs on a private `t3.small` EC2 instance with
   an encrypted 30 GiB `gp3` root volume, uses its instance profile for S3
   reads, exposes `/marimo/health` and Marimo packaged asset routes through
-  Caddy, serves the registry-backed `/marimo` concept gallery, returns
-  immutable cache headers for content-hashed `/marimo/<notebook>/assets/*`
-  responses, exposes the data readiness overview for platform operations and
+  Caddy, exposes the registry JSON consumed by the Caddy-served `/marimo`
+  dashboard listing, returns immutable cache headers for content-hashed
+  `/marimo/<notebook>/assets/*` responses, exposes the data readiness overview
+  for platform operations and
   the registry-only glossary explorer for Market context metadata browsing,
   links table explorer rows to readiness, bounded-read diagnostics, and
   concept-gallery metadata for mapped `silver.gas_model` assets, exposes
@@ -430,6 +432,7 @@ system's services and Dagster workflows.
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
   - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `backend-services/caddy/public/theme.css`
   - `infrastructure/aws-pulumi/configs.py`
   - `infrastructure/aws-pulumi/code_locations.py`

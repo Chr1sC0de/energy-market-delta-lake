@@ -1,14 +1,15 @@
-# Caddy Portfolio And Reverse Proxy
+# Caddy Command Center And Reverse Proxy
 
 This Subproject builds the public Caddy image used by the local compose stack
-and the deployed AWS edge host. The image serves a static Astro portfolio at
-the root URL and keeps the existing Caddy reverse-proxy routes for Dagster,
-auth, and Marimo.
+and the deployed AWS edge host. The image serves a static Astro command center
+at the root URL, serves the protected `/marimo` dashboard listing, and keeps the
+existing Caddy reverse-proxy routes for Dagster, auth, Marimo registry JSON,
+and Marimo notebooks.
 
 ## Table of contents
 
 - [What it does](#what-it-does)
-- [Astro portfolio](#astro-portfolio)
+- [Astro command center](#astro-command-center)
 - [Local usage](#local-usage)
 - [Review package media](#review-package-media)
 - [Validation](#validation)
@@ -20,20 +21,25 @@ auth, and Marimo.
 - [Dockerfile](Dockerfile) builds the Astro app, copies `dist/` into
   `/var/www/html`, and then runs the Caddy runtime image.
 - The generated root page links to the guest Dagster UI, protected Dagster
-  admin UI, and protected Marimo dashboard.
+  admin UI, and protected dashboard command center.
+- The generated `/marimo` page fetches
+  `/marimo/dashboard-registry.json` at runtime, links available notebook routes,
+  and keeps planned dashboards visible as roadmap entries.
+- Caddy serves the exact `/marimo` listing route from its static root after the
+  Marimo auth check, while `/marimo/dashboard-registry.json` and
+  `/marimo/<notebook>/` routes remain Marimo-owned.
 - The generated `/theme.css` asset is served from Caddy's static root so Marimo
   pages can keep using the same palette.
 
-## Astro portfolio
+## Astro command center
 
-The portfolio source lives under [src/](src/):
+The command-center source lives under [src/](src/):
 
 - [src/pages/index.astro](src/pages/index.astro) composes the page.
-- [src/components/HeroArchitectureFlow.tsx](src/components/HeroArchitectureFlow.tsx)
-  owns the invisible first-view controller and deployed runtime detail modal.
-  [src/components/HeroArchitectureFallback.astro](src/components/HeroArchitectureFallback.astro)
-  renders the visible first-view card so reloads do not swap the architecture
-  preview during client hydration.
+- [src/pages/marimo.astro](src/pages/marimo.astro) composes the protected
+  dashboard listing and fetches the Marimo-owned registry JSON at runtime.
+- [src/components/ServiceLinks.astro](src/components/ServiceLinks.astro) renders
+  the shared service-entry controls for the root page and dashboard listing.
 - [src/components/AutomationWorkflowFlow.tsx](src/components/AutomationWorkflowFlow.tsx)
   renders the stable HTML/SVG preview for human decisions and AI execution,
   with a master-detail selector for goal setting, build/check work,
@@ -68,12 +74,13 @@ npm run build
 ```
 
 The local backend-services compose stack builds this image from
-`backend-services/caddy` and serves the generated portfolio at
-`https://localhost/`.
+`backend-services/caddy` and serves the generated command center at
+`https://localhost/`, with the protected dashboard listing at
+`https://localhost/marimo`.
 
 ## Review package media
 
-Ralph owns the Caddy portfolio and dashboard-listing Review package video
+Ralph owns the Caddy command-center and dashboard-listing Review package video
 recipe. When an issue changes one of this README's `sync.sources` portfolio or
 static-serving inputs, Ralph maps that change to the generated root route `/`,
 runs `npm run build` from this Subproject, serves the built `dist/` directory
@@ -92,7 +99,7 @@ remains owned by the Marimo Review package media recipe.
 
 ## Validation
 
-For portfolio-only edits, run:
+For command-center-only edits, run:
 
 ```bash
 npm run build
@@ -120,6 +127,7 @@ check** surface from the changed Subproject or root, as described in
   - `backend-services/caddy/tsconfig.json`
   - `backend-services/caddy/public/theme.css`
   - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `backend-services/caddy/src/components/AutomationWorkflowFlow.tsx`
   - `backend-services/caddy/src/components/HeroArchitectureFallback.astro`
   - `backend-services/caddy/src/components/HeroArchitectureFlow.tsx`

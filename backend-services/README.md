@@ -33,7 +33,7 @@ architecture is defined in `infrastructure/aws-pulumi/`.
 | `authentication` | OIDC/session bridge for protected routes | internal |
 | `marimo-dashboard` | Curated Marimo dashboard service | internal |
 | `marimo-codex-workspace` | Local-only Marimo-Codex research workspace | `127.0.0.1:2719` |
-| `caddy` | Local reverse proxy, Astro portfolio, and public entrypoint | `80`, `443` |
+| `caddy` | Local reverse proxy, Astro command center, and public entrypoint | `80`, `443` |
 
 ______________________________________________________________________
 
@@ -223,7 +223,8 @@ Navigate to <https://localhost> in your browser.
 
 Useful routes:
 
-- `/` for the Astro portfolio page with AI workflow and infrastructure diagrams
+- `/` for the Astro command center with service entry, readiness, AI workflow,
+  and infrastructure diagrams
 - `/dagster-webserver/guest` for the guest Dagster UI
 - `/dagster-webserver/admin` for the protected admin Dagster UI
 - `/marimo` for curated Marimo dashboards through Caddy, including the table
@@ -856,6 +857,7 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
   - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `backend-services/caddy/public/theme.css`
   - `infrastructure/aws-pulumi/dagster_core_deployment.py`
 - `sync.scope`: `operations`

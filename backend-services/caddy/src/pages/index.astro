@@ -1,7 +1,5 @@
 ---
 import AutomationWorkflowFlow from "../components/AutomationWorkflowFlow";
-import HeroArchitectureFlow from "../components/HeroArchitectureFlow";
-import HeroArchitectureFallback from "../components/HeroArchitectureFallback.astro";
 import InfrastructureDiagram from "../components/InfrastructureDiagram.astro";
 import ServiceLinks from "../components/ServiceLinks.astro";
 import PortfolioLayout from "../layouts/PortfolioLayout.astro";
@@ -12,22 +10,80 @@ import PortfolioLayout from "../layouts/PortfolioLayout.astro";
   description="Energy Market Delta Lake portfolio entrypoint for Australian energy market ingestion, orchestration, storage, protected notebooks, and an AI delivery system."
 >
   <main>
-    <section class="hero" aria-labelledby="page-title">
+    <section class="hero command-hero" aria-labelledby="page-title">
       <div class="hero-inner">
         <div class="hero-heading">
-          <p class="eyebrow">Public project portfolio case study</p>
+          <p class="eyebrow">Operator command center</p>
           <h1 id="page-title">Energy Market Delta Lake</h1>
         </div>
         <div class="hero-copy">
           <p class="hero-lede">
-            A deployable Australian energy-market data platform with Dagster assets, S3-compatible Delta storage, protected Marimo notebooks, and an AI delivery system for checked code changes.
+            One entrypoint for platform readiness, protected service access, and the fastest route into operational gas-market dashboards.
           </p>
           <ServiceLinks />
         </div>
-        <div class="hero-diagram">
-          <HeroArchitectureFallback />
-          <div class="hero-diagram-interaction" aria-hidden="false">
-            <HeroArchitectureFlow client:only="react" />
+        <div class="command-panel" aria-label="Platform readiness overview">
+          <div class="command-panel-header">
+            <span>Platform readiness</span>
+            <strong>Local and deployed operator surfaces</strong>
+          </div>
+          <div class="readiness-grid" aria-label="Service readiness">
+            <div class="readiness-card tone-green">
+              <span>Dashboards</span>
+              <strong>Registry-backed</strong>
+              <small>Available and planned Marimo entries from runtime metadata</small>
+            </div>
+            <div class="readiness-card tone-blue">
+              <span>Storage</span>
+              <strong>S3-compatible Delta</strong>
+              <small>Bronze, silver, and gold gas-market paths stay inspectable</small>
+            </div>
+            <div class="readiness-card tone-amber">
+              <span>Orchestration</span>
+              <strong>Dagster protected</strong>
+              <small>Admin operations remain behind browser auth</small>
+            </div>
+            <div class="readiness-card tone-slate">
+              <span>Delivery</span>
+              <strong>Ralph evidence loop</strong>
+              <small>Test lane and Review package evidence before handoff</small>
+            </div>
+          </div>
+          <div class="priority-actions" aria-label="Priority operator actions">
+            <a class="primary-action" href="/marimo">Choose a dashboard</a>
+            <a class="secondary-action" href="/dagster-webserver/admin">Open protected Dagster</a>
+            <a class="secondary-action" href="/dagster-webserver/guest">Inspect public graph</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-band route-map-section" aria-labelledby="route-map-title">
+      <div class="section-inner">
+        <div class="section-heading section-heading-split">
+          <div>
+            <p class="eyebrow">Route model</p>
+            <h2 id="route-map-title">Caddy leads entry. Marimo owns notebooks.</h2>
+          </div>
+          <p>
+            The static command center gives operators a stable first choice while Marimo keeps the live registry JSON and notebook applications.
+          </p>
+        </div>
+        <div class="route-map-grid">
+          <div class="route-card tone-green">
+            <span>/marimo</span>
+            <strong>Caddy-served dashboard listing</strong>
+            <p>Protected exact route built by Astro, sharing the homepage command-center visual system.</p>
+          </div>
+          <div class="route-card tone-blue">
+            <span>/marimo/dashboard-registry.json</span>
+            <strong>Marimo-owned registry</strong>
+            <p>Runtime dependency fetched by the listing so available and planned entries reflect the image.</p>
+          </div>
+          <div class="route-card tone-amber">
+            <span>/marimo/&lt;notebook&gt;/</span>
+            <strong>Marimo-owned notebooks</strong>
+            <p>Available cards link to mounted notebook routes and keep package assets proxied by Caddy.</p>
           </div>
         </div>
       </div>

@@ -57,25 +57,27 @@ The dashboard app in [src/marimoserver/main.py](src/marimoserver/main.py):
 - exposes `/health` for container health checks
 - discovers `*.py` notebooks from `notebooks/`
 - mounts each notebook as a marimo sub-app under `/marimo/<notebook-name>`
-- serves a concept gallery hub at `/marimo`, grouped by generated Market
-  context concept and filterable by audience tag
 - serves the code-local dashboard roadmap registry at
   `/marimo/dashboard-registry.json`
-- links the Caddy-served shared theme at `/theme.css` for the index and
-  notebook head
+- keeps a FastAPI registry gallery implementation for direct app access, while
+  the Caddy-served exact `/marimo` route is the operator dashboard listing in
+  local compose and AWS
+- links the Caddy-served shared theme at `/theme.css` for notebook head
 - applies static asset response headers for Marimo packaged assets, including
   the `woff` and `woff2` MIME-type fix and immutable caching for
   `/marimo/<notebook>/assets/*`
 
-In local compose and AWS, Caddy proxies `/marimo*` traffic to
-`marimo-dashboard`. Most notebook routes are protected by the authentication
-service, while `/marimo/health`, static asset paths, and websocket paths are
-proxied through directly. Caddy does not serve Marimo packaged assets from its
-own static root; it excludes `/marimo/*/assets/*`, notebook favicon and
-manifest paths, `/marimo/health`, and websocket upgrades from `forward_auth`,
-then reverse-proxies them to `marimo-dashboard`. Caddy still serves the
-Astro-generated `/theme.css` from its static root, so notebook pages can use
-the same palette as the root portfolio page.
+In local compose and AWS, Caddy serves the exact `/marimo` dashboard listing
+from its Astro static root after the Marimo auth check, then proxies
+`/marimo/dashboard-registry.json`, `/marimo/<notebook>/`, and other Marimo
+runtime paths to `marimo-dashboard`. Most notebook routes are protected by the
+authentication service, while `/marimo/health`, static asset paths, and
+websocket paths are proxied through directly. Caddy does not serve Marimo
+packaged assets from its own static root; it excludes `/marimo/*/assets/*`,
+notebook favicon and manifest paths, `/marimo/health`, and websocket upgrades
+from `forward_auth`, then reverse-proxies them to `marimo-dashboard`. Caddy
+still serves the Astro-generated `/theme.css` from its static root, so notebook
+pages can use the same palette as the root command center.
 
 ## Static assets
 
@@ -84,7 +86,7 @@ assets such as `/marimo/<notebook>/assets/<name>-<hash>.js`. Marimo already
 emits preload hints for its disconnect images and fonts, plus `modulepreload`
 hints for JavaScript chunks. The FastAPI wrapper adds
 `Cache-Control: public, max-age=31536000, immutable` to successful
-`/marimo/<notebook>/assets/*` responses and leaves `/marimo`,
+`/marimo/<notebook>/assets/*` responses and leaves
 `/marimo/dashboard-registry.json`, notebook `manifest.json`, notebook favicons,
 and `/theme.css` outside that immutable cache rule.
 
@@ -138,10 +140,10 @@ planned or available status, notebook names and routes, backing
 `silver.gas_model` assets, Market context IDs, source chunk IDs,
 silver chunk paths, and source hashes.
 
-The `/marimo` entry route renders this registry as a concept gallery hub.
-Available registry entries link only when their backing notebook is mounted in
-the current image. Planned entries stay visible as roadmap cards but do not
-emit notebook links. The same registry is served as JSON from
+The Caddy-served `/marimo` listing fetches this registry at runtime. Available
+registry entries link only when their backing notebook is mounted in the
+current image. Planned entries stay visible as roadmap cards but do not emit
+notebook links. The same registry is served as JSON from
 `/marimo/dashboard-registry.json` so future Marimo notebooks can render context
 panels without reading Gas market knowledge base Markdown directly. When the
 packaged generated corpus is absent, registry loading still succeeds because
@@ -151,7 +153,7 @@ existing dashboard image contents, and does not require a Docker build-context
 change.
 
 Registry-backed dashboards that only browse registry metadata may have no
-backing `silver.gas_model` assets. The concept gallery renders those entries as
+backing `silver.gas_model` assets. The Caddy listing renders those entries as
 registry metadata only instead of inventing table dependencies.
 
 [src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py) exposes
@@ -1051,7 +1053,7 @@ The services are started by [../compose.yaml](../compose.yaml).
 
 Dashboard notebooks are mounted from [notebooks/](notebooks/) into
 `marimo-dashboard`, so adding a curated notebook there and registering it as
-available makes it reachable from the `/marimo` concept gallery.
+available makes it reachable from the Caddy-served `/marimo` dashboard listing.
 
 Research notebooks and draft issue notes stay under
 [research-workspace/](research-workspace/) and are served by
@@ -1067,8 +1069,9 @@ local compose `marimo-dashboard` and `marimo-codex-workspace` services also set
 Interactive Map `Summary` Plotly iframe output without changing the notebook
 controls, data reads, Plotly traces, or dashboard routes.
 
-With the local backend stack running, open the Marimo concept gallery through
-Caddy and choose an available card such as `data_readiness_overview`,
+With the local backend stack running, open the protected Marimo dashboard
+listing through Caddy and choose an available card such as
+`data_readiness_overview`,
 `dagster_asset_catalogue_status`, `materialization_freshness`,
 `s3_bucket_health`, `glossary_explorer`, `concept_to_asset_explorer`,
 `citation_chain_explorer`, `table_explorer`, `source_coverage_matrix`,
@@ -1619,6 +1622,7 @@ prek run -a
   - `backend-services/marimo/tests/component/test_data_readiness.py`
   - `backend-services/compose.yaml`
   - `backend-services/caddy/Caddyfile`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `backend-services/caddy/public/theme.css`
 - `sync.scope`: `interface`
 - `sync.qa`:

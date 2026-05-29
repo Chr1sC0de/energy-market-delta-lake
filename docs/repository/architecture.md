@@ -223,10 +223,11 @@ without making local development performance claims.
 - `backend-services/authentication`
   - implements the OIDC/session bridge used in front of protected routes
 - `backend-services/caddy`
-  - provides the reverse-proxy image, root Astro portfolio, and routing rules
+  - provides the reverse-proxy image, root Astro command center, protected
+    `/marimo` dashboard listing, and routing rules
 - `backend-services/marimo`
-  - notebook-oriented Subproject with a registry-backed `/marimo` concept
-    gallery, registry-only glossary explorer, operational readiness and
+  - notebook-oriented Subproject with a registry JSON endpoint, mounted
+    notebook routes, registry-only glossary explorer, operational readiness and
     materialization freshness dashboards, immutable cache headers for packaged
     static assets, a curated dashboard image used locally and in AWS,
     plus a local-only Marimo-Codex research workspace image
@@ -273,6 +274,7 @@ Gas market knowledge base responsibility:
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
   - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `backend-services/caddy/public/theme.css`
   - `backend-services/marimo/src/marimoserver/main.py`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`

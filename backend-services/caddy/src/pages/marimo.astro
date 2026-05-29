@@ -1,0 +1,258 @@
+---
+import ServiceLinks from "../components/ServiceLinks.astro";
+import PortfolioLayout from "../layouts/PortfolioLayout.astro";
+---
+
+<PortfolioLayout
+  title="Marimo Dashboard Command Center"
+  description="Protected Energy Market Delta Lake dashboard listing for available and planned Marimo notebooks."
+>
+  <main class="dashboard-command-page">
+    <section class="dashboard-hero command-hero" aria-labelledby="dashboard-title">
+      <div class="dashboard-hero-inner">
+        <div class="dashboard-hero-copy">
+          <p class="eyebrow">Protected dashboard command center</p>
+          <h1 id="dashboard-title">Choose the fastest operational view.</h1>
+          <p class="hero-lede">
+            Runtime registry loading keeps available notebooks linked to Marimo while planned concepts stay visible as the roadmap.
+          </p>
+          <ServiceLinks />
+        </div>
+        <aside class="dashboard-status-panel" aria-label="Dashboard registry status">
+          <div class="command-panel-header">
+            <span>Registry status</span>
+            <strong id="registry-state">Loading dashboard registry</strong>
+          </div>
+          <dl class="registry-metrics" aria-label="Dashboard registry metrics">
+            <div>
+              <dt>Available</dt>
+              <dd id="available-count">-</dd>
+            </div>
+            <div>
+              <dt>Planned</dt>
+              <dd id="planned-count">-</dd>
+            </div>
+            <div>
+              <dt>Total</dt>
+              <dd id="entry-count">-</dd>
+            </div>
+          </dl>
+          <p id="registry-detail" class="registry-detail">
+            Fetching /marimo/dashboard-registry.json from the Marimo service.
+          </p>
+        </aside>
+      </div>
+    </section>
+
+    <section class="dashboard-listing-section" aria-labelledby="dashboard-listing-title">
+      <div class="section-inner">
+        <div class="dashboard-toolbar">
+          <div>
+            <p class="eyebrow">Dashboard choice</p>
+            <h2 id="dashboard-listing-title">Operational dashboards first</h2>
+          </div>
+          <div class="dashboard-filter-group" aria-label="Dashboard filters">
+            <button class="dashboard-filter is-active" type="button" data-filter="all">All</button>
+            <button class="dashboard-filter" type="button" data-filter="available">Available</button>
+            <button class="dashboard-filter" type="button" data-filter="planned">Planned</button>
+            <button class="dashboard-filter" type="button" data-filter="platform-operations">Platform ops</button>
+            <button class="dashboard-filter" type="button" data-filter="operator">Operator</button>
+          </div>
+        </div>
+
+        <div id="dashboard-message" class="dashboard-message" role="status">
+          Loading registry entries...
+        </div>
+        <div id="dashboard-grid" class="dashboard-grid" aria-live="polite"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const registryUrl = "/marimo/dashboard-registry.json";
+    const operationalKeywords = [
+      "readiness",
+      "diagnostics",
+      "health",
+      "freshness",
+      "dagster",
+      "s3",
+      "flow",
+      "capacity",
+      "notices",
+      "linepack",
+      "forecast",
+    ];
+    const audiencePriority = [
+      "platform-operations",
+      "operator",
+      "data-engineer",
+      "analyst",
+      "stakeholder",
+    ];
+
+    const grid = document.querySelector("#dashboard-grid");
+    const message = document.querySelector("#dashboard-message");
+    const registryState = document.querySelector("#registry-state");
+    const registryDetail = document.querySelector("#registry-detail");
+    const availableCount = document.querySelector("#available-count");
+    const plannedCount = document.querySelector("#planned-count");
+    const entryCount = document.querySelector("#entry-count");
+    const filters = Array.from(document.querySelectorAll(".dashboard-filter"));
+    let entries = [];
+    let activeFilter = "all";
+
+    const normalizeList = (value) => (Array.isArray(value) ? value : []);
+    const asText = (value, fallback = "") =>
+      typeof value === "string" && value.trim().length > 0 ? value : fallback;
+
+    const audienceRank = (entry) => {
+      const audiences = normalizeList(entry.audiences);
+      const ranks = audiences.map((audience) => audiencePriority.indexOf(audience));
+      const matched = ranks.filter((rank) => rank >= 0);
+      return matched.length > 0 ? Math.min(...matched) : audiencePriority.length;
+    };
+
+    const operationalRank = (entry) => {
+      const haystack = `${entry.concept_id ?? ""} ${entry.title ?? ""} ${entry.description ?? ""}`.toLowerCase();
+      const rank = operationalKeywords.findIndex((keyword) => haystack.includes(keyword));
+      return rank >= 0 ? rank : operationalKeywords.length;
+    };
+
+    const sortEntries = (left, right) => {
+      const leftAvailable = left.status === "available" ? 0 : 1;
+      const rightAvailable = right.status === "available" ? 0 : 1;
+      if (leftAvailable !== rightAvailable) return leftAvailable - rightAvailable;
+      const leftAudience = audienceRank(left);
+      const rightAudience = audienceRank(right);
+      if (leftAudience !== rightAudience) return leftAudience - rightAudience;
+      const leftOperational = operationalRank(left);
+      const rightOperational = operationalRank(right);
+      if (leftOperational !== rightOperational) return leftOperational - rightOperational;
+      return asText(left.title).localeCompare(asText(right.title));
+    };
+
+    const entryMatchesFilter = (entry) => {
+      if (activeFilter === "all") return true;
+      if (activeFilter === "available" || activeFilter === "planned") {
+        return entry.status === activeFilter;
+      }
+      return normalizeList(entry.audiences).includes(activeFilter);
+    };
+
+    const updateMetrics = () => {
+      const available = entries.filter((entry) => entry.status === "available").length;
+      const planned = entries.filter((entry) => entry.status === "planned").length;
+      availableCount.textContent = String(available);
+      plannedCount.textContent = String(planned);
+      entryCount.textContent = String(entries.length);
+    };
+
+    const formatAudience = (audience) => audience.replaceAll("-", " ");
+
+    const createCardBody = (entry) => {
+      const body = document.createElement("article");
+      body.className = `dashboard-card dashboard-card-${entry.status === "available" ? "available" : "planned"}`;
+
+      const top = document.createElement("div");
+      top.className = "dashboard-card-top";
+      const status = document.createElement("span");
+      status.className = "dashboard-card-status";
+      status.textContent = entry.status === "available" ? "Available" : "Planned";
+      const concept = document.createElement("span");
+      concept.className = "dashboard-card-concept";
+      concept.textContent = asText(entry.concept_id, "registry entry");
+      top.append(status, concept);
+
+      const title = document.createElement("h3");
+      title.textContent = asText(entry.title, "Untitled dashboard");
+
+      const description = document.createElement("p");
+      description.textContent = asText(entry.description, "No registry description recorded.");
+
+      const audiences = document.createElement("div");
+      audiences.className = "dashboard-card-tags";
+      for (const audience of normalizeList(entry.audiences).slice(0, 3)) {
+        const tag = document.createElement("span");
+        tag.textContent = formatAudience(asText(audience));
+        audiences.append(tag);
+      }
+
+      const footer = document.createElement("div");
+      footer.className = "dashboard-card-footer";
+      footer.textContent =
+        entry.status === "available" && entry.notebook_route
+          ? "Open notebook"
+          : "Roadmap entry";
+
+      body.append(top, title, description, audiences, footer);
+      return body;
+    };
+
+    const renderEntries = () => {
+      grid.replaceChildren();
+      const visibleEntries = entries.filter(entryMatchesFilter);
+      if (visibleEntries.length === 0) {
+        message.hidden = false;
+        message.textContent =
+          entries.length === 0
+            ? "The dashboard registry loaded, but it did not return any entries."
+            : "No dashboard entries match this filter.";
+        return;
+      }
+
+      message.hidden = true;
+      for (const entry of visibleEntries) {
+        const route = asText(entry.notebook_route);
+        const isAvailable = entry.status === "available" && route.length > 0;
+        const card = isAvailable ? document.createElement("a") : document.createElement("div");
+        card.className = "dashboard-card-frame";
+        if (isAvailable) {
+          card.href = route;
+          card.setAttribute("aria-label", `Open ${asText(entry.title, "dashboard")}`);
+        } else {
+          card.setAttribute("aria-label", `${asText(entry.title, "Dashboard")} roadmap entry`);
+        }
+        card.append(createCardBody(entry));
+        grid.append(card);
+      }
+    };
+
+    const setFilter = (nextFilter) => {
+      activeFilter = nextFilter;
+      for (const filter of filters) {
+        filter.classList.toggle("is-active", filter.dataset.filter === nextFilter);
+      }
+      renderEntries();
+    };
+
+    for (const filter of filters) {
+      filter.addEventListener("click", () => setFilter(filter.dataset.filter ?? "all"));
+    }
+
+    try {
+      const response = await fetch(registryUrl, { headers: { Accept: "application/json" } });
+      if (!response.ok) {
+        throw new Error(`Registry returned HTTP ${response.status}`);
+      }
+      const payload = await response.json();
+      entries = normalizeList(payload.entries).slice().sort(sortEntries);
+      updateMetrics();
+      registryState.textContent = "Registry loaded";
+      registryDetail.textContent =
+        entries.length > 0
+          ? "Available notebooks link to Marimo-owned routes. Planned dashboards stay visible for roadmap context."
+          : "The registry endpoint responded, but no dashboard entries were recorded.";
+      renderEntries();
+    } catch (error) {
+      registryState.textContent = "Registry unavailable";
+      registryDetail.textContent = error instanceof Error ? error.message : "The registry request failed.";
+      message.hidden = false;
+      message.textContent =
+        "Dashboard choices are unavailable because /marimo/dashboard-registry.json could not be loaded.";
+      availableCount.textContent = "0";
+      plannedCount.textContent = "0";
+      entryCount.textContent = "0";
+    }
+  </script>
+</PortfolioLayout>

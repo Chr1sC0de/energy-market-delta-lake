@@ -92,15 +92,17 @@ flowchart LR
   IO-manager buckets.
 - The Caddy host:
   - pulls the digest-pinned `dagster/caddy` image from ECR
-  - serves the Astro-generated root portfolio and shared `/theme.css` asset
-    before proxying application routes
+  - serves the Astro-generated root command center, the protected exact
+    `/marimo` dashboard listing, and the shared `/theme.css` asset before
+    proxying application routes
   - mounts a dedicated encrypted EBS volume at `/mnt/caddy-certs`
   - persists certificate state under `/data`
   - creates a Route 53 A record for `ausenergymarketdata.com`
   - proxies to Cloud Map names for the private Dagster webservers and to the
     auth host private IP on port `8000`
-  - proxies `/marimo*` to `marimo-dashboard.dagster:2718`, with auth checks on
-    notebook routes and a direct `/marimo/health` probe
+  - proxies `/marimo/dashboard-registry.json`, `/marimo/<notebook>/`, and other
+    Marimo runtime paths to `marimo-dashboard.dagster:2718`, with auth checks
+    on notebook routes and a direct `/marimo/health` probe
 
 ## Related docs
 
@@ -121,6 +123,7 @@ flowchart LR
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
   - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `backend-services/caddy/public/theme.css`
 - `sync.scope`: `architecture`
 - `sync.qa`:
