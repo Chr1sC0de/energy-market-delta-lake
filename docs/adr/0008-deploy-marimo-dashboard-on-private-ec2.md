@@ -10,9 +10,11 @@ Deploy only the curated `marimo-dashboard` image to AWS. The dashboard runs on a
 private `t3.small` EC2 instance in the VPC private subnet, with no public IP and
 no SSH key. Operators use SSM Session Manager for host access.
 
-Caddy remains the only public ingress. It proxies `/marimo*` to the Cloud Map
-name `marimo-dashboard.dagster:2718`. Notebook routes stay behind the existing
-FastAPI auth `forward_auth` flow, while `/marimo/health` returns only
+Caddy remains the only public ingress. It serves the exact `/marimo` and
+`/marimo/` dashboard atlas routes from the Astro build after the existing
+FastAPI auth `forward_auth` flow, then proxies Marimo-owned `/marimo*` routes
+to the Cloud Map name `marimo-dashboard.dagster:2718`. Notebook routes stay
+behind the existing auth boundary, while `/marimo/health` returns only
 `{"status":"ok"}` without authentication for deployed health checks.
 
 The dashboard instance pulls the digest-pinned ECR image built from
@@ -38,14 +40,16 @@ S3-compatible bucket reachability, object scans, truncation, bucket errors, and
 Delta or Parquet table-prefix discovery. AWS mode checks the configured buckets
 only and does not require account-wide S3 bucket listing permission.
 
-The `/marimo` entry route renders the same registry as a concept gallery hub.
-Available dashboard cards link to mounted notebook routes, while planned
-dashboard cards stay visible without notebook links. Registry-only notebooks
-such as the glossary explorer can browse Marimo-local Market context metadata
-without adding generated-file reads at runtime.
+Caddy's `/marimo` entry route fetches the Marimo-owned registry JSON at runtime
+and renders it as a market-atlas dashboard listing. Available dashboard cards
+link to notebook routes, while planned dashboard cards stay visible without
+notebook links. Registry-only notebooks such as the glossary explorer can
+browse Marimo-local Market context metadata without adding generated-file reads
+at runtime.
 
 Caddy does not serve Marimo packaged static assets from its own static root. It
-keeps `/marimo/*/assets/*`, notebook favicons, notebook manifests,
+keeps `/marimo/dashboard-registry.json`, `/marimo/<notebook>/`,
+`/marimo/*/assets/*`, notebook favicons, notebook manifests,
 `/marimo/health`, and websocket upgrade requests outside Marimo `forward_auth`,
 then reverse-proxies those requests directly to `marimo-dashboard`. The Marimo
 FastAPI wrapper sets `Cache-Control: public, max-age=31536000, immutable` on
@@ -310,6 +314,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `infrastructure/aws-pulumi/components/security_groups.py`
   - `infrastructure/aws-pulumi/components/service_discovery.py`
   - `backend-services/caddy/Caddyfile`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `backend-services/marimo/Dockerfile`
   - `backend-services/marimo/src/marimoserver/main.py`
   - `backend-services/marimo/src/marimoserver/dashboard_registry.py`

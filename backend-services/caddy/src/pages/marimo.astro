@@ -1,0 +1,439 @@
+---
+import PortfolioLayout from "../layouts/PortfolioLayout.astro";
+---
+
+<PortfolioLayout
+  title="Marimo Dashboard Atlas"
+  description="Protected Marimo dashboard atlas built from the Marimo-owned dashboard registry."
+>
+  <main class="dashboard-atlas-shell">
+    <section class="dashboard-atlas-hero" aria-labelledby="atlas-title">
+      <div>
+        <p class="eyebrow">Protected dashboard atlas</p>
+        <h1 id="atlas-title">Find the gas-market dashboard by concept.</h1>
+        <p class="dashboard-atlas-lede">
+          This Caddy-served listing keeps Marimo as the registry owner. It
+          fetches `/marimo/dashboard-registry.json` at runtime and organizes the
+          available and planned dashboards by market concept, audience, source
+          family, status, and backing asset metadata.
+        </p>
+      </div>
+
+      <div class="atlas-health-panel" aria-label="Registry status">
+        <span id="registry-state-label">Loading registry</span>
+        <strong id="registry-state-value">Connecting</strong>
+        <p id="registry-state-detail">
+          Waiting for the Marimo-owned dashboard registry.
+        </p>
+      </div>
+    </section>
+
+    <section class="atlas-controls" aria-label="Dashboard filters">
+      <div class="atlas-control-group">
+        <span>Audience</span>
+        <div id="audience-filters" class="atlas-button-row"></div>
+      </div>
+      <div class="atlas-control-group">
+        <span>Status</span>
+        <div id="status-filters" class="atlas-button-row"></div>
+      </div>
+      <div class="atlas-control-group">
+        <span>Concept path</span>
+        <div id="concept-filters" class="atlas-button-row"></div>
+      </div>
+      <label class="atlas-search">
+        <span>Asset or source search</span>
+        <input
+          id="asset-search"
+          type="search"
+          autocomplete="off"
+          placeholder="Filter by asset, concept, source chunk, or Market context ID"
+        />
+      </label>
+    </section>
+
+    <section class="atlas-summary-grid" aria-label="Registry summary">
+      <article>
+        <span>Available</span>
+        <strong id="available-count">0</strong>
+      </article>
+      <article>
+        <span>Planned</span>
+        <strong id="planned-count">0</strong>
+      </article>
+      <article>
+        <span>Concepts</span>
+        <strong id="concept-count">0</strong>
+      </article>
+      <article>
+        <span>Backing assets</span>
+        <strong id="asset-count">0</strong>
+      </article>
+    </section>
+
+    <section id="atlas-results" class="atlas-results" aria-live="polite">
+      <article class="atlas-state-card">
+        <span>Loading</span>
+        <h2>Building the dashboard atlas.</h2>
+        <p>
+          Registry entries will appear here after Caddy receives the Marimo
+          dashboard registry payload.
+        </p>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const registryUrl = "/marimo/dashboard-registry.json";
+    const state = {
+      entries: [],
+      audiences: [],
+      audience: "all",
+      status: "all",
+      concept: "all",
+      query: "",
+    };
+
+    const conceptPaths = [
+      {
+        id: "operations",
+        label: "Operations",
+        matches: ["flow", "facility", "linepack", "notice", "schedule", "nomination", "operational", "gas-day"],
+      },
+      {
+        id: "capacity",
+        label: "Capacity",
+        matches: ["capacity", "auction", "transaction", "adequacy"],
+      },
+      {
+        id: "settlement",
+        label: "Settlement",
+        matches: ["settlement", "allocation", "mos", "bid", "offer", "price", "contingency"],
+      },
+      {
+        id: "source-context",
+        label: "Source context",
+        matches: ["source", "coverage", "lineage", "dictionary", "catalogue", "readiness", "glossary", "citation", "asset", "participant", "hub", "zone", "connection"],
+      },
+    ];
+
+    const sourceFamilies = [
+      { id: "gbb", label: "GBB", needle: "gbb" },
+      { id: "sttm", label: "STTM", needle: "sttm" },
+      { id: "dwgm", label: "DWGM", needle: "dwgm" },
+      { id: "vicgas", label: "VICGAS", needle: "vicgas" },
+      { id: "curated", label: "silver.gas_model", needle: "silver.gas_model" },
+    ];
+
+    const elements = {
+      registryLabel: document.querySelector("#registry-state-label"),
+      registryValue: document.querySelector("#registry-state-value"),
+      registryDetail: document.querySelector("#registry-state-detail"),
+      audienceFilters: document.querySelector("#audience-filters"),
+      statusFilters: document.querySelector("#status-filters"),
+      conceptFilters: document.querySelector("#concept-filters"),
+      assetSearch: document.querySelector("#asset-search"),
+      availableCount: document.querySelector("#available-count"),
+      plannedCount: document.querySelector("#planned-count"),
+      conceptCount: document.querySelector("#concept-count"),
+      assetCount: document.querySelector("#asset-count"),
+      results: document.querySelector("#atlas-results"),
+    };
+
+    const labelFromSlug = (value) =>
+      String(value)
+        .split("-")
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+
+    const asArray = (value) => (Array.isArray(value) ? value : []);
+    const escapeHtml = (value) =>
+      String(value).replace(/[&<>"']/g, (character) => {
+        const entities = {
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        };
+        return entities[character];
+      });
+
+    const textForEntry = (entry) =>
+      [
+        entry.concept_id,
+        entry.title,
+        entry.description,
+        ...asArray(entry.audiences),
+        ...asArray(entry.backing_assets),
+        ...asArray(entry.market_context_ids),
+        ...asArray(entry.source_chunk_ids),
+        ...asArray(entry.silver_chunk_paths),
+      ]
+        .join(" ")
+        .toLowerCase();
+
+    const conceptPathForEntry = (entry) => {
+      const searchable = textForEntry(entry);
+      return (
+        conceptPaths.find((path) =>
+          path.matches.some((match) => searchable.includes(match)),
+        ) ?? conceptPaths[0]
+      );
+    };
+
+    const sourceFamiliesForEntry = (entry) => {
+      const searchable = textForEntry(entry);
+      const matches = sourceFamilies.filter((family) =>
+        searchable.includes(family.needle),
+      );
+      return matches.length > 0 ? matches : [{ id: "metadata", label: "Registry metadata" }];
+    };
+
+    const setRegistryState = (label, value, detail) => {
+      elements.registryLabel.textContent = label;
+      elements.registryValue.textContent = value;
+      elements.registryDetail.textContent = detail;
+    };
+
+    const makeButton = ({ label, value, active, onClick }) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = active ? "atlas-filter-button is-active" : "atlas-filter-button";
+      button.textContent = label;
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+      button.addEventListener("click", onClick);
+      return button;
+    };
+
+    const renderFilters = () => {
+      elements.audienceFilters.replaceChildren(
+        makeButton({
+          label: "All",
+          value: "all",
+          active: state.audience === "all",
+          onClick: () => {
+            state.audience = "all";
+            render();
+          },
+        }),
+        ...state.audiences.map((audience) =>
+          makeButton({
+            label: labelFromSlug(audience),
+            value: audience,
+            active: state.audience === audience,
+            onClick: () => {
+              state.audience = audience;
+              render();
+            },
+          }),
+        ),
+      );
+
+      elements.statusFilters.replaceChildren(
+        ...["all", "available", "planned"].map((status) =>
+          makeButton({
+            label: status === "all" ? "All" : labelFromSlug(status),
+            value: status,
+            active: state.status === status,
+            onClick: () => {
+              state.status = status;
+              render();
+            },
+          }),
+        ),
+      );
+
+      elements.conceptFilters.replaceChildren(
+        makeButton({
+          label: "All",
+          value: "all",
+          active: state.concept === "all",
+          onClick: () => {
+            state.concept = "all";
+            render();
+          },
+        }),
+        ...conceptPaths.map((concept) =>
+          makeButton({
+            label: concept.label,
+            value: concept.id,
+            active: state.concept === concept.id,
+            onClick: () => {
+              state.concept = concept.id;
+              render();
+            },
+          }),
+        ),
+      );
+    };
+
+    const filteredEntries = () =>
+      state.entries.filter((entry) => {
+        const conceptPath = conceptPathForEntry(entry);
+        const searchable = textForEntry(entry);
+        return (
+          (state.audience === "all" || asArray(entry.audiences).includes(state.audience)) &&
+          (state.status === "all" || entry.status === state.status) &&
+          (state.concept === "all" || conceptPath.id === state.concept) &&
+          (state.query === "" || searchable.includes(state.query))
+        );
+      });
+
+    const renderSummary = () => {
+      const assets = new Set(
+        state.entries.flatMap((entry) => asArray(entry.backing_assets)),
+      );
+      elements.availableCount.textContent = String(
+        state.entries.filter((entry) => entry.status === "available").length,
+      );
+      elements.plannedCount.textContent = String(
+        state.entries.filter((entry) => entry.status === "planned").length,
+      );
+      elements.conceptCount.textContent = String(state.entries.length);
+      elements.assetCount.textContent = String(assets.size);
+    };
+
+    const cardForEntry = (entry) => {
+      const href = entry.status === "available" ? entry.notebook_route : null;
+      const element = document.createElement(href ? "a" : "article");
+      element.className = `atlas-dashboard-card atlas-dashboard-card--${entry.status}`;
+      element.id = `concept-${entry.concept_id}`;
+      if (href) {
+        element.href = href;
+      }
+
+      const sourceLabels = sourceFamiliesForEntry(entry)
+        .map((family) => family.label)
+        .join(", ");
+      const assetList = asArray(entry.backing_assets);
+      const visibleAssets = assetList.slice(0, 4);
+      const assetLabel =
+        visibleAssets.length > 0
+          ? visibleAssets
+          : ["Registry or configuration metadata"];
+      const extraAssetCount = Math.max(assetList.length - visibleAssets.length, 0);
+
+      element.innerHTML = `
+        <div class="atlas-card-topline">
+          <span class="atlas-status atlas-status--${escapeHtml(entry.status)}">${escapeHtml(labelFromSlug(entry.status))}</span>
+          <span>${escapeHtml(conceptPathForEntry(entry).label)}</span>
+        </div>
+        <div>
+          <h2>${escapeHtml(entry.title)}</h2>
+          <p>${escapeHtml(entry.description)}</p>
+        </div>
+        <div class="atlas-card-tags" aria-label="Audience tags">
+          ${asArray(entry.audiences).map((audience) => `<span>${escapeHtml(labelFromSlug(audience))}</span>`).join("")}
+        </div>
+        <div class="atlas-source-line">
+          <strong>Source family</strong>
+          <span>${escapeHtml(sourceLabels)}</span>
+        </div>
+        <ul class="atlas-asset-list" aria-label="Backing assets">
+          ${assetLabel.map((asset) => `<li>${escapeHtml(asset)}</li>`).join("")}
+          ${extraAssetCount > 0 ? `<li>+${extraAssetCount} more assets</li>` : ""}
+        </ul>
+        <span class="atlas-card-action">${href ? "Open notebook" : "Planned concept"}</span>
+      `;
+      return element;
+    };
+
+    const renderResults = () => {
+      const entries = filteredEntries();
+      if (state.entries.length === 0) {
+        elements.results.innerHTML = `
+          <article class="atlas-state-card">
+            <span>Empty registry</span>
+            <h2>No dashboard concepts were returned.</h2>
+            <p>The registry endpoint responded, but the entries array is empty.</p>
+          </article>
+        `;
+        return;
+      }
+
+      if (entries.length === 0) {
+        elements.results.innerHTML = `
+          <article class="atlas-state-card">
+            <span>No matches</span>
+            <h2>No dashboard matches the active filters.</h2>
+            <p>Clear one filter or search for a broader asset, source family, or Market context term.</p>
+          </article>
+        `;
+        return;
+      }
+
+      elements.results.replaceChildren(
+        ...conceptPaths
+          .map((concept) => {
+            const conceptEntries = entries.filter(
+              (entry) => conceptPathForEntry(entry).id === concept.id,
+            );
+            if (conceptEntries.length === 0) {
+              return null;
+            }
+            const section = document.createElement("section");
+            section.className = "atlas-concept-section";
+            section.innerHTML = `
+              <div class="atlas-concept-heading">
+                <span>${conceptEntries.length} concepts</span>
+                <h2>${escapeHtml(concept.label)}</h2>
+              </div>
+              <div class="atlas-card-grid"></div>
+            `;
+            section
+              .querySelector(".atlas-card-grid")
+              .replaceChildren(...conceptEntries.map(cardForEntry));
+            return section;
+          })
+          .filter(Boolean),
+      );
+      if (window.location.hash.startsWith("#concept-")) {
+        document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
+      }
+    };
+
+    const render = () => {
+      renderFilters();
+      renderSummary();
+      renderResults();
+    };
+
+    elements.assetSearch.addEventListener("input", (event) => {
+      state.query = event.target.value.trim().toLowerCase();
+      render();
+    });
+
+    fetch(registryUrl, {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Registry request failed with HTTP ${response.status}`);
+        }
+        return response.json();
+      })
+      .then((payload) => {
+        state.entries = asArray(payload.entries);
+        state.audiences = asArray(payload.audiences);
+        setRegistryState(
+          "Registry loaded",
+          `${state.entries.length} concepts`,
+          "Caddy rendered this page; Marimo supplied the dashboard registry.",
+        );
+        render();
+      })
+      .catch((error) => {
+        setRegistryState("Registry error", "Unavailable", error.message);
+        elements.results.innerHTML = `
+          <article class="atlas-state-card atlas-state-card--error">
+            <span>Registry error</span>
+            <h2>The dashboard registry could not be loaded.</h2>
+            <p>${escapeHtml(error.message)}</p>
+          </article>
+        `;
+      });
+  </script>
+</PortfolioLayout>

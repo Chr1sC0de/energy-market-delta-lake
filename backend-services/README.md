@@ -223,11 +223,13 @@ Navigate to <https://localhost> in your browser.
 
 Useful routes:
 
-- `/` for the Astro portfolio page with AI workflow and infrastructure diagrams
+- `/` for the Astro market-atlas homepage with source coverage and dashboard
+  discovery
 - `/dagster-webserver/guest` for the guest Dagster UI
 - `/dagster-webserver/admin` for the protected admin Dagster UI
-- `/marimo` for curated Marimo dashboards through Caddy, including the table
-  explorer, data readiness overview, AWS bounded-read diagnostics, market
+- `/marimo` for the protected Caddy-served dashboard atlas backed by the
+  Marimo dashboard registry, including the table explorer, data readiness
+  overview, AWS bounded-read diagnostics, market
   prices, materialization freshness, source coverage, source table lineage,
   schedule runs, settlement activity, customer transfer and retail activity,
   system notices, Bid / Offer stack, gas quality and composition, heating value
@@ -856,6 +858,7 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
   - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `backend-services/caddy/public/theme.css`
   - `infrastructure/aws-pulumi/dagster_core_deployment.py`
 - `sync.scope`: `operations`

@@ -1,33 +1,33 @@
 ---
 const services = [
   {
-    href: "/dagster-webserver/guest",
-    label: "Dagster guest",
-    detail: "Public asset graph and run surface",
-    state: "public demo",
-    tone: "blue",
-    icon: "DG",
-  },
-  {
-    href: "/dagster-webserver/admin",
-    label: "Dagster admin",
-    detail: "Operator UI behind browser auth",
-    state: "protected",
-    tone: "amber",
-    icon: "DA",
-  },
-  {
     href: "/marimo",
-    label: "Marimo",
-    detail: "Curated notebooks and table explorer",
+    label: "Dashboard atlas",
+    detail: "Protected concept-led Marimo dashboard discovery",
     state: "protected",
     tone: "green",
-    icon: "MO",
+    icon: "AT",
+  },
+  {
+    href: "#source-coverage",
+    label: "Source coverage",
+    detail: "GBB, STTM, DWGM, VICGAS, and curated assets",
+    state: "overview",
+    tone: "blue",
+    icon: "SC",
+  },
+  {
+    href: "/dagster-webserver/guest",
+    label: "Asset graph",
+    detail: "Public Dagster guest view for pipeline context",
+    state: "public",
+    tone: "amber",
+    icon: "AG",
   },
 ];
 ---
 
-<nav class="service-links" aria-label="Primary service links">
+<nav class="service-links" aria-label="Primary atlas links">
   {
     services.map((service) => (
       <a class={`service-link service-link-${service.tone}`} href={service.href}>

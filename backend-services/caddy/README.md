@@ -19,8 +19,10 @@ auth, and Marimo.
 - [Caddyfile](Caddyfile) keeps Caddy as the public entrypoint.
 - [Dockerfile](Dockerfile) builds the Astro app, copies `dist/` into
   `/var/www/html`, and then runs the Caddy runtime image.
-- The generated root page links to the guest Dagster UI, protected Dagster
-  admin UI, and protected Marimo dashboard.
+- The generated root page introduces the market atlas by gas-market domains,
+  source coverage, and dashboard discovery paths.
+- The generated `/marimo` page is Caddy-served behind the existing Marimo auth
+  boundary and fetches the Marimo-owned dashboard registry at runtime.
 - The generated `/theme.css` asset is served from Caddy's static root so Marimo
   pages can keep using the same palette.
 
@@ -28,7 +30,12 @@ auth, and Marimo.
 
 The portfolio source lives under [src/](src/):
 
-- [src/pages/index.astro](src/pages/index.astro) composes the page.
+- [src/pages/index.astro](src/pages/index.astro) composes the market-atlas
+  homepage.
+- [src/pages/marimo.astro](src/pages/marimo.astro) composes the protected
+  Caddy-served dashboard atlas. It fetches
+  `/marimo/dashboard-registry.json` from Marimo at runtime and groups registry
+  entries by concept path, audience, status, source family, and backing assets.
 - [src/components/HeroArchitectureFlow.tsx](src/components/HeroArchitectureFlow.tsx)
   owns the invisible first-view controller and deployed runtime detail modal.
   [src/components/HeroArchitectureFallback.astro](src/components/HeroArchitectureFallback.astro)
@@ -70,6 +77,11 @@ npm run build
 The local backend-services compose stack builds this image from
 `backend-services/caddy` and serves the generated portfolio at
 `https://localhost/`.
+
+Caddy serves only the exact `/marimo` and `/marimo/` dashboard atlas routes
+from the Astro build after the existing Marimo auth check. Marimo continues to
+own `/marimo/dashboard-registry.json`, `/marimo/<notebook>/`, health, packaged
+assets, notebook manifests, favicons, and websocket routes.
 
 ## Review package media
 
@@ -120,6 +132,7 @@ check** surface from the changed Subproject or root, as described in
   - `backend-services/caddy/tsconfig.json`
   - `backend-services/caddy/public/theme.css`
   - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `backend-services/caddy/src/components/AutomationWorkflowFlow.tsx`
   - `backend-services/caddy/src/components/HeroArchitectureFallback.astro`
   - `backend-services/caddy/src/components/HeroArchitectureFlow.tsx`

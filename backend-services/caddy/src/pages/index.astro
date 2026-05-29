@@ -1,59 +1,123 @@
 ---
-import AutomationWorkflowFlow from "../components/AutomationWorkflowFlow";
-import HeroArchitectureFlow from "../components/HeroArchitectureFlow";
-import HeroArchitectureFallback from "../components/HeroArchitectureFallback.astro";
 import InfrastructureDiagram from "../components/InfrastructureDiagram.astro";
 import ServiceLinks from "../components/ServiceLinks.astro";
 import PortfolioLayout from "../layouts/PortfolioLayout.astro";
+
+const marketDomains = [
+  {
+    label: "Operations",
+    detail: "Gas Day schedules, flow observations, linepack, notices, and facility operations.",
+    meta: "flows and schedules",
+  },
+  {
+    label: "Capacity",
+    detail: "Outlooks, auctions, transactions, nameplate context, and adequacy signals.",
+    meta: "capacity signals",
+  },
+  {
+    label: "Settlement",
+    detail: "STTM and DWGM settlement, allocation, MOS, bid stacks, and price context.",
+    meta: "market outcomes",
+  },
+  {
+    label: "Reference",
+    detail: "Participants, facilities, zones, connection points, glossary terms, and source lineage.",
+    meta: "navigation context",
+  },
+];
+
+const sourceFamilies = [
+  {
+    label: "GBB",
+    detail: "Bulletin Board facilities, connection points, flow, storage, and capacity outlook records.",
+  },
+  {
+    label: "STTM",
+    detail: "Short Term Trading Market schedules, hubs, settlements, MOS, allocations, and bid data.",
+  },
+  {
+    label: "DWGM",
+    detail: "Declared Wholesale Gas Market operations, capacity certificates, schedules, and settlement context.",
+  },
+  {
+    label: "VICGAS and curated assets",
+    detail: "Operational meter flow, quality/status observations, Dagster materializations, and silver.gas_model tables.",
+  },
+];
 ---
 
 <PortfolioLayout
-  title="Energy Market Delta Lake"
-  description="Energy Market Delta Lake portfolio entrypoint for Australian energy market ingestion, orchestration, storage, protected notebooks, and an AI delivery system."
+  title="Energy Market Delta Lake Market Atlas"
+  description="Energy Market Delta Lake market atlas for Australian gas-market concepts, source coverage, curated assets, and protected dashboard discovery."
 >
   <main>
-    <section class="hero" aria-labelledby="page-title">
+    <section class="hero market-hero" aria-labelledby="page-title">
       <div class="hero-inner">
         <div class="hero-heading">
-          <p class="eyebrow">Public project portfolio case study</p>
+          <p class="eyebrow">Australian gas-market atlas</p>
           <h1 id="page-title">Energy Market Delta Lake</h1>
         </div>
         <div class="hero-copy">
           <p class="hero-lede">
-            A deployable Australian energy-market data platform with Dagster assets, S3-compatible Delta storage, protected Marimo notebooks, and an AI delivery system for checked code changes.
+            Explore the platform by market concept first: operations, capacity,
+            settlement, source coverage, and the curated assets that back each
+            dashboard.
           </p>
           <ServiceLinks />
         </div>
-        <div class="hero-diagram">
-          <HeroArchitectureFallback />
-          <div class="hero-diagram-interaction" aria-hidden="false">
-            <HeroArchitectureFlow client:only="react" />
+        <div class="market-hero-panel" aria-label="Market atlas summary">
+          <div class="atlas-map">
+            {
+              marketDomains.map((domain) => (
+                <article class="atlas-node">
+                  <span>{domain.meta}</span>
+                  <h2>{domain.label}</h2>
+                  <p>{domain.detail}</p>
+                </article>
+              ))
+            }
           </div>
         </div>
       </div>
     </section>
 
-    <section class="section-band ai-workflow-section" id="ai-workflow" aria-labelledby="ai-workflow-title">
+    <section class="section-band source-coverage-section" id="source-coverage" aria-labelledby="source-coverage-title">
       <div class="section-inner">
-        <div class="ai-workflow-layout">
-          <div class="section-heading ai-workflow-heading">
-            <p class="eyebrow">AI-driven delivery</p>
-            <h2 id="ai-workflow-title">Ralph is the AI delivery loop.</h2>
+        <div class="section-heading section-heading-split">
+          <div>
+            <p class="eyebrow">Source coverage</p>
+            <h2 id="source-coverage-title">Dashboards follow the market record, not service names.</h2>
           </div>
+          <p>
+            The protected dashboard atlas is organized around source families,
+            Market context terms, and backing silver.gas_model assets so
+            operators, analysts, stakeholders, and data engineers can choose a
+            path by the question they need to answer.
+          </p>
+        </div>
 
-          <div class="ai-workflow-copy">
+        <div class="source-family-grid">
+          {
+            sourceFamilies.map((source) => (
+              <article class="source-family-card">
+                <span>{source.label}</span>
+                <p>{source.detail}</p>
+              </article>
+            ))
+          }
+        </div>
+
+        <div class="dashboard-discovery-band">
+          <div>
+            <p class="eyebrow">Dashboard discovery</p>
+            <h2>Use the runtime registry as the atlas index.</h2>
             <p>
-              A human owns the goal and approval decision. Ralph reads the issue, makes the change, runs the checks, and gets the work ready to review.
-            </p>
-            <p class="ai-workflow-source">
-              Huntley's framing is the idea here: give Ralph clear specs and a goal, then let the loop work while failures feed the next fix.
-              <a href="https://ghuntley.com/loop/" target="_blank" rel="noreferrer">Source</a>
+              The `/marimo` listing fetches the Marimo-owned dashboard registry
+              at runtime, keeps planned concepts visible, and links only
+              available dashboards to their notebook routes.
             </p>
           </div>
-
-          <div class="ai-workflow-diagram">
-            <AutomationWorkflowFlow client:load />
-          </div>
+          <a class="atlas-primary-link" href="/marimo">Open dashboard atlas</a>
         </div>
       </div>
     </section>
