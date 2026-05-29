@@ -334,20 +334,21 @@ way:
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md), and ADR
   [0012](../adr/0012-ralph-gitflow-review-package-gate.md) records the static
   HTML validation boundary.
-- #294: Ralph Trunk delivery reuses the blocking **Review package** gate before
-  **Local integration**, the `main` push, completion comments, `agent-merged`,
-  or issue closure. The v1 operator contract lives in
+- #294/#295: Ralph Trunk and Exploratory delivery reuse the blocking
+  **Review package** gate before **Local integration**, the `main` push,
+  Exploratory handoff, completion or handoff comments, `agent-merged`,
+  `agent-reviewing`, or issue closure. The v1 operator contract lives in
   [OPERATOR.md](../../OPERATOR.md),
   [docs/agents/issue-tracker.md](../agents/issue-tracker.md), and
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md), and ADR
   [0012](../adr/0012-ralph-gitflow-review-package-gate.md) now records that
-  Gitflow and Trunk share the static HTML validation boundary.
+  Gitflow, Trunk, and Exploratory share the static HTML validation boundary.
 - #293: Ralph Review package media recipes can record sibling artifacts before
   publication. Changed configured Marimo notebook routes record desktop and
   narrow `.webm` files in the issue run directory, link them from the Review
-  package for Gitflow and Trunk delivery, record media-only handoff evidence for
-  Exploratory delivery, and fail before **Local integration**, **Integration
-  target** push, or Exploratory handoff when capture fails. The contract lives in
+  package for Gitflow, Trunk, and Exploratory delivery, and fail before **Local
+  integration**, **Integration target** push, or Exploratory handoff when
+  capture fails. The contract lives in
   [docs/agents/issue-tracker.md](../agents/issue-tracker.md),
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md), ADR
   [0012](../adr/0012-ralph-gitflow-review-package-gate.md), and the

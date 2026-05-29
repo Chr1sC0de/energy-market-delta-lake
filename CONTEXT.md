@@ -105,8 +105,8 @@ review**, and any configured Review package media capture are complete. The
 package is offline static HTML for human review of a single issue run and may
 link sibling run artifacts such as recorded Marimo `.webm` videos; invalid
 media capture, generation, or validation fails the issue before Ralph performs
-**Local integration**, pushes an **Integration target**, or marks the issue
-integrated.
+**Local integration**, pushes an **Integration target** or **Exploratory
+branch**, or marks the issue integrated, merged, or reviewing.
 _Avoid_: Pull request, deployment report, Promotion review
 
 **Ready issue refresh**:

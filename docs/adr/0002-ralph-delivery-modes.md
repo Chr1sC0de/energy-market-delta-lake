@@ -61,18 +61,19 @@ delivery reconciles `agent-reviewing` and leaves the issue open for review.
 After selected QA passes, risky issue attempts run **Issue completion review**
 before **Local integration**, a Trunk push, or Exploratory handoff. That
 automated gate is separate from human `dev` review and from the later
-**Post-promotion review** path. Gitflow and Trunk attempts also run a blocking
-**Review package** gate after final QA and review evidence are known and before
-**Local integration** updates the **Integration target**. Configured Review
-package media recipes also run before Exploratory handoff; ADR
-[0012](0012-ralph-gitflow-review-package-gate.md) records the static HTML
-contract, optional sibling media artifacts, and failure boundary. After each
-successful issue **Local
-integration** or Exploratory handoff, **Ready issue refresh** reconciles the
-open issue queue before Ralph schedules more issue attempts; a parallel drain
-still lets already active Exploratory workers finish. The current drain records
-a read-only analysis artifact with planned issue updates before any later
-metadata mutation. Successful **Promotion** closures can
+**Post-promotion review** path. Gitflow, Trunk, and Exploratory attempts also
+run a blocking **Review package** gate after final QA and review evidence are
+known and before **Local integration** updates the **Integration target** or
+Ralph pushes the durable **Exploratory branch**. Configured Review package media
+recipes run before package generation and link sibling artifacts from the
+package; ADR [0012](0012-ralph-gitflow-review-package-gate.md) records the
+static HTML contract, optional sibling media artifacts, and failure boundary.
+After each successful issue **Local integration** or Exploratory handoff,
+**Ready issue refresh** reconciles the open issue queue before Ralph schedules
+more issue attempts; a parallel drain still lets already active Exploratory
+workers finish. The current drain records a read-only analysis artifact with
+planned issue updates before any later metadata mutation. Successful
+**Promotion** closures can
 also trigger **Ready issue refresh** before the next ready claim: the Operator
 loop enables that reconciliation by default, direct Promotion requires
 `--ready-issue-refresh`, and post-Promotion refresh failures are warning-only
@@ -89,8 +90,9 @@ when their **Exploratory acceptance review** decision is required before the
 queue can proceed.
 Exploratory issues that request **Operator smoke** are not eligible for the
 parallel worker pool: Ralph waits for active issue workers, claims the smoke
-issue in the serial lane, pushes the **Exploratory branch**, and only then runs
-the allowlisted smoke command from the issue worktree.
+issue in the serial lane, passes the local **Review package** gate, pushes the
+**Exploratory branch**, and only then runs the allowlisted smoke command from
+the issue worktree.
 When a **Promotion** range includes non-doc runtime files in the AEMO ETL
 **Subproject**, the AEMO ETL **End-to-end test** gate runs from the same
 isolated source worktree as the aggregate **Push check**, before any merge,
