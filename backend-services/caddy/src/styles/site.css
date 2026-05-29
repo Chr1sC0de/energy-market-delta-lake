@@ -760,6 +760,272 @@ h1 {
   white-space: nowrap;
 }
 
+.marimo-page {
+  width: min(1360px, 100%);
+  margin: 0 auto;
+  padding: 3.25rem 1.5rem 4.5rem;
+}
+
+.marimo-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.42fr);
+  gap: 2rem;
+  align-items: end;
+  padding-bottom: 2.25rem;
+  border-bottom: 1px solid var(--emdl-line);
+}
+
+.marimo-hero h1 {
+  max-width: 58rem;
+  margin-bottom: 1rem;
+  font-size: 4.25rem;
+  line-height: 0.98;
+}
+
+.marimo-lede {
+  max-width: 56rem;
+  margin-bottom: 0;
+  color: var(--emdl-muted);
+  font-size: 1.16rem;
+}
+
+.marimo-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin: 0;
+}
+
+.marimo-summary div {
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--emdl-line);
+  border-radius: 8px;
+  background: var(--emdl-panel);
+  box-shadow: 0 3px 0 rgb(var(--emdl-ink-rgb) / 0.82);
+}
+
+.marimo-summary dt {
+  margin: 0;
+  color: var(--emdl-blue);
+  font-size: 1.75rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.marimo-summary dd {
+  margin: 0.25rem 0 0;
+  color: var(--emdl-muted);
+  font-size: 0.78rem;
+  font-weight: 760;
+}
+
+.marimo-story-band {
+  display: grid;
+  grid-template-columns: minmax(16rem, 0.4fr) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: stretch;
+  padding: 2rem 0;
+}
+
+.marimo-story-band h2 {
+  max-width: 28rem;
+  margin: 0;
+  font-size: 2rem;
+  line-height: 1.05;
+}
+
+.marimo-story-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.marimo-story-grid article {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid rgb(var(--emdl-ink-rgb) / 0.13);
+  border-radius: 8px;
+  background: rgb(var(--emdl-service-band-rgb) / 0.72);
+}
+
+.marimo-story-grid span {
+  display: block;
+  margin-bottom: 0.45rem;
+  color: var(--emdl-green);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.marimo-story-grid p {
+  margin: 0;
+  color: var(--emdl-muted);
+  font-size: 0.94rem;
+}
+
+.marimo-controls {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.24fr) minmax(10rem, 0.18fr) minmax(16rem, 1fr);
+  gap: 0.9rem;
+  align-items: end;
+  padding: 1rem;
+  border: 1px solid var(--emdl-line);
+  border-radius: 8px;
+  background: var(--emdl-panel);
+  box-shadow: var(--emdl-soft-shadow);
+}
+
+.marimo-controls label {
+  min-width: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.marimo-controls span {
+  color: var(--emdl-muted);
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.marimo-controls select,
+.marimo-controls input {
+  width: 100%;
+  min-height: 2.65rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgb(var(--emdl-ink-rgb) / 0.18);
+  border-radius: 8px;
+  color: var(--emdl-ink);
+  background: var(--emdl-paper);
+  font: inherit;
+}
+
+.marimo-controls select:focus-visible,
+.marimo-controls input:focus-visible {
+  outline: 3px solid rgb(var(--emdl-blue-rgb) / 0.42);
+  outline-offset: 3px;
+}
+
+.marimo-registry-state {
+  margin: 1rem 0;
+  color: var(--emdl-muted);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.marimo-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  gap: 1rem;
+}
+
+.marimo-dashboard-card {
+  min-width: 0;
+  min-height: 22rem;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto auto;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: 1px solid var(--emdl-line);
+  border-top: 5px solid var(--emdl-slate);
+  border-radius: 8px;
+  background: var(--emdl-panel);
+  box-shadow: 0 3px 0 rgb(var(--emdl-ink-rgb) / 0.82);
+}
+
+a.marimo-dashboard-card {
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease;
+}
+
+a.marimo-dashboard-card:hover {
+  border-color: rgb(var(--emdl-blue-rgb) / 0.36);
+  box-shadow:
+    0 6px 0 rgb(var(--emdl-ink-rgb) / 0.86),
+    var(--emdl-shadow);
+  transform: translateY(-2px);
+}
+
+.marimo-dashboard-card-available {
+  border-top-color: var(--emdl-green);
+}
+
+.marimo-dashboard-card-planned {
+  border-top-color: var(--emdl-amber);
+}
+
+.marimo-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.marimo-status-pill,
+.marimo-audience-pill,
+.marimo-asset-list li {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75rem;
+  padding: 0.28rem 0.52rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.marimo-status-available {
+  color: var(--emdl-green);
+  background: rgb(var(--emdl-green-rgb) / 0.13);
+}
+
+.marimo-status-planned {
+  color: var(--emdl-amber);
+  background: rgb(var(--emdl-amber-rgb) / 0.14);
+}
+
+.marimo-audience-pill {
+  color: var(--emdl-slate);
+  background: var(--emdl-service-band);
+}
+
+.marimo-dashboard-card h2 {
+  margin: 0;
+  color: var(--emdl-slate);
+  font-size: 1.22rem;
+  line-height: 1.17;
+}
+
+.marimo-dashboard-card p {
+  margin: 0;
+  color: var(--emdl-muted);
+  font-size: 0.94rem;
+}
+
+.marimo-asset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.marimo-asset-list li {
+  max-width: 100%;
+  color: var(--emdl-muted);
+  background: rgb(var(--emdl-line-rgb) / 0.34);
+  overflow-wrap: anywhere;
+}
+
+.marimo-dashboard-action {
+  align-self: end;
+  color: var(--emdl-blue);
+  font-weight: 850;
+}
+
 .section-band {
   position: relative;
   border-bottom: 1px solid var(--emdl-line);
@@ -782,6 +1048,13 @@ h1 {
   background:
     linear-gradient(180deg, rgb(var(--emdl-service-band-rgb) / 0.74), rgb(var(--emdl-paper-rgb) / 0.96)),
     var(--emdl-paper);
+}
+
+.portfolio-story-section {
+  min-block-size: auto;
+  background:
+    linear-gradient(180deg, rgb(var(--emdl-panel-rgb) / 0.86), rgb(var(--emdl-service-band-rgb) / 0.58)),
+    var(--emdl-service-band);
 }
 
 .section-inner {
@@ -813,6 +1086,71 @@ h1 {
 .section-heading p:not(.eyebrow) {
   color: var(--emdl-muted);
   font-size: 1.1rem;
+}
+
+.story-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.story-card {
+  min-width: 0;
+  min-height: 17rem;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 0.75rem;
+  padding: 1.1rem;
+  border: 1px solid rgb(var(--emdl-ink-rgb) / 0.14);
+  border-top: 5px solid var(--story-card-tone, var(--emdl-slate));
+  border-radius: 8px;
+  background: rgb(var(--emdl-panel-rgb) / 0.94);
+  box-shadow: 0 3px 0 rgb(var(--emdl-ink-rgb) / 0.82);
+}
+
+.story-card span {
+  color: var(--story-card-tone, var(--emdl-slate));
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.story-card h3 {
+  margin: 0;
+  font-size: 1.18rem;
+  line-height: 1.16;
+}
+
+.story-card p {
+  margin: 0;
+  color: var(--emdl-muted);
+  font-size: 0.95rem;
+}
+
+.story-card a {
+  justify-self: start;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid rgb(var(--emdl-blue-rgb) / 0.22);
+  border-radius: 8px;
+  color: var(--emdl-blue);
+  background: rgb(var(--emdl-blue-rgb) / 0.07);
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.story-card-blue {
+  --story-card-tone: var(--emdl-blue);
+}
+
+.story-card-green {
+  --story-card-tone: var(--emdl-green);
+}
+
+.story-card-amber {
+  --story-card-tone: var(--emdl-amber);
+}
+
+.story-card-slate {
+  --story-card-tone: var(--emdl-slate);
 }
 
 .ai-workflow-section .section-inner {
@@ -1965,6 +2303,16 @@ h1 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .story-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .marimo-hero,
+  .marimo-story-band,
+  .marimo-controls {
+    grid-template-columns: 1fr;
+  }
+
   h1 {
     font-size: 4.8rem;
   }
@@ -2237,8 +2585,34 @@ h1 {
   .loop-steps,
   .tech-stack-grid,
   .delivery-grid,
-  .ralph-gate-row {
+  .ralph-gate-row,
+  .story-grid,
+  .marimo-summary,
+  .marimo-story-grid {
     grid-template-columns: 1fr;
+  }
+
+  .portfolio-story-section {
+    min-block-size: auto;
+  }
+
+  .story-card,
+  .marimo-dashboard-card {
+    min-height: 0;
+  }
+
+  .marimo-page {
+    padding: 2.25rem 1rem 3rem;
+  }
+
+  .marimo-hero h1 {
+    max-width: 24.5rem;
+    font-size: 2.7rem;
+    line-height: 1.02;
+  }
+
+  .marimo-lede {
+    font-size: 0.98rem;
   }
 
   .service-link {

@@ -33,6 +33,52 @@ import PortfolioLayout from "../layouts/PortfolioLayout.astro";
       </div>
     </section>
 
+    <section class="section-band portfolio-story-section" aria-labelledby="portfolio-story-title">
+      <div class="section-inner">
+        <div class="section-heading section-heading-split">
+          <div>
+            <p class="eyebrow">Case study shape</p>
+            <h2 id="portfolio-story-title">A deployed data-platform story, not a mock dashboard.</h2>
+          </div>
+          <p>
+            The public entrypoint explains what the system proves before a reviewer signs in: market data becomes durable lakehouse tables, orchestration exposes the work, and protected notebooks turn coverage into reviewable evidence.
+          </p>
+        </div>
+
+        <div class="story-grid" aria-label="Portfolio story checkpoints">
+          <article class="story-card story-card-blue">
+            <span>01</span>
+            <h3>Market source coverage</h3>
+            <p>
+              Gas Bulletin Board and STTM concepts are represented as traceable source tables, generated Market context, and dashboard concepts.
+            </p>
+          </article>
+          <article class="story-card story-card-green">
+            <span>02</span>
+            <h3>Dagster to Delta workflow</h3>
+            <p>
+              Assets materialize through Dagster into S3-compatible Delta storage, giving the platform a repeatable ingestion and validation path.
+            </p>
+          </article>
+          <article class="story-card story-card-amber">
+            <span>03</span>
+            <h3>Protected operational evidence</h3>
+            <p>
+              The Marimo listing stays behind auth and presents notebooks by coverage, audience, and backing assets without exposing operator surfaces publicly.
+            </p>
+            <a href="/marimo">Open protected dashboard listing</a>
+          </article>
+          <article class="story-card story-card-slate">
+            <span>04</span>
+            <h3>AI delivery loop</h3>
+            <p>
+              Ralph turns GitHub Issues into checked changes with Test lane evidence, doc sync, and human approval before integration decisions.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
     <section class="section-band ai-workflow-section" id="ai-workflow" aria-labelledby="ai-workflow-title">
       <div class="section-inner">
         <div class="ai-workflow-layout">

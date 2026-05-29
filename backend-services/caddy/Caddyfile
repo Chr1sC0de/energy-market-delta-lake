@@ -74,9 +74,38 @@
     reverse_proxy /marimo/login*  {$DAGSTER_AUTHSERVER}
     reverse_proxy /oauth2/marimo* {$DAGSTER_AUTHSERVER}
 
+    # Protected Caddy-served Marimo dashboard listing. Runtime registry data and
+    # notebook routes remain Marimo-owned below.
+    @protectedMarimoListing {
+        path /marimo /marimo/
+        not header Connection *Upgrade*
+    }
+
+    handle @protectedMarimoListing {
+        forward_auth {$DAGSTER_AUTHSERVER} {
+                uri /oauth2/marimo/validate
+                header_up Host {upstream_hostport}
+                header_up X-Real-IP {remote_host}
+                header_up X-Forwarded-For {remote_host}
+                header_up X-Forwarded-Proto {scheme}
+                header_up X-Forwarded-Host {host}
+                header_up Cookie {http.request.header.Cookie}
+
+                @error status 401
+                handle_response @error {
+                    redir * /marimo/login
+                }
+        }
+
+        root * /var/www/html
+        rewrite * /marimo/index.html
+        file_server
+    }
+
     # Protected Marimo routes
     @protectedMarimo {
         path /marimo*
+        not path /marimo /marimo/
         not path /marimo/health
         not path /marimo/login*
         not header Connection *Upgrade*

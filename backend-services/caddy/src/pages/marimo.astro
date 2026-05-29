@@ -1,0 +1,230 @@
+---
+import PortfolioLayout from "../layouts/PortfolioLayout.astro";
+---
+
+<PortfolioLayout
+  title="Marimo Dashboard Portfolio"
+  description="Protected Marimo dashboard listing for Energy Market Delta Lake, backed by the runtime dashboard registry JSON endpoint."
+>
+  <main class="marimo-page">
+    <section class="marimo-hero" aria-labelledby="marimo-title">
+      <div>
+        <p class="eyebrow">Protected dashboard evidence</p>
+        <h1 id="marimo-title">Choose the dashboard that proves the platform story.</h1>
+        <p class="marimo-lede">
+          This Caddy-served listing continues the public portfolio narrative into signed-in review. Dashboard records load from the Marimo-owned runtime registry, so notebook choices stay tied to deployed routes, data coverage, and backing assets.
+        </p>
+      </div>
+      <dl class="marimo-summary" aria-label="Dashboard registry summary">
+        <div>
+          <dt id="available-count">-</dt>
+          <dd>available notebooks</dd>
+        </div>
+        <div>
+          <dt id="planned-count">-</dt>
+          <dd>planned entries</dd>
+        </div>
+        <div>
+          <dt id="asset-count">-</dt>
+          <dd>backing assets</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="marimo-story-band" aria-labelledby="marimo-story-title">
+      <div>
+        <p class="eyebrow">How to read the gallery</p>
+        <h2 id="marimo-story-title">Dashboards are evidence, not decoration.</h2>
+      </div>
+      <div class="marimo-story-grid">
+        <article>
+          <span>Coverage</span>
+          <p>Find which gas-market sources and silver.gas_model assets are represented.</p>
+        </article>
+        <article>
+          <span>Operations</span>
+          <p>Open health, freshness, lineage, and storage diagnostics before market views.</p>
+        </article>
+        <article>
+          <span>Review path</span>
+          <p>Use available routes for live notebooks; planned cards stay visible without dead links.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="marimo-controls" aria-label="Dashboard filters">
+      <label>
+        <span>Audience</span>
+        <select id="audience-filter">
+          <option value="all">All audiences</option>
+        </select>
+      </label>
+      <label>
+        <span>Status</span>
+        <select id="status-filter">
+          <option value="all">All statuses</option>
+          <option value="available">Available</option>
+          <option value="planned">Planned</option>
+        </select>
+      </label>
+      <label class="marimo-search">
+        <span>Search</span>
+        <input id="dashboard-search" type="search" placeholder="Title, concept, asset" />
+      </label>
+    </section>
+
+    <section class="marimo-registry-state" id="registry-state" role="status">
+      Loading dashboard registry...
+    </section>
+
+    <section class="marimo-dashboard-grid" id="dashboard-grid" aria-label="Dashboard registry entries"></section>
+  </main>
+
+  <script is:inline>
+    const registryUrl = "/marimo/dashboard-registry.json";
+    const state = document.querySelector("#registry-state");
+    const grid = document.querySelector("#dashboard-grid");
+    const audienceFilter = document.querySelector("#audience-filter");
+    const statusFilter = document.querySelector("#status-filter");
+    const searchInput = document.querySelector("#dashboard-search");
+    const availableCount = document.querySelector("#available-count");
+    const plannedCount = document.querySelector("#planned-count");
+    const assetCount = document.querySelector("#asset-count");
+
+    let entries = [];
+
+    function labelFromSlug(value) {
+      return String(value)
+        .split("-")
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+    }
+
+    function unique(values) {
+      return [...new Set(values.filter(Boolean))];
+    }
+
+    function textIncludes(entry, query) {
+      if (query.length === 0) return true;
+      const haystack = [
+        entry.title,
+        entry.description,
+        entry.concept_id,
+        ...(entry.backing_assets || []),
+        ...(entry.market_context_ids || []),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    }
+
+    function renderSummary() {
+      const available = entries.filter((entry) => entry.status === "available" && entry.notebook_route).length;
+      const planned = entries.filter((entry) => entry.status === "planned").length;
+      const assets = unique(entries.flatMap((entry) => entry.backing_assets || [])).length;
+      availableCount.textContent = String(available);
+      plannedCount.textContent = String(planned);
+      assetCount.textContent = String(assets);
+    }
+
+    function renderAudienceOptions(audiences) {
+      audiences.forEach((audience) => {
+        const option = document.createElement("option");
+        option.value = audience;
+        option.textContent = labelFromSlug(audience);
+        audienceFilter.append(option);
+      });
+    }
+
+    function renderPill(text, className) {
+      const pill = document.createElement("span");
+      pill.className = className;
+      pill.textContent = text;
+      return pill;
+    }
+
+    function renderCard(entry) {
+      const isAvailable = entry.status === "available" && entry.notebook_route;
+      const card = document.createElement(isAvailable ? "a" : "article");
+      card.className = `marimo-dashboard-card marimo-dashboard-card-${isAvailable ? "available" : "planned"}`;
+      card.id = `concept-${entry.concept_id}`;
+      if (isAvailable) {
+        card.href = entry.notebook_route;
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "marimo-card-meta";
+      meta.append(renderPill(isAvailable ? "Available" : "Planned", `marimo-status-pill marimo-status-${isAvailable ? "available" : "planned"}`));
+      (entry.audiences || []).slice(0, 3).forEach((audience) => {
+        meta.append(renderPill(labelFromSlug(audience), "marimo-audience-pill"));
+      });
+
+      const title = document.createElement("h2");
+      title.textContent = entry.title;
+
+      const description = document.createElement("p");
+      description.textContent = entry.description;
+
+      const assets = document.createElement("ul");
+      assets.className = "marimo-asset-list";
+      const visibleAssets = (entry.backing_assets || []).slice(0, 4);
+      if (visibleAssets.length === 0) {
+        const item = document.createElement("li");
+        item.textContent = "Registry or configuration metadata";
+        assets.append(item);
+      } else {
+        visibleAssets.forEach((asset) => {
+          const item = document.createElement("li");
+          item.textContent = asset;
+          assets.append(item);
+        });
+      }
+
+      const action = document.createElement("span");
+      action.className = "marimo-dashboard-action";
+      action.textContent = isAvailable ? "Open notebook" : "Planned concept";
+
+      card.append(meta, title, description, assets, action);
+      return card;
+    }
+
+    function renderEntries() {
+      const audience = audienceFilter.value;
+      const status = statusFilter.value;
+      const query = searchInput.value.trim().toLowerCase();
+
+      const visible = entries.filter((entry) => {
+        const audienceMatch = audience === "all" || (entry.audiences || []).includes(audience);
+        const statusMatch = status === "all" || entry.status === status;
+        return audienceMatch && statusMatch && textIncludes(entry, query);
+      });
+
+      grid.replaceChildren(...visible.map(renderCard));
+      state.textContent = `${visible.length} dashboard entries shown from the Marimo registry.`;
+    }
+
+    async function loadRegistry() {
+      try {
+        const response = await fetch(registryUrl, { credentials: "same-origin" });
+        if (!response.ok) {
+          throw new Error(`Registry returned HTTP ${response.status}`);
+        }
+        const registry = await response.json();
+        entries = Array.isArray(registry.entries) ? registry.entries : [];
+        renderAudienceOptions(Array.isArray(registry.audiences) ? registry.audiences : []);
+        renderSummary();
+        renderEntries();
+      } catch (error) {
+        state.textContent = "Dashboard registry could not be loaded from Marimo.";
+        console.error(error);
+      }
+    }
+
+    audienceFilter.addEventListener("change", renderEntries);
+    statusFilter.addEventListener("change", renderEntries);
+    searchInput.addEventListener("input", renderEntries);
+
+    loadRegistry();
+  </script>
+</PortfolioLayout>

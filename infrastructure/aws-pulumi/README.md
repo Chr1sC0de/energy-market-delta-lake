@@ -210,7 +210,8 @@ Key deployed behaviors visible in the infrastructure code:
 - the curated Marimo dashboard runs on a private `t3.small` EC2 instance with
   an encrypted 30 GiB `gp3` root volume, uses its instance profile for S3
   reads, exposes `/marimo/health` and Marimo packaged asset routes through
-  Caddy, serves the registry-backed `/marimo` concept gallery, returns
+  Caddy, owns `/marimo/dashboard-registry.json` and `/marimo/<notebook>/`
+  routes while Caddy serves the protected `/marimo` listing shell, returns
   immutable cache headers for content-hashed `/marimo/<notebook>/assets/*`
   responses, exposes the data readiness overview for platform operations and
   the registry-only glossary explorer for Market context metadata browsing,
@@ -492,6 +493,7 @@ system's services and Dagster workflows.
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/marimo/notebooks/heating_value_pressure.py`
   - `backend-services/caddy/Caddyfile`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `infrastructure/aws-pulumi/.pre-commit-config.yaml`
   - `infrastructure/aws-pulumi/pyproject.toml`
   - `infrastructure/aws-pulumi/ecs_rollouts.py`

@@ -57,22 +57,24 @@ The dashboard app in [src/marimoserver/main.py](src/marimoserver/main.py):
 - exposes `/health` for container health checks
 - discovers `*.py` notebooks from `notebooks/`
 - mounts each notebook as a marimo sub-app under `/marimo/<notebook-name>`
-- serves a concept gallery hub at `/marimo`, grouped by generated Market
-  context concept and filterable by audience tag
 - serves the code-local dashboard roadmap registry at
   `/marimo/dashboard-registry.json`
-- links the Caddy-served shared theme at `/theme.css` for the index and
-  notebook head
+- supports the Caddy-served protected `/marimo` listing by returning registry
+  JSON and owning `/marimo/<notebook-name>` routes
+- links the Caddy-served shared theme at `/theme.css` for notebook head
 - applies static asset response headers for Marimo packaged assets, including
   the `woff` and `woff2` MIME-type fix and immutable caching for
   `/marimo/<notebook>/assets/*`
 
-In local compose and AWS, Caddy proxies `/marimo*` traffic to
-`marimo-dashboard`. Most notebook routes are protected by the authentication
-service, while `/marimo/health`, static asset paths, and websocket paths are
-proxied through directly. Caddy does not serve Marimo packaged assets from its
-own static root; it excludes `/marimo/*/assets/*`, notebook favicon and
-manifest paths, `/marimo/health`, and websocket upgrades from `forward_auth`,
+In local compose and AWS, Caddy serves the exact `/marimo` and `/marimo/`
+listing routes from the Caddy Astro build after the existing authentication
+check, then proxies `/marimo/dashboard-registry.json` and
+`/marimo/<notebook>/` traffic to `marimo-dashboard`. Most notebook routes are
+protected by the authentication service, while `/marimo/health`, static asset
+paths, and websocket paths are proxied through directly. Caddy does not serve
+Marimo packaged assets from its own static root; it excludes
+`/marimo/*/assets/*`, notebook favicon and manifest paths, `/marimo/health`,
+and websocket upgrades from `forward_auth`,
 then reverse-proxies them to `marimo-dashboard`. Caddy still serves the
 Astro-generated `/theme.css` from its static root, so notebook pages can use
 the same palette as the root portfolio page.
@@ -138,12 +140,11 @@ planned or available status, notebook names and routes, backing
 `silver.gas_model` assets, Market context IDs, source chunk IDs,
 silver chunk paths, and source hashes.
 
-The `/marimo` entry route renders this registry as a concept gallery hub.
-Available registry entries link only when their backing notebook is mounted in
-the current image. Planned entries stay visible as roadmap cards but do not
-emit notebook links. The same registry is served as JSON from
-`/marimo/dashboard-registry.json` so future Marimo notebooks can render context
-panels without reading Gas market knowledge base Markdown directly. When the
+The Caddy-served `/marimo` listing fetches this registry from
+`/marimo/dashboard-registry.json` at runtime. Available registry entries carry
+notebook routes, while planned entries stay visible in the listing without
+notebook links. Future Marimo notebooks can render context panels from the same
+JSON without reading Gas market knowledge base Markdown directly. When the
 packaged generated corpus is absent, registry loading still succeeds because
 Market context IDs, source chunk IDs, silver chunk paths, and source hashes are
 code-local registry metadata. In AWS mode this remains read-only, uses the
@@ -151,8 +152,8 @@ existing dashboard image contents, and does not require a Docker build-context
 change.
 
 Registry-backed dashboards that only browse registry metadata may have no
-backing `silver.gas_model` assets. The concept gallery renders those entries as
-registry metadata only instead of inventing table dependencies.
+backing `silver.gas_model` assets. The Caddy-served listing renders those
+entries as registry metadata only instead of inventing table dependencies.
 
 [src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py) exposes
 `render_dashboard_context_panel()` for notebooks that need the same registry
@@ -339,7 +340,7 @@ S3-compatible buckets, overlays the Dagster GraphQL table asset catalogue, and
 shows bucket health, table assets, storage status, catalogue controls, and
 cached inspection for selected live tables. The selected-table workbench also
 links to the data readiness overview, AWS bounded-read diagnostics, and the
-registry-backed concept gallery so operators can move from a table row to its
+registry-backed dashboard listing so operators can move from a table row to its
 readiness, preview-policy, and dashboard-roadmap context.
 
 The explorer reads the same AWS settings passed to the Marimo service by
@@ -1051,7 +1052,7 @@ The services are started by [../compose.yaml](../compose.yaml).
 
 Dashboard notebooks are mounted from [notebooks/](notebooks/) into
 `marimo-dashboard`, so adding a curated notebook there and registering it as
-available makes it reachable from the `/marimo` concept gallery.
+available makes it reachable from the `/marimo` dashboard listing.
 
 Research notebooks and draft issue notes stay under
 [research-workspace/](research-workspace/) and are served by
@@ -1067,8 +1068,9 @@ local compose `marimo-dashboard` and `marimo-codex-workspace` services also set
 Interactive Map `Summary` Plotly iframe output without changing the notebook
 controls, data reads, Plotly traces, or dashboard routes.
 
-With the local backend stack running, open the Marimo concept gallery through
-Caddy and choose an available card such as `data_readiness_overview`,
+With the local backend stack running, open the protected Caddy-served Marimo
+listing through Caddy and choose an available card such as
+`data_readiness_overview`,
 `dagster_asset_catalogue_status`, `materialization_freshness`,
 `s3_bucket_health`, `glossary_explorer`, `concept_to_asset_explorer`,
 `citation_chain_explorer`, `table_explorer`, `source_coverage_matrix`,
@@ -1619,6 +1621,7 @@ prek run -a
   - `backend-services/marimo/tests/component/test_data_readiness.py`
   - `backend-services/compose.yaml`
   - `backend-services/caddy/Caddyfile`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `backend-services/caddy/public/theme.css`
 - `sync.scope`: `interface`
 - `sync.qa`:

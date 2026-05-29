@@ -10,10 +10,13 @@ Deploy only the curated `marimo-dashboard` image to AWS. The dashboard runs on a
 private `t3.small` EC2 instance in the VPC private subnet, with no public IP and
 no SSH key. Operators use SSM Session Manager for host access.
 
-Caddy remains the only public ingress. It proxies `/marimo*` to the Cloud Map
-name `marimo-dashboard.dagster:2718`. Notebook routes stay behind the existing
-FastAPI auth `forward_auth` flow, while `/marimo/health` returns only
-`{"status":"ok"}` without authentication for deployed health checks.
+Caddy remains the only public ingress. It serves the exact `/marimo` and
+`/marimo/` dashboard listing routes from the Caddy Astro build after the
+existing FastAPI auth `forward_auth` flow, and proxies
+`/marimo/dashboard-registry.json` plus `/marimo/<notebook>/` routes to the
+Cloud Map name `marimo-dashboard.dagster:2718`. Notebook routes stay behind the
+same auth boundary, while `/marimo/health` returns only `{"status":"ok"}`
+without authentication for deployed health checks.
 
 The dashboard instance pulls the digest-pinned ECR image built from
 `backend-services/marimo` target `dashboard`. It uses an instance profile with
@@ -38,11 +41,12 @@ S3-compatible bucket reachability, object scans, truncation, bucket errors, and
 Delta or Parquet table-prefix discovery. AWS mode checks the configured buckets
 only and does not require account-wide S3 bucket listing permission.
 
-The `/marimo` entry route renders the same registry as a concept gallery hub.
-Available dashboard cards link to mounted notebook routes, while planned
-dashboard cards stay visible without notebook links. Registry-only notebooks
-such as the glossary explorer can browse Marimo-local Market context metadata
-without adding generated-file reads at runtime.
+The `/marimo` entry route is a Caddy-served portfolio-story listing that fetches
+the same Marimo registry JSON at runtime. Available dashboard cards link to
+notebook routes, while planned dashboard cards stay visible without notebook
+links. Registry-only notebooks such as the glossary explorer can browse
+Marimo-local Market context metadata without adding generated-file reads at
+runtime.
 
 Caddy does not serve Marimo packaged static assets from its own static root. It
 keeps `/marimo/*/assets/*`, notebook favicons, notebook manifests,
@@ -88,9 +92,10 @@ development.
 The local-only Marimo-Codex workspace stays out of Pulumi and remains bound to
 `127.0.0.1:2719` in compose.
 
-The dashboard registry and concept gallery are part of the existing Marimo
-image contents. Adding or updating registry metadata does not require a
-separate Docker build context and does not add AWS write paths.
+The dashboard registry remains part of the existing Marimo image contents, and
+the `/marimo` listing shell is part of the Caddy image contents. Adding or
+updating registry metadata does not require a separate Docker build context and
+does not add AWS write paths.
 The glossary explorer stays inside the same boundary: it reads the packaged
 parsed registry, not live S3 tables.
 The concept-to-asset explorer stays inside that registry-only boundary. It maps
@@ -310,6 +315,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `infrastructure/aws-pulumi/components/security_groups.py`
   - `infrastructure/aws-pulumi/components/service_discovery.py`
   - `backend-services/caddy/Caddyfile`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `backend-services/marimo/Dockerfile`
   - `backend-services/marimo/src/marimoserver/main.py`
   - `backend-services/marimo/src/marimoserver/dashboard_registry.py`
