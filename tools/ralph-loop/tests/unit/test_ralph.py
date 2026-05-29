@@ -2066,6 +2066,7 @@ def write_child_manifest(
     unverified_commits: list[dict[str, Any]] | None = None,
     changed_files: list[str] | None = None,
     qa_results: list[dict[str, Any]] | None = None,
+    review_package: dict[str, Any] | None = None,
     post_promotion_review_artifact: Path | None = None,
     followups_status: str | None = None,
     created_followups: int = 0,
@@ -2110,6 +2111,8 @@ def write_child_manifest(
             if integration_commit is not None
             else None
         )
+        if review_package is not None:
+            payload["review_package"] = review_package
     if run_kind == "promotion":
         payload["source_branch"] = ralph.DEFAULT_GITFLOW_BRANCH
         payload["integration_target"] = ralph.DEFAULT_TRUNK_BRANCH
@@ -7758,6 +7761,51 @@ Build it.
         self.assertIn("make run-prek", comment)
         self.assertIn("Issue #42 will be closed by the Ralph loop.", comment)
 
+    def test_completion_comment_records_review_package_evidence(self) -> None:
+        issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+        review_package = {
+            "status": "passed",
+            "validation_status": "passed",
+            "html_path": "/logs/issue-42/review-package.html",
+            "summary": {
+                "title": "Review package for issue #42",
+                "changed_file_count": 1,
+                "qa_result_count": 1,
+            },
+            "media": [
+                {
+                    "route": "/dashboard",
+                    "viewport": "desktop",
+                    "path": "/logs/issue-42/dashboard.webm",
+                }
+            ],
+        }
+
+        comment = ralph.build_completion_comment(
+            issue,
+            "abc123",
+            ["scripts/ralph.py"],
+            [],
+            Path("/logs/run"),
+            delivery_plan=ralph.DeliveryPlan(
+                mode=ralph.GITFLOW_MODE,
+                target_branch="dev",
+                label="delivery-gitflow",
+                add_labels=(),
+                remove_labels=(),
+            ),
+            review_package=review_package,
+        )
+
+        self.assertIn("## Review package", comment)
+        self.assertIn("- Status: `passed`", comment)
+        self.assertIn("- HTML: `/logs/issue-42/review-package.html`", comment)
+        self.assertIn("- Media count: 1", comment)
+        self.assertIn(
+            "- Summary: Review package for issue #42; 1 changed file(s); 1 QA result(s)",
+            comment,
+        )
+
     def test_exploratory_completion_comment_records_review_branch(self) -> None:
         issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
         qa_results = [
@@ -7792,6 +7840,58 @@ Build it.
             "Target branch: `agent/exploratory/issue-42-implement-thing`", comment
         )
         self.assertIn("Issue #42 is ready for review on", comment)
+
+    def test_legacy_exploratory_handoff_comment_has_absent_review_package(self) -> None:
+        body = "\n".join(
+            [
+                "Ralph exploratory handoff completed.",
+                "",
+                "Commit: `abc1234`",
+                "Delivery mode: `exploratory`",
+                "Target branch: `agent/exploratory/issue-42-thing`",
+                "",
+                "## Changed files",
+                "",
+                "- `scripts/ralph.py`",
+                "",
+                "## QA",
+                "",
+                "- `make run-prek` from `/repo`",
+                "",
+            ]
+        )
+
+        evidence = ralph.parse_exploratory_handoff_comment(body)
+
+        self.assertIsNone(evidence["review_package"])
+
+    def test_promotion_comment_records_review_package_evidence(self) -> None:
+        issue = make_issue({"agent-integrated"}, IMPLEMENTATION_BODY)
+
+        comment = ralph.build_promotion_comment(
+            issue,
+            "promotion-sha",
+            "integration-sha",
+            "dev",
+            "main",
+            ["docs/unrelated.md"],
+            [],
+            Path("/logs/promote"),
+            review_package={
+                "status": "passed",
+                "validation_status": "passed",
+                "html_path": "/logs/issue-42/review-package.html",
+                "media_count": 0,
+                "summary_text": "Review package for issue #42",
+            },
+        )
+
+        self.assertIn("Ralph promotion completed.", comment)
+        self.assertIn("## Review package", comment)
+        self.assertIn("- Status: `passed`", comment)
+        self.assertIn("- HTML: `/logs/issue-42/review-package.html`", comment)
+        self.assertIn("- Media count: 0", comment)
+        self.assertIn("- Summary: Review package for issue #42", comment)
 
     def test_user_facing_error_includes_command_stderr(self) -> None:
         error = ralph.CommandFailure(
@@ -10053,6 +10153,19 @@ class RalphOperatorRunTests(unittest.TestCase):
                         "status": "passed",
                     }
                 ],
+                review_package={
+                    "status": "passed",
+                    "validation_status": "passed",
+                    "html_path": str(
+                        tmp_path / "repo/.ralph/runs/issue-42/review-package.html"
+                    ),
+                    "summary": {
+                        "title": "Review package for issue #42",
+                        "changed_file_count": 2,
+                        "qa_result_count": 1,
+                    },
+                    "media": [],
+                },
             )
             operator.manifest.record_child_run(child_manifest_path)
             output = io.StringIO()
@@ -10101,12 +10214,21 @@ class RalphOperatorRunTests(unittest.TestCase):
             ["root Commit check"],
         )
         self.assertEqual(review["issues"][0]["mergeability"]["status"], "clean")
+        self.assertEqual(review["issues"][0]["review_package"]["status"], "passed")
+        self.assertIn(
+            "Review package for issue #42",
+            review["issues"][0]["review_package"]["summary_text"],
+        )
         self.assertEqual(rollup["operator_run"]["status"], "needs_review")
         self.assertEqual(
             rollup["exploratory_acceptance_review"]["status"], "needs_review"
         )
         self.assertEqual(rollup["final_queue"]["counts"]["reviewing"], 1)
         self.assertIn("### #42 Explore workflow", review_markdown)
+        self.assertIn("Review package status: `passed`", review_markdown)
+        self.assertIn(
+            "Review package summary: Review package for issue #42", review_markdown
+        )
         self.assertIn("#136 Dependent ready work", review_markdown)
         self.assertIn(
             "Run the $ralph-loop Exploratory acceptance review flow", output.getvalue()
@@ -11082,6 +11204,63 @@ class RalphOperatorRunTests(unittest.TestCase):
 
         self.assertEqual(operator.issue_runs, 1)
         self.assertEqual(operator.issue_commits[234], "local-integration-234-1")
+
+    def test_operator_rollup_records_review_package_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            issue = make_issue(
+                {ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=234,
+                title="Fix Marimo dashboard",
+            )
+            child_manifest_path = write_child_manifest(
+                tmp_path / "logs",
+                name="issue-234",
+                run_kind="implementation",
+                status="succeeded",
+                issue=issue,
+                integration_commit="local-integration-234",
+                review_package={
+                    "status": "passed",
+                    "validation_status": "passed",
+                    "html_path": str(tmp_path / "logs/issue-234/review-package.html"),
+                    "summary": {
+                        "title": "Review package for issue #234",
+                        "changed_file_count": 2,
+                        "qa_result_count": 1,
+                    },
+                    "media": [{"path": str(tmp_path / "logs/issue-234/demo.webm")}],
+                },
+            )
+            operator_manifest_path = tmp_path / "operator-run.json"
+            operator_data = {
+                "repo": "example/repo",
+                "status": "succeeded",
+                "state": "queue_clean",
+                "cycle": 1,
+                "max_cycles": 1,
+                "paths": {"child_run_root": str(tmp_path / "logs")},
+                "child_run_manifests": [{"path": str(child_manifest_path)}],
+                "queue": {"issues": {}},
+            }
+
+            rollup = ralph.build_operator_run_rollup(
+                operator_manifest_path,
+                operator_data,
+            )
+            markdown = ralph.render_operator_run_rollup_markdown(rollup)
+
+        package = rollup["issues"]["succeeded"][0]["review_package"]
+        self.assertEqual(package["status"], "passed")
+        self.assertEqual(
+            package["html_path"], str(tmp_path / "logs/issue-234/review-package.html")
+        )
+        self.assertEqual(package["media_count"], 1)
+        self.assertIn("Review package for issue #234", package["summary_text"])
+        self.assertIn("Review package:", markdown)
+        self.assertIn("media count 1", markdown)
+        self.assertIn("Review package for issue #234", markdown)
 
     def test_detached_operator_launch_prints_status_command_without_waiting(
         self,
@@ -18166,6 +18345,78 @@ Build it.
                 "#153 Second accepted issue"
             ),
         )
+
+    def test_promotion_inventory_prompt_lists_verified_review_packages_only(
+        self,
+    ) -> None:
+        verified_commit = "9c12f1258cf680849829a91fab0b94c8eeed886a"
+        unverified_commit = "3f2c8b1258cf680849829a91fab0b94c8eeed000"
+        review_package = {
+            "status": "passed",
+            "validation_status": "passed",
+            "html_path": "/logs/issue-123/review-package.html",
+            "media_count": 1,
+            "summary_text": "Review package for issue #123; 1 changed file(s)",
+        }
+        entries = ralph.promotion_commit_inventory_entries(
+            [
+                ralph.PromotedSourceCommit(
+                    sha=verified_commit,
+                    subject="Implement issue #123",
+                ),
+                ralph.PromotedSourceCommit(
+                    sha=unverified_commit,
+                    subject="Unrelated maintenance",
+                ),
+            ],
+            [
+                (
+                    make_issue(
+                        {ralph.AGENT_INTEGRATED_LABEL},
+                        number=123,
+                        title="Fix dashboard",
+                    ),
+                    verified_commit,
+                    review_package,
+                ),
+            ],
+        )
+        prompt_lines = ralph.promotion_commit_inventory_prompt_lines(entries)
+        review_prompt = ralph.post_promotion_review_prompt(
+            repo="example/repo",
+            source_branch="dev",
+            target_branch="main",
+            source_revision="source-sha",
+            promotion_sha="promotion-sha",
+            changed_files=["docs/unrelated.md"],
+            integrated_issues=[
+                (
+                    make_issue(
+                        {ralph.AGENT_INTEGRATED_LABEL},
+                        number=123,
+                        title="Fix dashboard",
+                    ),
+                    verified_commit,
+                    review_package,
+                )
+            ],
+            promotion_commit_inventory=entries,
+            run_dir=Path("/logs/promote"),
+            promotion_outcome="succeeded",
+            promotion_error=None,
+            source_table_replay_recovery={},
+            automatic_followups_enabled=True,
+        )
+
+        self.assertEqual(entries[0]["issue"]["review_package"]["status"], "passed")
+        self.assertNotIn("issue", entries[1])
+        self.assertIn("Review package for #123: `passed`", prompt_lines)
+        self.assertIn("HTML `/logs/issue-123/review-package.html`", prompt_lines)
+        self.assertIn("Review package for issue #123", review_prompt)
+        self.assertIn(
+            "Unrelated maintenance - unverified Promotion commit", review_prompt
+        )
+        self.assertNotIn("<html", review_prompt.lower())
 
     def test_promotion_skip_post_promotion_review_flag_disables_review_agent(
         self,

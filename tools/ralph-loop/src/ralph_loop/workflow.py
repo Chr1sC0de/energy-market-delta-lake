@@ -5377,10 +5377,39 @@ def issue_completion_review_markdown_lines(
 def review_package_markdown_lines(review_package: dict[str, Any] | None) -> list[str]:
     if review_package is None:
         return []
-    html_path = review_package.get("html_path")
+    payload = review_package_evidence_payload(review_package)
+    if payload is None:
+        return []
+    html_path = payload.get("html_path")
+    lines = [
+        "## Review package",
+        "",
+        f"- Status: `{payload.get('status')}`",
+        f"- Media count: {payload.get('media_count')}",
+        f"- Summary: {payload.get('summary_text')}",
+    ]
+    if html_path:
+        lines.insert(3, f"- HTML: `{html_path}`")
+    media = review_package.get("media")
+    if isinstance(media, list) and media:
+        lines.append("- Media:")
+        for item in media:
+            if not isinstance(item, dict):
+                continue
+            route = item.get("route")
+            viewport = item.get("viewport")
+            path = item.get("path")
+            lines.append(f"  - `{route}` {viewport}: `{path}`")
+    lines.append("")
+    return lines
+
+
+def review_package_summary_text(review_package: dict[str, Any]) -> str:
+    existing_summary_text = str(review_package.get("summary_text") or "").strip()
+    if existing_summary_text:
+        return existing_summary_text
     summary = review_package.get("summary")
     media = review_package.get("media")
-    summary_text = ""
     if isinstance(summary, dict):
         title = str(summary.get("title") or "").strip()
         changed_count = summary.get("changed_file_count")
@@ -5395,29 +5424,92 @@ def review_package_markdown_lines(review_package: dict[str, Any] | None) -> list
             if part
         ]
         summary_text = "; ".join(summary_parts)
-    if summary_text == "":
-        if isinstance(media, list) and media:
-            summary_text = "Review package media captured."
-        else:
-            summary_text = "Review package generated and validated."
-    lines = [
-        "## Review package",
-        "",
-        f"- Summary: {summary_text}",
-    ]
-    if html_path:
-        lines.insert(2, f"- HTML: `{html_path}`")
+        if summary_text:
+            return summary_text
     if isinstance(media, list) and media:
-        lines.append("- Media:")
-        for item in media:
-            if not isinstance(item, dict):
-                continue
-            route = item.get("route")
-            viewport = item.get("viewport")
-            path = item.get("path")
-            lines.append(f"  - `{route}` {viewport}: `{path}`")
-    lines.append("")
-    return lines
+        return "Review package media captured."
+    return "Review package generated and validated."
+
+
+def review_package_media_count(review_package: dict[str, Any]) -> int:
+    media_count = review_package.get("media_count")
+    if isinstance(media_count, int):
+        return media_count
+    media = review_package.get("media")
+    return len(media) if isinstance(media, list) else 0
+
+
+def review_package_evidence_payload(
+    review_package: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(review_package, dict):
+        return None
+    status = str(review_package.get("status") or "not_recorded")
+    payload: dict[str, Any] = {
+        "status": status,
+        "validation_status": review_package.get("validation_status"),
+        "html_path": review_package.get("html_path"),
+        "media_count": review_package_media_count(review_package),
+        "summary": review_package.get("summary")
+        if isinstance(review_package.get("summary"), dict)
+        else None,
+        "summary_text": review_package_summary_text(review_package),
+    }
+    return payload
+
+
+def parse_review_package_evidence_from_comment(body: str) -> dict[str, Any] | None:
+    section = section_body(body, "Review package")
+    if section is None:
+        return None
+    status_match = re.search(r"(?m)^-\s+Status:\s+`(?P<status>[^`]+)`\s*$", section)
+    validation_match = re.search(
+        r"(?m)^-\s+Validation status:\s+`(?P<status>[^`]+)`\s*$", section
+    )
+    html_match = re.search(r"(?m)^-\s+HTML:\s+`(?P<path>[^`]+)`\s*$", section)
+    media_count_match = re.search(
+        r"(?m)^-\s+Media count:\s+(?P<count>\d+)\s*$", section
+    )
+    summary_match = re.search(r"(?m)^-\s+Summary:\s+(?P<summary>.+?)\s*$", section)
+    media_count = 0
+    if media_count_match is not None:
+        media_count = int(media_count_match.group("count"))
+    elif "- Media:" in section:
+        media_count = len(
+            [
+                line
+                for line in section.splitlines()
+                if line.startswith("  - ") and "`" in line
+            ]
+        )
+    payload: dict[str, Any] = {
+        "status": status_match.group("status")
+        if status_match is not None
+        else "unknown",
+        "validation_status": (
+            validation_match.group("status") if validation_match is not None else None
+        ),
+        "html_path": html_match.group("path") if html_match is not None else None,
+        "media_count": media_count,
+        "summary": None,
+        "summary_text": (
+            summary_match.group("summary").strip()
+            if summary_match is not None
+            else "Review package evidence recorded."
+        ),
+    }
+    return payload
+
+
+def review_package_evidence_from_comments(
+    comments: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    for comment in reversed(comments):
+        body = str(comment.get("body") or "")
+        payload = parse_review_package_evidence_from_comment(body)
+        if payload is not None:
+            return payload
+    return None
 
 
 def operator_smoke_markdown_lines(
@@ -5556,8 +5648,11 @@ def build_promotion_comment(
     changed_files: list[str],
     qa_results: list[QAResult],
     run_dir: Path,
+    *,
+    review_package: dict[str, Any] | None = None,
 ) -> str:
     qa_lines = qa_result_markdown_lines(qa_results)
+    review_package_lines = review_package_markdown_lines(review_package)
     changed_lines = [f"- `{path}`" for path in changed_files]
     return "\n".join(
         [
@@ -5581,6 +5676,7 @@ def build_promotion_comment(
             "",
             *qa_lines,
             "",
+            *review_package_lines,
             f"Run logs: `{run_dir}`",
             "",
             f"Issue #{issue.number} will be closed by the Ralph loop.",

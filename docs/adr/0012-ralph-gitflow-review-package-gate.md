@@ -17,8 +17,11 @@ Gitflow, Trunk, and Exploratory delivery must treat Review package generation
 and validation as a blocking gate. Ralph records package state in
 `ralph-run.json`, including status, HTML path, generator log path, structured
 summary, validation status, optional media metadata, and failure reason.
-Successful completion and handoff comments include the package path, summary,
-and media artifact paths when present.
+Successful completion and handoff comments include package status, local HTML
+path, media count, summary, and media artifact paths when present. Operator
+rollups, **Exploratory acceptance review** artifacts, Promotion context, and
+Promotion issue comments, and **Post-promotion review** prompts propagate only
+this bounded metadata and do not inline generated HTML.
 
 Exploratory delivery must run configured Review package media recipes after QA
 and any required **Issue completion review**, before pushing the durable
@@ -27,7 +30,8 @@ the branch push, any post-push **Operator smoke**, the handoff comment, or the
 `agent-reviewing` label transition. Successful Exploratory handoff records the
 HTML package, media metadata, the target branch, and the handoff commit. The
 package is handoff evidence only; human acceptance or rejection remains a later
-explicit **Exploratory acceptance review** decision.
+explicit **Exploratory acceptance review** decision. Legacy handoffs created
+before package evidence was recorded remain valid absent context.
 
 The validator accepts only bounded offline static HTML with required review
 sections. It rejects scripts, external URLs or assets, inline JavaScript,
@@ -47,6 +51,10 @@ Failures at this gate remain Ralph-owned pre-push failures: worktrees, logs,
 and any generated `review-package.html` evidence are preserved for operator
 inspection, but no **Integration target** or **Exploratory branch** is updated
 and no completion or handoff metadata is written.
+During **Promotion**, package summaries and paths follow only the verified
+issue-to-commit evidence mapping. Ralph does not infer per-issue package
+ownership from unverified Promotion commits or from the full Promotion
+changed-file inventory.
 
 ## Sync metadata
 

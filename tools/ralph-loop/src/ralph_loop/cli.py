@@ -1972,12 +1972,16 @@ class RalphLoop:
 
     def _post_promotion_ready_issue_refresh_candidates(
         self,
-        promoted_issues: list[tuple[Issue, str]],
+        promoted_issues: list[
+            tuple[Issue, str] | tuple[Issue, str, dict[str, Any] | None]
+        ],
     ) -> list[Issue]:
         issues = self.github.list_open_issues(limit=self.config.issue_limit)
         return select_post_promotion_ready_issue_refresh_candidates(
             issues,
-            promoted_issue_numbers={issue.number for issue, _ in promoted_issues},
+            promoted_issue_numbers={
+                promoted_issue_parts(value)[0].number for value in promoted_issues
+            },
             blocker_state=self.github.issue_state,
         )
 
@@ -2036,10 +2040,14 @@ class RalphLoop:
     def _emit_post_promotion_ready_issue_refresh_candidates(
         self,
         *,
-        promoted_issues: list[tuple[Issue, str]],
+        promoted_issues: list[
+            tuple[Issue, str] | tuple[Issue, str, dict[str, Any] | None]
+        ],
         candidates: list[Issue],
     ) -> None:
-        closed_numbers = [issue.number for issue, _ in promoted_issues]
+        closed_numbers = [
+            promoted_issue_parts(value)[0].number for value in promoted_issues
+        ]
         emit(
             "Ready issue refresh candidate selection found "
             f"{len(candidates)} candidate(s) after Promotion closure of "
@@ -3875,7 +3883,9 @@ class RalphLoop:
         promote_worktree_created = False
         source_revision: str | None = None
         changed_files: list[str] = []
-        integrated_issues: list[tuple[Issue, str]] = []
+        integrated_issues: list[
+            tuple[Issue, str] | tuple[Issue, str, dict[str, Any] | None]
+        ] = []
         promotion_commit_inventory: list[dict[str, Any]] = []
         promotion_sha: str | None = None
         source_branch_synced = False
@@ -4188,7 +4198,9 @@ class RalphLoop:
         source_revision: str | None,
         promotion_sha: str | None,
         changed_files: list[str],
-        integrated_issues: list[tuple[Issue, str]],
+        integrated_issues: list[
+            tuple[Issue, str] | tuple[Issue, str, dict[str, Any] | None]
+        ],
         promotion_commit_inventory: list[dict[str, Any]],
         source_path: Path,
         promote_path: Path,
@@ -4266,7 +4278,9 @@ class RalphLoop:
         source_revision: str,
         promotion_sha: str | None,
         changed_files: list[str],
-        integrated_issues: list[tuple[Issue, str]],
+        integrated_issues: list[
+            tuple[Issue, str] | tuple[Issue, str, dict[str, Any] | None]
+        ],
         promotion_commit_inventory: list[dict[str, Any]],
         review_path: Path,
         run_dir: Path,
@@ -4769,7 +4783,9 @@ class RalphLoop:
         promotion_sha: str,
         changed_files: list[str],
         qa_results: list[QAResult],
-        promoted_issues: list[tuple[Issue, str]],
+        promoted_issues: list[
+            tuple[Issue, str] | tuple[Issue, str, dict[str, Any] | None]
+        ],
         review_artifact_path: Path | None,
         analysis_path: Path,
         run_dir: Path,
@@ -4909,8 +4925,11 @@ class RalphLoop:
         source_branch: str,
         source_ref: str,
         target_branch: str,
-    ) -> tuple[list[tuple[Issue, str]], list[PromotionIssueWarning]]:
-        issues: list[tuple[Issue, str]] = []
+    ) -> tuple[
+        list[tuple[Issue, str] | tuple[Issue, str, dict[str, Any] | None]],
+        list[PromotionIssueWarning],
+    ]:
+        issues: list[tuple[Issue, str] | tuple[Issue, str, dict[str, Any] | None]] = []
         warnings: list[PromotionIssueWarning] = []
         for issue in self.github.list_open_issues(limit=self.config.issue_limit):
             if AGENT_INTEGRATED_LABEL not in issue.labels:
@@ -4950,12 +4969,14 @@ class RalphLoop:
                     f"origin/{target_branch}..{source_ref} from {source_branch}."
                 )
                 continue
-            issues.append((issue, commit_sha))
+            issues.append(
+                (issue, commit_sha, review_package_evidence_from_comments(comments))
+            )
         return issues, warnings
 
     def _close_promoted_issues(
         self,
-        issues: list[tuple[Issue, str]],
+        issues: list[tuple[Issue, str] | tuple[Issue, str, dict[str, Any] | None]],
         *,
         promotion_sha: str,
         source_branch: str,
@@ -4965,7 +4986,8 @@ class RalphLoop:
         run_dir: Path,
         manifest: RunManifest,
     ) -> None:
-        for issue, integrated_commit in issues:
+        for value in issues:
+            issue, integrated_commit, review_package = promoted_issue_parts(value)
             comment_log_path = promotion_issue_metadata_log_path(
                 run_dir, issue.number, "comment"
             )
@@ -4994,6 +5016,7 @@ class RalphLoop:
                     changed_files,
                     qa_results,
                     run_dir,
+                    review_package=review_package,
                 ),
                 run_dir=run_dir,
                 log_path=comment_log_path,
@@ -8990,6 +9013,9 @@ def exploratory_handoff_evidence_from_operator_children(
                 else []
             ),
             "recorded_qa_evidence": exploratory_qa_evidence_from_manifest(child_data),
+            "review_package": review_package_evidence_payload(
+                child_data.get("review_package")
+            ),
             "child_manifest_path": source.get("manifest_path"),
         }
     return evidence
@@ -9053,6 +9079,7 @@ def parse_exploratory_handoff_comment(body: str) -> dict[str, Any]:
             {"name": "completion comment QA", "status": "recorded", "raw": line}
             for line in qa_lines
         ],
+        "review_package": parse_review_package_evidence_from_comment(body),
         "child_manifest_path": None,
     }
 
@@ -9547,6 +9574,9 @@ def exploratory_acceptance_review_payload(
                 if isinstance(evidence.get("changed_files"), list)
                 else [],
                 "recorded_qa_evidence": recorded_qa_evidence,
+                "review_package": evidence.get("review_package")
+                if isinstance(evidence.get("review_package"), dict)
+                else None,
                 "detected_test_lanes": expected_lanes,
                 "missing_test_lane_evidence": missing_test_lane_evidence(
                     expected_lanes=expected_lanes,
@@ -9640,6 +9670,7 @@ def render_exploratory_acceptance_review_markdown(payload: dict[str, Any]) -> st
                 f"- Mergeability: `{mergeability.get('status') or 'unknown'}` "
                 f"against `{mergeability.get('source_ref') or 'unknown'}`",
                 f"- Child manifest: {markdown_path_link(entry.get('child_manifest_path'))}",
+                *operator_review_package_markdown_lines(entry.get("review_package")),
                 "",
                 "#### Changed Files",
                 "",
@@ -9699,6 +9730,20 @@ def operator_review_qa_markdown_lines(value: Any) -> list[str]:
             f"`{entry.get('command_text') or ''}`"
         )
     return lines or ["- None"]
+
+
+def operator_review_package_markdown_lines(value: Any) -> list[str]:
+    package = review_package_evidence_payload(
+        value if isinstance(value, dict) else None
+    )
+    if package is None:
+        return []
+    return [
+        f"- Review package status: `{package.get('status')}`",
+        f"- Review package HTML: {markdown_path_link(package.get('html_path'))}",
+        f"- Review package media count: {package.get('media_count')}",
+        f"- Review package summary: {package.get('summary_text')}",
+    ]
 
 
 def operator_review_downstream_markdown_lines(value: Any) -> list[str]:
@@ -12624,12 +12669,15 @@ def issue_reference_list(numbers: list[int]) -> str:
     return ", ".join(f"#{number}" for number in numbers)
 
 
-def promoted_issue_refresh_sections(issues: list[tuple[Issue, str]]) -> str:
+def promoted_issue_refresh_sections(
+    issues: list[tuple[Issue, str] | tuple[Issue, str, dict[str, Any] | None]],
+) -> str:
     if not issues:
         return "No verified promoted issues were closed."
 
     sections: list[str] = []
-    for issue, integrated_commit in issues:
+    for value in issues:
+        issue, integrated_commit, _review_package = promoted_issue_parts(value)
         labels = ", ".join(sorted(issue.labels)) or "none"
         body = issue.body.strip() or "_No issue body._"
         sections.append(
@@ -12813,7 +12861,7 @@ def post_promotion_ready_issue_refresh_analysis_prompt(
     changed_files: list[str],
     qa_results: list[QAResult],
     run_dir: Path,
-    promoted_issues: list[tuple[Issue, str]],
+    promoted_issues: list[tuple[Issue, str] | tuple[Issue, str, dict[str, Any] | None]],
     candidates: list[Issue],
     post_promotion_review_markdown: str,
     post_promotion_followups: dict[str, Any] | None,
@@ -12823,7 +12871,7 @@ def post_promotion_ready_issue_refresh_analysis_prompt(
     candidate_sections = ready_issue_refresh_candidate_issue_sections(candidates)
     promoted_sections = promoted_issue_refresh_sections(promoted_issues)
     closed_numbers = issue_reference_list(
-        [issue.number for issue, _ in promoted_issues]
+        [promoted_issue_parts(value)[0].number for value in promoted_issues]
     )
     review_text = post_promotion_review_markdown.strip() or "Unavailable or skipped."
     followups_text = (
@@ -13416,6 +13464,10 @@ def promotion_commit_inventory_prompt_lines(entries: list[dict[str, Any]]) -> st
             lines.append(
                 f"- `{sha}` {subject} - verified issue evidence commit{issue_text}"
             )
+            review_package_lines = promotion_commit_inventory_review_package_lines(
+                entry
+            )
+            lines.extend(review_package_lines)
             continue
         lines.append(f"- `{sha}` {subject} - unverified Promotion commit")
     return "\n".join(lines)
@@ -13441,6 +13493,35 @@ def promotion_commit_inventory_issue_text(entry: dict[str, Any]) -> str:
     return " for " + ", ".join(issue_texts)
 
 
+def promotion_commit_inventory_review_package_lines(entry: dict[str, Any]) -> list[str]:
+    issue_values = entry.get("issues")
+    issues = issue_values if isinstance(issue_values, list) else []
+    if not issues:
+        issue_value = entry.get("issue")
+        issues = [issue_value] if isinstance(issue_value, dict) else []
+
+    lines: list[str] = []
+    for issue in issues:
+        if not isinstance(issue, dict):
+            continue
+        package = review_package_evidence_payload(
+            issue.get("review_package")
+            if isinstance(issue.get("review_package"), dict)
+            else None
+        )
+        if package is None:
+            continue
+        issue_number = issue.get("number")
+        lines.append(
+            f"  - Review package for #{issue_number}: "
+            f"`{package.get('status')}`; "
+            f"HTML `{package.get('html_path') or 'not recorded'}`; "
+            f"media count {package.get('media_count')}; "
+            f"summary: {package.get('summary_text')}"
+        )
+    return lines
+
+
 def post_promotion_review_prompt(
     *,
     repo: str,
@@ -13449,7 +13530,9 @@ def post_promotion_review_prompt(
     source_revision: str,
     promotion_sha: str | None,
     changed_files: list[str],
-    integrated_issues: list[tuple[Issue, str]],
+    integrated_issues: list[
+        tuple[Issue, str] | tuple[Issue, str, dict[str, Any] | None]
+    ],
     promotion_commit_inventory: list[dict[str, Any]],
     run_dir: Path,
     promotion_outcome: str,
@@ -13461,8 +13544,15 @@ def post_promotion_review_prompt(
     if not changed_lines:
         changed_lines = "- None"
     issue_lines = "\n".join(
-        f"- #{issue.number} {issue.title}: integrated `{integrated_commit}`"
-        for issue, integrated_commit in integrated_issues
+        post_promotion_review_issue_line(
+            issue,
+            integrated_commit=integrated_commit,
+            review_package=review_package,
+        )
+        for issue, integrated_commit, _review_package in [
+            promoted_issue_parts(value) for value in integrated_issues
+        ]
+        for review_package in [_review_package]
     )
     if not issue_lines:
         issue_lines = "- None"
@@ -13572,6 +13662,24 @@ def post_promotion_review_prompt(
         ```
         """
     ).strip()
+
+
+def post_promotion_review_issue_line(
+    issue: Issue,
+    *,
+    integrated_commit: str,
+    review_package: dict[str, Any] | None,
+) -> str:
+    line = f"- #{issue.number} {issue.title}: integrated `{integrated_commit}`"
+    package = review_package_evidence_payload(review_package)
+    if package is None:
+        return line
+    return (
+        line
+        + "; Review package "
+        + f"`{package.get('status')}`; HTML `{package.get('html_path') or 'not recorded'}`; "
+        + f"media count {package.get('media_count')}; summary: {package.get('summary_text')}"
+    )
 
 
 def post_promotion_review_markdown_from_stdout(stdout: str) -> str:

@@ -26,7 +26,9 @@ make run-prek
   baseline guard, operator-smoke execution, deploy-repair issue creation,
   verified post-push metadata recovery, Promotion source-table replay recovery
   output, Review package media recipe orchestration, Review package gate
-  orchestration, and compatibility re-exports
+  orchestration, bounded Review package evidence propagation into
+  **Exploratory acceptance review** and **Post-promotion review** prompts, and
+  compatibility re-exports
 - `src/ralph_loop/review_package_media.py`: Ralph-owned Playwright helper that
   serves static build output and records Review package route `.webm` videos
 - `src/ralph_loop/workflow.py`: pure label, **Delivery mode**, QA selection,
@@ -35,14 +37,16 @@ make run-prek
   request, deployment classification/execution selection, source-table replay
   recovery detection, Review package media route selection, Review package
   validation policy, baseline guard command selection, QA runtime disk guard,
-  and recovery policy helpers
+  bounded Review package comment formatting/parsing, and recovery policy
+  helpers
 - `src/ralph_loop/state.py`: Ralph run and Operator manifest state helpers,
   including **Issue completion review**, security-sensitive path evidence,
   structured Stiffness ratio evidence, Operator smoke evidence, adaptive-event
   evidence, source-table replay recovery guidance, active child run status,
   deploy-repair issue state, and checkpointed deploy-repair target state,
   Operator rollup failed-command summaries, rollup requeue recovery
-  classification, and stale detached Operator status inputs
+  classification, bounded Review package rollup and Promotion inventory
+  evidence, and stale detached Operator status inputs
 - `tests/unit/`: Ralph unit tests
 - `.pre-commit-config.yaml`: Subproject `prek` hook surface
 

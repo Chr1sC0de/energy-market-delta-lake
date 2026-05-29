@@ -212,6 +212,9 @@ Use this checklist:
   `review_package.status` and `review_package.validation_status` are `passed`;
   inspect the local `review-package.html` path and any `review_package.media`
   entries from the completion comment when the code diff needs closer review.
+  Operator rollups and **Post-promotion review** prompts carry only bounded
+  package evidence, such as status, local HTML path, media count, and summary;
+  open the HTML file locally when full package content is needed.
 - For manually recovered Gitflow work, verify the issue has a parseable
   `Ralph Gitflow manual recovery completed.` comment with the recovered `dev`
   commit before Promotion.
