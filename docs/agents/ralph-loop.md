@@ -786,7 +786,11 @@ Key fields for inspection:
   `validation_status: passed` before any **Local integration** commit,
   **Integration target** push, or Exploratory handoff. Exploratory packages must
   include `Review focus` and record the target branch and handoff commit in the
-  generated report.
+  generated report. Ralph propagates only bounded package evidence, such as
+  status, local HTML path, media count, and summary text, into completion
+  comments, Operator rollups, **Exploratory acceptance review** artifacts,
+  Promotion issue comments and context, and **Post-promotion review** prompts;
+  it does not inline generated HTML.
 - `post_promotion_followups`: enabled state, created issue URLs, duplicate
   source-marker skips, validation downgrades to `needs-triage`, warning-only
   creation failures, and recovery guidance for **Promotion** follow-ups.
@@ -1204,9 +1208,9 @@ For **Local integration**, Ralph creates a temporary detached integration
 worktree at latest target, runs `git merge --squash` from the issue branch,
 creates one integration commit, pushes it to the target, and posts completion
 evidence with the commit SHA, changed files, QA commands, run log path, and the
-**Review package** path plus summary. Exploratory handoff comments use the same
-package evidence and list any media artifact paths captured before the branch
-push.
+**Review package** status, local HTML path, media count, and summary.
+Exploratory handoff comments use the same bounded package evidence and list any
+media artifact paths captured before the branch push.
 Trunk integration marks the issue `agent-merged` and closes it. Gitflow
 integration marks the issue `agent-integrated` and leaves it open for
 **Promotion**. Exploratory handoff skips the detached integration worktree and
@@ -1217,6 +1221,16 @@ is included in the handoff comment. Smoke failure or timeout comments failure
 evidence, marks the issue `agent-failed`, preserves the worktree, logs, and
 branch for review, and does not apply `agent-reviewing`. Ralph does not open a
 GitHub draft PR.
+
+Operator rollup JSON and Markdown copy the same bounded **Review package**
+evidence for succeeded issue runs. **Exploratory acceptance review** JSON and
+Markdown include package path and summary when current handoffs recorded them;
+older handoffs remain valid with absent package context. During **Promotion**,
+Ralph attaches package evidence only to verified promoted issue evidence
+commits resolved through issue comments and the existing issue-to-commit
+mapping, including the per-issue Promotion comment. Unverified Promotion commits
+and full Promotion changed-file inventory remain review context only and are
+not assigned package summaries.
 
 Human review owns the next Exploratory state decision. The Operator records
 explicit `accept`, `hold`, or `reject` decisions in a JSON artifact:

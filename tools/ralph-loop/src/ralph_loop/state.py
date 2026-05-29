@@ -1299,7 +1299,7 @@ class RunManifest:
 
     def record_promoted_issues(
         self,
-        issues: list[tuple[Issue, str]],
+        issues: list[tuple[Issue, str] | tuple[Issue, str, dict[str, Any] | None]],
         *,
         issue_warnings: list[PromotionIssueWarning] | None = None,
     ) -> None:
@@ -1307,14 +1307,15 @@ class RunManifest:
         if not isinstance(metadata, dict):
             raise RalphError("Manifest github_metadata field is not an object.")
         verified_entries = [
-            {
-                "number": issue.number,
-                "title": issue.title,
-                "url": issue.url,
-                "integrated_commit": integrated_commit,
-                "metadata_status": "verified",
-            }
-            for issue, integrated_commit in issues
+            promoted_issue_metadata_entry(
+                issue,
+                integrated_commit=integrated_commit,
+                metadata_status="verified",
+                review_package=review_package,
+            )
+            for issue, integrated_commit, review_package in [
+                promoted_issue_parts(value) for value in issues
+            ]
         ]
         warning_entries = [
             {
@@ -1343,7 +1344,9 @@ class RunManifest:
         base_ref: str,
         head_ref: str,
         commits: list[PromotedSourceCommit],
-        integrated_issues: list[tuple[Issue, str]],
+        integrated_issues: list[
+            tuple[Issue, str] | tuple[Issue, str, dict[str, Any] | None]
+        ],
     ) -> list[dict[str, Any]]:
         entries = promotion_commit_inventory_entries(
             commits,
@@ -2722,6 +2725,9 @@ def operator_issue_rollup_entry(
         "local_integration_commit": normalized_commit_payload(
             child_data.get("integration_commit")
         ),
+        "review_package": review_package_evidence_payload(
+            child_data.get("review_package")
+        ),
         "qa": operator_rollup_qa_summary(child_data),
         "operator_smoke": child_data.get("operator_smoke")
         if isinstance(child_data.get("operator_smoke"), dict)
@@ -2872,6 +2878,7 @@ def operator_rollup_local_integrations(
                 "delivery_mode": entry.get("delivery_mode"),
                 "integration_target": entry.get("integration_target"),
                 "commit": commit,
+                "review_package": entry.get("review_package"),
                 "manifest_path": entry.get("manifest_path"),
             }
         )
@@ -3973,6 +3980,9 @@ def operator_rollup_issue_markdown_lines(
             + f"; manifest {markdown_path_link(entry.get('manifest_path'))}"
         )
         lines.extend(
+            operator_rollup_review_package_markdown_lines(entry.get("review_package"))
+        )
+        lines.extend(
             operator_rollup_failure_summary_markdown_lines(entry.get("failure_summary"))
         )
     return lines
@@ -3993,6 +4003,25 @@ def operator_rollup_local_integration_markdown_lines(
             + f" - `{commit.get('sha')}` to `{commit.get('branch')}`"
             + f"; manifest {markdown_path_link(entry.get('manifest_path'))}"
         )
+        lines.extend(
+            operator_rollup_review_package_markdown_lines(entry.get("review_package"))
+        )
+    return lines
+
+
+def operator_rollup_review_package_markdown_lines(value: Any) -> list[str]:
+    package = review_package_evidence_payload(
+        value if isinstance(value, dict) else None
+    )
+    if package is None:
+        return []
+    lines = [
+        "  - Review package: "
+        f"`{package.get('status')}`; "
+        f"HTML {markdown_path_link(package.get('html_path'))}; "
+        f"media count {package.get('media_count')}; "
+        f"summary: {package.get('summary_text')}"
+    ]
     return lines
 
 
@@ -4332,11 +4361,21 @@ def child_manifest_data_for_operator(
 
 def promotion_commit_inventory_entries(
     commits: list[PromotedSourceCommit],
-    integrated_issues: list[tuple[Issue, str]],
+    integrated_issues: list[
+        tuple[Issue, str] | tuple[Issue, str, dict[str, Any] | None]
+    ],
 ) -> list[dict[str, Any]]:
-    verified_by_commit: dict[str, list[Issue]] = {}
-    for issue, integrated_commit in integrated_issues:
-        verified_by_commit.setdefault(integrated_commit, []).append(issue)
+    verified_by_commit: dict[str, list[dict[str, Any]]] = {}
+    for value in integrated_issues:
+        issue, integrated_commit, review_package = promoted_issue_parts(value)
+        verified_by_commit.setdefault(integrated_commit, []).append(
+            promoted_issue_metadata_entry(
+                issue,
+                integrated_commit=integrated_commit,
+                metadata_status="verified",
+                review_package=review_package,
+            )
+        )
 
     entries: list[dict[str, Any]] = []
     for commit in commits:
@@ -4354,9 +4393,15 @@ def promotion_commit_inventory_entries(
         if issues:
             issue_payloads = [
                 {
-                    "number": issue.number,
-                    "title": issue.title,
-                    "url": issue.url,
+                    key: value
+                    for key, value in issue.items()
+                    if key
+                    in {
+                        "number",
+                        "title",
+                        "url",
+                        "review_package",
+                    }
                 }
                 for issue in issues
             ]
@@ -4367,6 +4412,35 @@ def promotion_commit_inventory_entries(
             entry["integrated_commit"] = commit.sha
         entries.append(entry)
     return entries
+
+
+def promoted_issue_parts(
+    value: tuple[Issue, str] | tuple[Issue, str, dict[str, Any] | None],
+) -> tuple[Issue, str, dict[str, Any] | None]:
+    issue = value[0]
+    integrated_commit = value[1]
+    review_package = value[2] if len(value) > 2 else None
+    return issue, integrated_commit, review_package
+
+
+def promoted_issue_metadata_entry(
+    issue: Issue,
+    *,
+    integrated_commit: str,
+    metadata_status: str,
+    review_package: dict[str, Any] | None,
+) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "number": issue.number,
+        "title": issue.title,
+        "url": issue.url,
+        "integrated_commit": integrated_commit,
+        "metadata_status": metadata_status,
+    }
+    package = review_package_evidence_payload(review_package)
+    if package is not None:
+        entry["review_package"] = package
+    return entry
 
 
 def emit(message: str, *, err: bool = False) -> None:

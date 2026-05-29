@@ -128,6 +128,12 @@ and oversized output, while permitting sibling `.webm` links recorded by Ralph.
 Media capture, generation, or validation failure marks the issue `agent-failed`,
 preserves logs and worktrees, and does not update an **Integration target** or
 publish an Exploratory handoff.
+Completion comments, Operator rollups, **Exploratory acceptance review**
+artifacts, Promotion issue comments and context, and **Post-promotion review**
+prompts carry only bounded package evidence: status, local HTML path, media
+count, and summary text. Legacy handoffs without package metadata remain valid
+absent context, and Promotion attaches package evidence only to verified issue
+evidence commits rather than the full Promotion changed-file inventory.
 
 `$shape-issues` v2 may create new GitHub Issues only after explicit Operator
 confirmation of a passing gate report and pre-publication review Markdown:

@@ -353,6 +353,18 @@ way:
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md), ADR
   [0012](../adr/0012-ralph-gitflow-review-package-gate.md), and the
   [Marimo dashboard standard](../../backend-services/marimo/docs/dashboard-standard.md).
+- #297: Ralph propagates bounded **Review package** evidence through completion
+  comments, Operator rollups, **Exploratory acceptance review** artifacts,
+  Promotion issue comments and context, and **Post-promotion review** prompts.
+  The propagated fields are status, local HTML path, media count, and summary
+  text; generated HTML is not inlined. Promotion uses the verified
+  issue-to-commit mapping and does not infer package ownership from unverified
+  Promotion commits or the full Promotion changed-file inventory. Legacy
+  handoffs without package data remain valid absent context. The contract lives
+  in
+  [docs/agents/issue-tracker.md](../agents/issue-tracker.md),
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md), and ADR
+  [0012](../adr/0012-ralph-gitflow-review-package-gate.md).
 - #166: Checkpointed Operator runs record valid deploy-repair issues in
   `deploy_repair.target_issue`, select that issue before unrelated ready work,
   clear the target after a successful deployment retry, and stop after two
