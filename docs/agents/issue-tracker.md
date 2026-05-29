@@ -126,8 +126,9 @@ required review sections and rejects scripts, external URLs or assets, inline
 JavaScript, absolute local file reads, missing issue or changed-file evidence,
 and oversized output, while permitting sibling `.webm` links recorded by Ralph.
 Media capture, generation, or validation failure marks the issue `agent-failed`,
-preserves logs and worktrees, and does not update an **Integration target** or
-publish an Exploratory handoff.
+preserves logs and worktrees, records the generator log, validation reason, and
+media failure context when available, and does not update an **Integration
+target** or publish an Exploratory handoff.
 Completion comments, Operator rollups, **Exploratory acceptance review**
 artifacts, Promotion issue comments and context, and **Post-promotion review**
 prompts carry only bounded package evidence: status, local HTML path, media
@@ -225,6 +226,12 @@ the plan restores `ready-for-agent` without pushing an **Integration target** or
 creating a new **Local integration** commit. After that label restoration,
 normal queue scanning can claim the issue; no priority label or special
 scheduling path is needed.
+Review package media, generation, and validation failures are pre-push failures
+when QA and any required **Issue completion review** passed and no
+`integration_commit` or **Integration target** push was recorded. `--inspect-run`,
+Operator status, and rollups surface the package generator log, validation
+reason, media failures, and next safe action so operators can repair the
+preserved worktree and then run the Ralph-owned requeue dry run.
 Post-push metadata recovery is verified-only. Ralph may repair issue comments,
 labels, body text, or closure only after it verifies that the recorded **Local
 integration**, Exploratory handoff, accepted Exploratory commit, or

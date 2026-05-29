@@ -5428,6 +5428,9 @@ def review_package_summary_text(review_package: dict[str, Any]) -> str:
             return summary_text
     if isinstance(media, list) and media:
         return "Review package media captured."
+    failure_reason = str(review_package.get("failure_reason") or "").strip()
+    if failure_reason:
+        return failure_reason
     return "Review package generated and validated."
 
 
@@ -5449,6 +5452,8 @@ def review_package_evidence_payload(
         "status": status,
         "validation_status": review_package.get("validation_status"),
         "html_path": review_package.get("html_path"),
+        "generator_log_path": review_package.get("generator_log_path"),
+        "failure_reason": review_package.get("failure_reason"),
         "media_count": review_package_media_count(review_package),
         "summary": review_package.get("summary")
         if isinstance(review_package.get("summary"), dict)

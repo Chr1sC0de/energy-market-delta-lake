@@ -3035,10 +3035,12 @@ def operator_rollup_failure_summary(
     failure = child_data.get("failure")
     failure = failure if isinstance(failure, dict) else {}
     failed_qa = operator_rollup_first_failed_qa_result(child_data)
+    review_package_failure = operator_rollup_review_package_failure_context(child_data)
     primary_log_path = operator_rollup_failure_primary_log_path(
         child_data,
         failure=failure,
         failed_qa=failed_qa,
+        review_package_failure=review_package_failure,
     )
     log_summary = operator_rollup_command_log_summary(primary_log_path)
     comment_summary = operator_rollup_failure_comment_summary(child_data)
@@ -3056,7 +3058,7 @@ def operator_rollup_failure_summary(
         excerpt = f"Primary log path is missing: {primary_log_path}."
         excerpt_source = "log_read_status"
 
-    return {
+    summary = {
         "status": "summarized",
         "failure_type": operator_rollup_failure_type(
             child_data,
@@ -3086,6 +3088,9 @@ def operator_rollup_failure_summary(
         "excerpt": excerpt,
         "excerpt_source": excerpt_source,
     }
+    if review_package_failure is not None:
+        summary["review_package_failure"] = review_package_failure
+    return summary
 
 
 def operator_rollup_first_failed_qa_result(
@@ -3107,6 +3112,7 @@ def operator_rollup_failure_primary_log_path(
     *,
     failure: dict[str, Any],
     failed_qa: dict[str, Any] | None,
+    review_package_failure: dict[str, Any] | None = None,
 ) -> str | None:
     if failed_qa is not None:
         log_path = str(failed_qa.get("log_path") or "")
@@ -3135,6 +3141,14 @@ def operator_rollup_failure_primary_log_path(
     log_path = str(failure.get("log_path") or "")
     if log_path:
         return log_path
+
+    if review_package_failure is not None:
+        log_path = str(review_package_failure.get("generator_log_path") or "")
+        if log_path:
+            return log_path
+        log_path = str(review_package_failure.get("failure_log_path") or "")
+        if log_path:
+            return log_path
 
     for key in ("branch_sync", "ready_issue_refresh", "post_promotion_review"):
         value = child_data.get(key)
@@ -3180,6 +3194,8 @@ def operator_rollup_failure_type(
     failure_type = str(failure.get("type") or "")
     if failure_type:
         return failure_type
+    if operator_rollup_review_package_failure_context(child_data) is not None:
+        return REVIEW_PACKAGE_FAILURE_TYPE
     for key in ("formatter_recovery", "branch_sync", "promotion_worktree_preflight"):
         value = child_data.get(key)
         if not isinstance(value, dict):
@@ -3215,6 +3231,8 @@ def operator_rollup_failure_phase(
         return "Promotion push"
     if "git-push" in log_name:
         return "Integration target push"
+    if failure_type == REVIEW_PACKAGE_FAILURE_TYPE:
+        return "Review package"
     if failure_type == FORMATTER_REWRITE_RECOVERY_FAILURE_TYPE:
         return "formatter recovery"
     if checkpoint_name == "promotion_failed":
@@ -3222,6 +3240,105 @@ def operator_rollup_failure_phase(
     if checkpoint_name == "issue_failed":
         return "issue implementation"
     return None
+
+
+def operator_rollup_review_package_failure_context(
+    child_data: dict[str, Any],
+) -> dict[str, Any] | None:
+    package = child_data.get("review_package")
+    if not isinstance(package, dict):
+        return None
+    status = str(package.get("status") or "")
+    validation_status = str(package.get("validation_status") or "")
+    failure_reason = str(package.get("failure_reason") or "").strip()
+    if (
+        status not in {"failed", "validation_failed"}
+        and validation_status != "failed"
+        and failure_reason == ""
+    ):
+        return None
+
+    failure = child_data.get("failure")
+    failure = failure if isinstance(failure, dict) else {}
+    failure_log_path = str(failure.get("log_path") or "") or None
+    generator_log_path = str(package.get("generator_log_path") or "") or None
+    media_failures = operator_rollup_review_package_media_failures(
+        package,
+        failure_log_path=failure_log_path,
+    )
+    validation_reason = failure_reason if validation_status == "failed" else None
+    if validation_reason is None and status == "validation_failed":
+        validation_reason = failure_reason or str(failure.get("message") or "")
+
+    return {
+        "status": status or "unknown",
+        "validation_status": validation_status or "unknown",
+        "html_path": package.get("html_path"),
+        "generator_log_path": generator_log_path,
+        "failure_log_path": failure_log_path,
+        "failure_reason": failure_reason or str(failure.get("message") or ""),
+        "validation_reason": validation_reason,
+        "media_failures": media_failures,
+        "next_safe_action": (
+            "Inspect the Review package generator log, validation reason, and "
+            "any media failure logs in the preserved run directory and "
+            "implementation worktree. After repairing package generation, "
+            "validation, or media capture, use the Ralph-owned pre-push requeue "
+            "dry-run before live recovery."
+        ),
+    }
+
+
+def operator_rollup_review_package_media_failures(
+    package: dict[str, Any],
+    *,
+    failure_log_path: str | None,
+) -> list[dict[str, Any]]:
+    media = package.get("media")
+    entries = media if isinstance(media, list) else []
+    failures: list[dict[str, Any]] = []
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("status") or "")
+        path = str(item.get("path") or "")
+        if status in {"failed", "missing"}:
+            failures.append(
+                {
+                    "route": item.get("route"),
+                    "viewport": item.get("viewport"),
+                    "path": path or None,
+                    "status": status,
+                    "log_path": item.get("log_path") or failure_log_path,
+                }
+            )
+            continue
+        if path and not Path(path).exists():
+            failures.append(
+                {
+                    "route": item.get("route"),
+                    "viewport": item.get("viewport"),
+                    "path": path,
+                    "status": "missing",
+                    "log_path": item.get("log_path") or failure_log_path,
+                }
+            )
+    if failures:
+        return failures
+
+    status = str(package.get("status") or "")
+    generator_log_path = str(package.get("generator_log_path") or "")
+    if status == "failed" and generator_log_path == "" and failure_log_path:
+        return [
+            {
+                "route": None,
+                "viewport": None,
+                "path": None,
+                "status": "failed_before_package_generation",
+                "log_path": failure_log_path,
+            }
+        ]
+    return []
 
 
 def operator_rollup_command_log_summary(log_path: str | None) -> dict[str, Any]:
@@ -3598,6 +3715,17 @@ def requeue_eligibility_for_manifest_data(
 
     if reasons:
         return ("not eligible", tuple(reasons))
+    if manifest_data_has_review_package_failure(data):
+        return (
+            "eligible",
+            (
+                "implementation QA passed",
+                "Issue completion review passed or was not required",
+                "Review package failed before publication",
+                "no integration_commit was recorded",
+                "no Integration target push was recorded",
+            ),
+        )
     return (
         "eligible",
         (
@@ -3646,6 +3774,10 @@ def manifest_data_issue_completion_review_passed_for_requeue(
         return False
     status = str(review.get("status") or "not_started")
     return status in {"passed", "skipped_not_required"}
+
+
+def manifest_data_has_review_package_failure(data: dict[str, Any]) -> bool:
+    return operator_rollup_review_package_failure_context(data) is not None
 
 
 def operator_rollup_requeue_recovery(
@@ -3734,6 +3866,9 @@ def operator_requeue_recovery_entry(
         "reasons": list(reasons),
         "manifest_path": manifest_path,
         "run_dir": run_dir,
+        "review_package_failure": operator_rollup_review_package_failure_context(
+            child_data
+        ),
         "dry_run_command": operator_requeue_dry_run_command(run_dir)
         if classification == "eligible_pre_push_requeue"
         else None,
@@ -4019,9 +4154,14 @@ def operator_rollup_review_package_markdown_lines(value: Any) -> list[str]:
         "  - Review package: "
         f"`{package.get('status')}`; "
         f"HTML {markdown_path_link(package.get('html_path'))}; "
+        f"generator log {markdown_path_link(package.get('generator_log_path'))}; "
+        f"validation `{package.get('validation_status')}`; "
         f"media count {package.get('media_count')}; "
         f"summary: {package.get('summary_text')}"
     ]
+    failure_reason = package.get("failure_reason")
+    if failure_reason:
+        lines.append(f"  - Review package failure reason: {failure_reason}")
     return lines
 
 
@@ -4105,6 +4245,45 @@ def operator_rollup_failure_summary_markdown_lines(value: Any) -> list[str]:
     excerpt = operator_rollup_markdown_excerpt(value.get("excerpt"))
     if excerpt:
         lines.append(f"    - Excerpt: {markdown_inline_code(excerpt)}")
+    review_package_failure = value.get("review_package_failure")
+    if isinstance(review_package_failure, dict):
+        lines.extend(
+            operator_rollup_review_package_failure_markdown_lines(
+                review_package_failure
+            )
+        )
+    return lines
+
+
+def operator_rollup_review_package_failure_markdown_lines(
+    value: dict[str, Any],
+) -> list[str]:
+    lines = [
+        "  - Review package failure: "
+        f"generator log {markdown_path_link(value.get('generator_log_path'))}; "
+        f"validation reason {markdown_inline_code(str(value.get('validation_reason') or 'not_recorded'))}; "
+        f"failure reason {markdown_inline_code(str(value.get('failure_reason') or 'not_recorded'))}"
+    ]
+    media_failures = value.get("media_failures")
+    if isinstance(media_failures, list) and media_failures:
+        lines.append("  - Review package media failures:")
+        for item in media_failures:
+            if not isinstance(item, dict):
+                continue
+            route = item.get("route") or "unknown route"
+            viewport = item.get("viewport") or "unknown viewport"
+            status = item.get("status") or "failed"
+            log_path = item.get("log_path")
+            lines.append(
+                "    - "
+                f"`{route}` {viewport}: `{status}`; "
+                f"log {markdown_path_link(log_path)}"
+            )
+    else:
+        lines.append("  - Review package media failures: none recorded")
+    next_action = str(value.get("next_safe_action") or "").strip()
+    if next_action:
+        lines.append(f"  - Review package next safe action: {next_action}")
     return lines
 
 

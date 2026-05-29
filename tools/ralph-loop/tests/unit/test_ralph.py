@@ -1447,6 +1447,63 @@ def write_failed_pre_push_requeue_manifest(tmp_path: Path) -> Path:
     return run_dir
 
 
+def write_failed_review_package_requeue_manifest(
+    tmp_path: Path,
+    *,
+    delivery_mode: str = ralph.GITFLOW_MODE,
+    media_failure: bool = False,
+) -> Path:
+    run_dir = write_failed_pre_push_requeue_manifest(tmp_path)
+    manifest_path = run_dir / ralph.MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    generator_log = run_dir / "codex-review-package.jsonl"
+    html_path = run_dir / ralph.REVIEW_PACKAGE_ARTIFACT_NAME
+    failure_log = run_dir / "marimo-review-package-media.log"
+    if delivery_mode == ralph.EXPLORATORY_MODE:
+        manifest["delivery_mode"] = ralph.EXPLORATORY_MODE
+        manifest["integration_target"] = "agent/exploratory/issue-234-review-package"
+        manifest["branches"]["integration_target"] = (
+            "agent/exploratory/issue-234-review-package"
+        )
+    manifest["review_package"] = {
+        "status": "failed" if media_failure else "validation_failed",
+        "html_path": str(html_path),
+        "generator_log_path": None if media_failure else str(generator_log),
+        "summary": None,
+        "validation_status": "not_started" if media_failure else "failed",
+        "failure_reason": (
+            "Marimo Review package media capture failed for #234: Command failed"
+            if media_failure
+            else "Review package validation failed: missing required section Summary."
+        ),
+        "media": [
+            {
+                "route": "/notebooks/dashboard",
+                "viewport": "desktop",
+                "path": str(run_dir / "dashboard-desktop.webm"),
+            }
+        ]
+        if media_failure
+        else [],
+    }
+    manifest["failure"] = {
+        "message": manifest["review_package"]["failure_reason"],
+        "type": ralph.REVIEW_PACKAGE_FAILURE_TYPE,
+        "log_path": str(failure_log if media_failure else generator_log),
+        "recovery_guidance": (
+            "Inspect the Review package generator log and preserved implementation "
+            "worktree, then rerun Ralph for the issue after the package can be "
+            "generated as valid offline static HTML."
+        ),
+    }
+    manifest["events"] = [
+        {"stage": "review_package_failed", "status": "running"},
+        {"stage": "failed", "status": "failed"},
+    ]
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return run_dir
+
+
 def issue_view_output(*, labels: list[str] | None = None) -> str:
     return json.dumps(
         {
@@ -8125,6 +8182,33 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
         )
         self.assertNotIn("--recover-run is not applicable", text)
 
+    def test_inspect_run_reports_review_package_failure_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_review_package_requeue_manifest(tmp_path)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_run(run_dir)
+
+        text = output.getvalue()
+        self.assertIn("Review package status: validation_failed", text)
+        self.assertIn("validation failed", text)
+        self.assertIn("codex-review-package.jsonl", text)
+        self.assertIn("Review package failure:", text)
+        self.assertIn(
+            "Validation reason: Review package validation failed: missing required section Summary.",
+            text,
+        )
+        self.assertIn("Media failures: none recorded", text)
+        self.assertIn("Next safe action:", text)
+        self.assertIn("Review package failed before publication", text)
+        self.assertIn("Requeue eligibility: eligible", text)
+        self.assertIn(
+            f"python3 scripts/ralph.py --recover-run {run_dir} --dry-run",
+            text,
+        )
+
     def test_recover_run_dry_run_reports_pre_push_requeue_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -11033,6 +11117,83 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn("## Requeue Recovery", markdown)
         self.assertIn("eligible_pre_push_requeue", markdown)
 
+    def test_operator_rollup_reports_review_package_failure_recovery_context(
+        self,
+    ) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(
+                tmp_path,
+                runner,
+                drain=True,
+                delivery_mode=ralph.EXPLORATORY_MODE,
+            )
+            child_run_dir = write_failed_review_package_requeue_manifest(
+                tmp_path,
+                delivery_mode=ralph.EXPLORATORY_MODE,
+                media_failure=True,
+            )
+            child_manifest_path = child_run_dir / ralph.MANIFEST_NAME
+            issue = make_issue(
+                {ralph.AGENT_FAILED_LABEL, ralph.DELIVERY_EXPLORATORY_LABEL},
+                EXPLORATORY_IMPLEMENTATION_BODY,
+                number=234,
+                title="Review package media failure",
+            )
+            run_dir = tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            manifest = ralph.OperatorRunManifest.start(
+                run_dir=run_dir,
+                config=loop.config,
+                max_cycles=3,
+            )
+            manifest.record_child_run(child_manifest_path)
+            manifest.record_queue(operator_snapshot(failed=[issue]))
+            manifest.record_checkpoint(
+                "queue_blocked",
+                message="agent-failed issue(s) remain and need operator recovery.",
+                status="failed",
+                recovery_guidance="Inspect failed issues.",
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.inspect_operator_run_status(str(run_dir), runner)
+
+            rollup = json.loads(
+                (run_dir / ralph.OPERATOR_ROLLUP_JSON_NAME).read_text(encoding="utf-8")
+            )
+            markdown = (run_dir / ralph.OPERATOR_ROLLUP_MARKDOWN_NAME).read_text(
+                encoding="utf-8"
+            )
+
+        text = output.getvalue()
+        failed_entry = rollup["issues"]["failed"][0]
+        summary = failed_entry["failure_summary"]
+        package_failure = summary["review_package_failure"]
+        self.assertEqual(summary["failure_type"], ralph.REVIEW_PACKAGE_FAILURE_TYPE)
+        self.assertEqual(summary["phase"], "Review package")
+        self.assertEqual(
+            summary["primary_log_path"],
+            str(child_run_dir / "marimo-review-package-media.log"),
+        )
+        self.assertEqual(
+            package_failure["media_failures"][0]["status"],
+            "missing",
+        )
+        self.assertIn("pre-push requeue dry-run", package_failure["next_safe_action"])
+        self.assertIsNone(failed_entry["local_integration_commit"])
+        self.assertEqual(
+            rollup["requeue_recovery"]["eligible_pre_push"][0]["issue"]["number"],
+            234,
+        )
+        self.assertIn("Review package failure", markdown)
+        self.assertIn("Review package media failures", markdown)
+        self.assertIn("pre-push requeue dry-run", markdown)
+        self.assertIn("Review package failure: generator_log=not_recorded", text)
+        self.assertIn("media_failures=1", text)
+        self.assertIn("pre-push requeue dry-run", text)
+
     def test_operator_requeue_recovery_classifies_non_requeue_failures(
         self,
     ) -> None:
@@ -13203,6 +13364,9 @@ Build it.
             any(command[:3] == ("gh", "issue", "close") for command in commands)
         )
         self.assertEqual(manifest["status"], "failed")
+        self.assertIsNone(manifest["integration_commit"])
+        self.assertEqual(manifest["pushes"], {})
+        self.assertNotEqual(manifest["github_metadata"]["status"], "marked_reviewing")
         self.assertEqual(manifest["review_package"]["status"], "failed")
         self.assertIn(
             "Review package generation failed",
@@ -15541,6 +15705,9 @@ Build it.
             )
         )
         self.assertEqual(manifest["status"], "failed")
+        self.assertIsNone(manifest["integration_commit"])
+        self.assertEqual(manifest["pushes"], {})
+        self.assertNotEqual(manifest["github_metadata"]["status"], "marked_reviewing")
         self.assertEqual(manifest["review_package"]["status"], "failed")
         self.assertIn(
             "Review package generation failed",

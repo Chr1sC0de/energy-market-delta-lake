@@ -140,8 +140,11 @@ child manifests, and live queue labels before another Operator run is started.
 When recorded or live queue state includes open `agent-failed` issues, status
 also classifies whether each failed issue is eligible for Ralph-owned pre-push
 requeue recovery, post-push metadata recovery, manual Gitflow recovery,
-malformed issue-contract repair, or normal implementation repair. A foreground
-run is also available for human terminals:
+malformed issue-contract repair, or normal implementation repair. For
+**Review package** failures, status and rollups show the package generator log,
+validation reason, media failure evidence, and the next safe action before an
+operator inspects raw Codex JSONL or browser media logs. A foreground run is
+also available for human terminals:
 
 ```bash
 python3 scripts/ralph.py --drain-promote-all --max-cycles 10
@@ -212,6 +215,9 @@ Use this checklist:
   `review_package.status` and `review_package.validation_status` are `passed`;
   inspect the local `review-package.html` path and any `review_package.media`
   entries from the completion comment when the code diff needs closer review.
+  Open the HTML file directly in a browser; recorded media paths are sibling
+  artifacts beside that HTML package, usually `.webm` files, and should play
+  from the same run directory without a server.
   Operator rollups and **Post-promotion review** prompts carry only bounded
   package evidence, such as status, local HTML path, media count, and summary;
   open the HTML file locally when full package content is needed.
@@ -431,6 +437,18 @@ which requires proof that the recorded **Local integration** commit reached the
 expected **Integration target**, and from manual Gitflow recovery, which is
 resolved before normal drain or **Promotion** continues.
 
+For a **Review package** failure, inspect the `Review package status` and
+`Review package failure` blocks from `--inspect-run`, Operator status, or the
+rollup before opening raw logs. Generation failures point to
+`codex-review-package.jsonl`; validation failures also report the local
+`review-package.html` and validation reason; media failures report the recipe
+log and any missing sibling video artifact. Fix package generation,
+validation, or media capture in the preserved implementation worktree, then use
+the Ralph-owned pre-push requeue dry run before live recovery. Failed package
+runs must remain pre-push: do not create **Local integration** commits, update
+**Integration targets**, push **Exploratory branches**, mark
+`agent-reviewing`, or close issues by hand.
+
 If **Ready issue refresh** fails after **Local integration**, do not roll back
 the integrated commit. Inspect `ready_issue_refresh.mutation_results` in the run
 manifest, reconcile only the failed GitHub Issue metadata, then restart the
@@ -471,7 +489,9 @@ surfaces, **Post-promotion review** follow-ups, deployment execution,
 deploy-repair issue creation, final queue state, and the stop or failure
 reason. The rollup also includes a requeue-recovery section for open
 `agent-failed` issues, including the dry-run `--recover-run` command when
-pre-push requeue is available. Runs that stop for **Exploratory acceptance
+pre-push requeue is available. Failed **Review package** entries include the
+same generator log, validation reason, media failure, and next safe action
+reported by `--inspect-run`. Runs that stop for **Exploratory acceptance
 review** also write
 `exploratory-acceptance-review.md` and
 `exploratory-acceptance-review.json` beside the rollup. Use the JSON rollup for
