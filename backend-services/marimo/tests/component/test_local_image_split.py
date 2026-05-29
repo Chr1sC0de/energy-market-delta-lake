@@ -106,3 +106,20 @@ class TestLocalMarimoImageSplit:
         assert "/marimo/*/favicon.ico" in protected_marimo
         assert "/marimo/*/manifest.json" in protected_marimo
         assert "reverse_proxy /marimo* {$MARIMO_SERVER}" in caddyfile
+
+    def test_caddy_serves_only_marimo_listing_from_static_build(self) -> None:
+        caddyfile = _read(BACKEND_SERVICES_DIR / "caddy" / "Caddyfile")
+        protected_listing = _caddy_matcher_block(
+            caddyfile,
+            "@protectedMarimoListing",
+        )
+        protected_marimo = _caddy_matcher_block(caddyfile, "@protectedMarimo")
+
+        assert "path /marimo /marimo/" in protected_listing
+        assert "not header Connection *Upgrade*" in protected_listing
+        assert "handle @protectedMarimoListing" in caddyfile
+        assert "uri /oauth2/marimo/validate" in caddyfile
+        assert "rewrite * /marimo/index.html" in caddyfile
+        assert "not path /marimo /marimo/" in protected_marimo
+        assert "not path /marimo/dashboard-registry.json" not in protected_marimo
+        assert "reverse_proxy {$MARIMO_SERVER}" in caddyfile

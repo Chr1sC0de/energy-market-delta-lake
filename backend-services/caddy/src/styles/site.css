@@ -407,6 +407,7 @@ h1 {
 .architecture-node {
   --architecture-node-rgb: var(--emdl-slate-rgb);
   width: var(--architecture-node-width, 156px);
+  max-width: 100%;
   min-height: var(--architecture-node-height, 78px);
   display: grid;
   align-content: center;
@@ -422,12 +423,15 @@ h1 {
     0 1px 0 rgb(var(--emdl-panel-rgb) / 0.9) inset,
     0 10px 24px rgb(var(--emdl-ink-rgb) / 0.12);
   color: var(--emdl-ink);
+  overflow: hidden;
 }
 
 .architecture-node span,
 .architecture-node strong,
 .architecture-node small {
   display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .architecture-node span {
@@ -1457,6 +1461,7 @@ a.marimo-dashboard-card:hover {
 .workflow-node {
   --workflow-node-rgb: var(--emdl-slate-rgb);
   width: 178px;
+  max-width: 100%;
   min-height: 84px;
   display: grid;
   align-content: center;
@@ -1472,12 +1477,15 @@ a.marimo-dashboard-card:hover {
     0 1px 0 rgb(var(--emdl-panel-rgb) / 0.9) inset,
     0 10px 24px rgb(var(--emdl-ink-rgb) / 0.12);
   color: var(--emdl-ink);
+  overflow: hidden;
 }
 
 .workflow-node span,
 .workflow-node strong,
 .workflow-node small {
   display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .workflow-node span {
