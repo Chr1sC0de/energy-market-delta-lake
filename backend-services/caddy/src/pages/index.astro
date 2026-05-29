@@ -15,19 +15,62 @@ import PortfolioLayout from "../layouts/PortfolioLayout.astro";
     <section class="hero" aria-labelledby="page-title">
       <div class="hero-inner">
         <div class="hero-heading">
-          <p class="eyebrow">Public project portfolio case study</p>
+          <p class="eyebrow">Analyst catalogue entrypoint</p>
           <h1 id="page-title">Energy Market Delta Lake</h1>
         </div>
         <div class="hero-copy">
           <p class="hero-lede">
-            A deployable Australian energy-market data platform with Dagster assets, S3-compatible Delta storage, protected Marimo notebooks, and an AI delivery system for checked code changes.
+            A deployable Australian energy-market data platform for scanning curated gas dashboards, launching protected Marimo notebooks, and tracing results back to Dagster assets and Delta storage.
           </p>
+          <div class="hero-actions" aria-label="Primary actions">
+            <a class="primary-action" href="/marimo">Open dashboard catalogue</a>
+            <a class="secondary-action" href="/dagster-webserver/guest">View asset graph</a>
+          </div>
           <ServiceLinks />
         </div>
         <div class="hero-diagram">
           <HeroArchitectureFallback />
           <div class="hero-diagram-interaction" aria-hidden="false">
             <HeroArchitectureFlow client:only="react" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="catalogue-direction-section" aria-labelledby="catalogue-direction-title">
+      <div class="section-inner catalogue-direction-inner">
+        <div class="section-heading catalogue-direction-heading">
+          <p class="eyebrow">Catalogue workflow</p>
+          <h2 id="catalogue-direction-title">Find the right dashboard before opening a notebook.</h2>
+          <p>
+            The protected catalogue is designed for dense scan paths: search by
+            topic, filter by audience or lifecycle status, check backing
+            silver.gas_model assets, then launch available notebooks directly.
+          </p>
+        </div>
+        <div class="catalogue-preview" aria-label="Dashboard catalogue preview">
+          <div class="catalogue-preview-toolbar">
+            <span>Search: capacity</span>
+            <span>Audience: Analyst</span>
+            <span>Status: Available</span>
+          </div>
+          <div class="catalogue-preview-row">
+            <strong>Gas Market Overview</strong>
+            <span>Available</span>
+            <small>prices, schedules, flow, capacity</small>
+            <a href="/marimo">Open</a>
+          </div>
+          <div class="catalogue-preview-row">
+            <strong>Capacity Outlook Explorer</strong>
+            <span>Planned</span>
+            <small>silver.gas_model capacity assets</small>
+            <em>Roadmap</em>
+          </div>
+          <div class="catalogue-preview-row">
+            <strong>Source Coverage Matrix</strong>
+            <span>Available</span>
+            <small>source-system and source-table coverage</small>
+            <a href="/marimo">Open</a>
           </div>
         </div>
       </div>

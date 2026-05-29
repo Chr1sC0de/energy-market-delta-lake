@@ -147,7 +147,7 @@ Zone explainer uses the
 same bounded loader to show current `silver_gas_dim_zone` coverage and
 source-qualified identifiers. Its table explorer remains
 the selected-table workbench for storage inspection, readiness navigation,
-bounded-read diagnostics, and concept-gallery metadata for mapped
+bounded-read diagnostics, and catalogue metadata for mapped
 `silver.gas_model` assets. The
 Marimo-Codex workspace is
 bound to localhost for human-operated research and
@@ -223,10 +223,11 @@ without making local development performance claims.
 - `backend-services/authentication`
   - implements the OIDC/session bridge used in front of protected routes
 - `backend-services/caddy`
-  - provides the reverse-proxy image, root Astro portfolio, and routing rules
+  - provides the reverse-proxy image, root Astro portfolio, protected
+    `/marimo` analyst catalogue shell, and routing rules
 - `backend-services/marimo`
-  - notebook-oriented Subproject with a registry-backed `/marimo` concept
-    gallery, registry-only glossary explorer, operational readiness and
+  - notebook-oriented Subproject with registry JSON, notebook routes,
+    registry-only glossary explorer, operational readiness and
     materialization freshness dashboards, immutable cache headers for packaged
     static assets, a curated dashboard image used locally and in AWS,
     plus a local-only Marimo-Codex research workspace image
@@ -273,6 +274,7 @@ Gas market knowledge base responsibility:
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
   - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `backend-services/caddy/public/theme.css`
   - `backend-services/marimo/src/marimoserver/main.py`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`

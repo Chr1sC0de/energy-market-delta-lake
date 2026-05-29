@@ -10,9 +10,11 @@ Deploy only the curated `marimo-dashboard` image to AWS. The dashboard runs on a
 private `t3.small` EC2 instance in the VPC private subnet, with no public IP and
 no SSH key. Operators use SSM Session Manager for host access.
 
-Caddy remains the only public ingress. It proxies `/marimo*` to the Cloud Map
-name `marimo-dashboard.dagster:2718`. Notebook routes stay behind the existing
-FastAPI auth `forward_auth` flow, while `/marimo/health` returns only
+Caddy remains the only public ingress. It serves the protected Astro `/marimo`
+analyst catalogue shell after the existing FastAPI auth `forward_auth` flow,
+then proxies `/marimo/dashboard-registry.json`, notebook routes, packaged
+assets, health, and websocket paths to the Cloud Map name
+`marimo-dashboard.dagster:2718`. `/marimo/health` returns only
 `{"status":"ok"}` without authentication for deployed health checks.
 
 The dashboard instance pulls the digest-pinned ECR image built from
@@ -38,9 +40,9 @@ S3-compatible bucket reachability, object scans, truncation, bucket errors, and
 Delta or Parquet table-prefix discovery. AWS mode checks the configured buckets
 only and does not require account-wide S3 bucket listing permission.
 
-The `/marimo` entry route renders the same registry as a concept gallery hub.
-Available dashboard cards link to mounted notebook routes, while planned
-dashboard cards stay visible without notebook links. Registry-only notebooks
+The Caddy-served `/marimo` catalogue fetches the same registry at runtime.
+Available dashboard entries link to mounted notebook routes, while planned
+dashboard entries stay visible without notebook links. Registry-only notebooks
 such as the glossary explorer can browse Marimo-local Market context metadata
 without adding generated-file reads at runtime.
 
@@ -88,14 +90,15 @@ development.
 The local-only Marimo-Codex workspace stays out of Pulumi and remains bound to
 `127.0.0.1:2719` in compose.
 
-The dashboard registry and concept gallery are part of the existing Marimo
-image contents. Adding or updating registry metadata does not require a
-separate Docker build context and does not add AWS write paths.
+The dashboard registry stays part of the existing Marimo image contents, while
+the catalogue shell is part of the Caddy Astro build context. Adding or
+updating registry metadata does not require Caddy changes and does not add AWS
+write paths.
 The glossary explorer stays inside the same boundary: it reads the packaged
 parsed registry, not live S3 tables.
 The concept-to-asset explorer stays inside that registry-only boundary. It maps
 Market context glossary concepts to registry backing assets, available
-dashboard routes, planned concept-gallery cards, and table explorer deep links
+dashboard routes, planned catalogue entries, and table explorer deep links
 without reading table rows or changing S3, Dagster, ETL, or AWS permissions.
 
 The schema data dictionary explorer stays inside the same read-only boundary.
@@ -115,7 +118,7 @@ The table explorer remains inside the same read-only boundary while acting as
 the dashboard-roadmap workbench for selected table rows. It keeps existing
 bounded preview, GraphQL fallback, and storage-only behavior, and now links
 selected rows to the data readiness overview, AWS bounded-read diagnostics, and
-registry-backed concept-gallery metadata for mapped `silver.gas_model` assets.
+registry-backed catalogue metadata for mapped `silver.gas_model` assets.
 
 The materialization freshness dashboard stays inside the same boundary. It
 uses Dagster GraphQL catalogue metadata plus the existing storage overlay to
@@ -310,6 +313,7 @@ browser evidence shows a specific cold-start bottleneck.
   - `infrastructure/aws-pulumi/components/security_groups.py`
   - `infrastructure/aws-pulumi/components/service_discovery.py`
   - `backend-services/caddy/Caddyfile`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `backend-services/marimo/Dockerfile`
   - `backend-services/marimo/src/marimoserver/main.py`
   - `backend-services/marimo/src/marimoserver/dashboard_registry.py`

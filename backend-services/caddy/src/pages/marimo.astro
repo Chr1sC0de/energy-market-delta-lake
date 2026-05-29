@@ -1,0 +1,292 @@
+---
+import PortfolioLayout from "../layouts/PortfolioLayout.astro";
+---
+
+<PortfolioLayout
+  title="Marimo Analyst Catalogue | Energy Market Delta Lake"
+  description="Protected analyst catalogue for Energy Market Delta Lake Marimo dashboards, including available notebooks, planned concepts, audience filters, status, and backing assets."
+>
+  <main class="catalogue-page" data-catalogue-app>
+    <section class="catalogue-masthead" aria-labelledby="catalogue-title">
+      <div class="catalogue-masthead-copy">
+        <p class="eyebrow">Protected dashboard catalogue</p>
+        <h1 id="catalogue-title">Marimo analyst catalogue</h1>
+        <p>
+          Runtime registry view for available notebooks and planned dashboard
+          concepts across gas-market operations, analysis, stakeholder review,
+          and data engineering.
+        </p>
+      </div>
+      <dl class="catalogue-summary" aria-label="Catalogue summary">
+        <div>
+          <dt>Available</dt>
+          <dd data-summary-available>0</dd>
+        </div>
+        <div>
+          <dt>Planned</dt>
+          <dd data-summary-planned>0</dd>
+        </div>
+        <div>
+          <dt>Assets</dt>
+          <dd data-summary-assets>0</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="catalogue-toolbar" aria-label="Catalogue controls">
+      <label class="catalogue-search">
+        <span>Search</span>
+        <input
+          type="search"
+          data-search
+          autocomplete="off"
+          placeholder="Title, description, audience, asset"
+        />
+      </label>
+      <label>
+        <span>Audience</span>
+        <select data-audience-filter>
+          <option value="all">All audiences</option>
+        </select>
+      </label>
+      <label>
+        <span>Status</span>
+        <select data-status-filter>
+          <option value="all">All statuses</option>
+          <option value="available">Available</option>
+          <option value="planned">Planned</option>
+        </select>
+      </label>
+      <label class="catalogue-search">
+        <span>Backing asset</span>
+        <input
+          type="search"
+          data-asset-filter
+          autocomplete="off"
+          placeholder="silver.gas_model..."
+        />
+      </label>
+    </section>
+
+    <section class="catalogue-status" data-loading-state aria-live="polite">
+      Loading dashboard registry...
+    </section>
+
+    <section class="catalogue-table-shell" aria-labelledby="catalogue-results-title">
+      <div class="catalogue-results-heading">
+        <h2 id="catalogue-results-title">Dashboard registry</h2>
+        <p><span data-result-count>0</span> matching entries</p>
+      </div>
+      <div class="catalogue-table-wrap">
+        <table class="catalogue-table">
+          <thead>
+            <tr>
+              <th scope="col">Dashboard</th>
+              <th scope="col">Status</th>
+              <th scope="col">Audience</th>
+              <th scope="col">Backing assets</th>
+              <th scope="col">Launch</th>
+            </tr>
+          </thead>
+          <tbody data-results></tbody>
+        </table>
+      </div>
+      <div class="catalogue-empty" data-empty-state hidden>
+        No dashboards match the current search and filters.
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const app = document.querySelector("[data-catalogue-app]");
+    const searchInput = app?.querySelector("[data-search]");
+    const assetInput = app?.querySelector("[data-asset-filter]");
+    const audienceSelect = app?.querySelector("[data-audience-filter]");
+    const statusSelect = app?.querySelector("[data-status-filter]");
+    const loadingState = app?.querySelector("[data-loading-state]");
+    const emptyState = app?.querySelector("[data-empty-state]");
+    const resultsBody = app?.querySelector("[data-results]");
+    const resultCount = app?.querySelector("[data-result-count]");
+    const availableSummary = app?.querySelector("[data-summary-available]");
+    const plannedSummary = app?.querySelector("[data-summary-planned]");
+    const assetSummary = app?.querySelector("[data-summary-assets]");
+
+    const labelFromSlug = (value) =>
+      value
+        .split("-")
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+
+    const normalise = (value) => String(value ?? "").toLowerCase();
+
+    const setText = (element, value) => {
+      if (element) {
+        element.textContent = value;
+      }
+    };
+
+    const uniqueSorted = (values) => [...new Set(values)].sort((a, b) => a.localeCompare(b));
+
+    const renderAudienceOptions = (audiences) => {
+      if (!(audienceSelect instanceof HTMLSelectElement)) {
+        return;
+      }
+      for (const audience of audiences) {
+        const option = document.createElement("option");
+        option.value = audience;
+        option.textContent = labelFromSlug(audience);
+        audienceSelect.append(option);
+      }
+    };
+
+    const renderRows = (entries) => {
+      if (!(resultsBody instanceof HTMLTableSectionElement)) {
+        return;
+      }
+      resultsBody.replaceChildren(
+        ...entries.map((entry) => {
+          const row = document.createElement("tr");
+          row.dataset.status = entry.status;
+
+          const dashboardCell = document.createElement("th");
+          dashboardCell.scope = "row";
+          const title = document.createElement("strong");
+          title.textContent = entry.title;
+          const description = document.createElement("span");
+          description.textContent = entry.description;
+          dashboardCell.append(title, description);
+
+          const statusCell = document.createElement("td");
+          statusCell.dataset.label = "Status";
+          const status = document.createElement("span");
+          status.className = `catalogue-pill catalogue-pill-${entry.status}`;
+          status.textContent = labelFromSlug(entry.status);
+          statusCell.append(status);
+
+          const audienceCell = document.createElement("td");
+          audienceCell.dataset.label = "Audience";
+          const audienceList = document.createElement("div");
+          audienceList.className = "catalogue-chip-list";
+          for (const audience of entry.audiences) {
+            const chip = document.createElement("span");
+            chip.className = "catalogue-chip";
+            chip.textContent = labelFromSlug(audience);
+            audienceList.append(chip);
+          }
+          audienceCell.append(audienceList);
+
+          const assetsCell = document.createElement("td");
+          assetsCell.dataset.label = "Backing assets";
+          const assetList = document.createElement("div");
+          assetList.className = "catalogue-asset-list";
+          const assets = entry.backing_assets.length > 0 ? entry.backing_assets : ["Registry metadata"];
+          for (const asset of assets.slice(0, 4)) {
+            const chip = document.createElement("span");
+            chip.className = "catalogue-asset";
+            chip.textContent = asset;
+            assetList.append(chip);
+          }
+          if (assets.length > 4) {
+            const overflow = document.createElement("span");
+            overflow.className = "catalogue-asset catalogue-asset-more";
+            overflow.textContent = `+${assets.length - 4} more`;
+            assetList.append(overflow);
+          }
+          assetsCell.append(assetList);
+
+          const launchCell = document.createElement("td");
+          launchCell.dataset.label = "Launch";
+          if (entry.status === "available" && entry.notebook_route) {
+            const link = document.createElement("a");
+            link.className = "catalogue-launch";
+            link.href = entry.notebook_route;
+            link.textContent = "Open";
+            launchCell.append(link);
+          } else {
+            const planned = document.createElement("span");
+            planned.className = "catalogue-planned";
+            planned.textContent = "Roadmap";
+            launchCell.append(planned);
+          }
+
+          row.append(dashboardCell, statusCell, audienceCell, assetsCell, launchCell);
+          return row;
+        }),
+      );
+    };
+
+    const searchableText = (entry) =>
+      [
+        entry.title,
+        entry.description,
+        entry.status,
+        ...entry.audiences,
+        ...entry.backing_assets,
+        ...entry.market_context_ids,
+      ]
+        .map(normalise)
+        .join(" ");
+
+    const applyFilters = (entries) => {
+      const query = normalise(searchInput?.value).trim();
+      const assetQuery = normalise(assetInput?.value).trim();
+      const audience = audienceSelect instanceof HTMLSelectElement ? audienceSelect.value : "all";
+      const status = statusSelect instanceof HTMLSelectElement ? statusSelect.value : "all";
+
+      const filtered = entries.filter((entry) => {
+        const textMatches = query === "" || searchableText(entry).includes(query);
+        const assetMatches =
+          assetQuery === "" ||
+          entry.backing_assets.some((asset) => normalise(asset).includes(assetQuery));
+        const audienceMatches = audience === "all" || entry.audiences.includes(audience);
+        const statusMatches = status === "all" || entry.status === status;
+        return textMatches && assetMatches && audienceMatches && statusMatches;
+      });
+
+      renderRows(filtered);
+      setText(resultCount, String(filtered.length));
+      if (emptyState instanceof HTMLElement) {
+        emptyState.hidden = filtered.length > 0;
+      }
+    };
+
+    const loadRegistry = async () => {
+      try {
+        const response = await fetch("/marimo/dashboard-registry.json", {
+          headers: { Accept: "application/json" },
+        });
+        if (!response.ok) {
+          throw new Error(`Registry returned ${response.status}`);
+        }
+        const payload = await response.json();
+        const entries = Array.isArray(payload.entries) ? payload.entries : [];
+        renderAudienceOptions(Array.isArray(payload.audiences) ? payload.audiences : []);
+
+        const assetCount = uniqueSorted(entries.flatMap((entry) => entry.backing_assets ?? [])).length;
+        setText(availableSummary, String(entries.filter((entry) => entry.status === "available").length));
+        setText(plannedSummary, String(entries.filter((entry) => entry.status === "planned").length));
+        setText(assetSummary, String(assetCount));
+        setText(loadingState, "Dashboard registry loaded.");
+        loadingState?.classList.add("catalogue-status-loaded");
+
+        for (const control of [searchInput, assetInput, audienceSelect, statusSelect]) {
+          control?.addEventListener("input", () => applyFilters(entries));
+          control?.addEventListener("change", () => applyFilters(entries));
+        }
+        applyFilters(entries);
+      } catch (error) {
+        setText(
+          loadingState,
+          "Dashboard registry could not be loaded. Check the protected Marimo registry endpoint.",
+        );
+        loadingState?.classList.add("catalogue-status-error");
+        if (emptyState instanceof HTMLElement) {
+          emptyState.hidden = false;
+          emptyState.textContent = "No registry data is available yet.";
+        }
+      }
+    };
+
+    loadRegistry();
+  </script>
+</PortfolioLayout>

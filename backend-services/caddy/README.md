@@ -20,7 +20,10 @@ auth, and Marimo.
 - [Dockerfile](Dockerfile) builds the Astro app, copies `dist/` into
   `/var/www/html`, and then runs the Caddy runtime image.
 - The generated root page links to the guest Dagster UI, protected Dagster
-  admin UI, and protected Marimo dashboard.
+  admin UI, and the protected Caddy-served Marimo analyst catalogue.
+- The generated `/marimo` page fetches
+  `/marimo/dashboard-registry.json` at runtime, while Caddy keeps registry JSON
+  and `/marimo/<notebook>/` routes proxied to the Marimo service.
 - The generated `/theme.css` asset is served from Caddy's static root so Marimo
   pages can keep using the same palette.
 
@@ -29,6 +32,9 @@ auth, and Marimo.
 The portfolio source lives under [src/](src/):
 
 - [src/pages/index.astro](src/pages/index.astro) composes the page.
+- [src/pages/marimo.astro](src/pages/marimo.astro) composes the protected
+  analyst catalogue shell for scanning dashboard status, audience, backing
+  assets, and launch routes from the runtime Marimo registry JSON.
 - [src/components/HeroArchitectureFlow.tsx](src/components/HeroArchitectureFlow.tsx)
   owns the invisible first-view controller and deployed runtime detail modal.
   [src/components/HeroArchitectureFallback.astro](src/components/HeroArchitectureFallback.astro)
@@ -120,6 +126,7 @@ check** surface from the changed Subproject or root, as described in
   - `backend-services/caddy/tsconfig.json`
   - `backend-services/caddy/public/theme.css`
   - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `backend-services/caddy/src/components/AutomationWorkflowFlow.tsx`
   - `backend-services/caddy/src/components/HeroArchitectureFallback.astro`
   - `backend-services/caddy/src/components/HeroArchitectureFlow.tsx`

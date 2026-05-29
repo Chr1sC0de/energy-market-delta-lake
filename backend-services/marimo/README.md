@@ -57,25 +57,23 @@ The dashboard app in [src/marimoserver/main.py](src/marimoserver/main.py):
 - exposes `/health` for container health checks
 - discovers `*.py` notebooks from `notebooks/`
 - mounts each notebook as a marimo sub-app under `/marimo/<notebook-name>`
-- serves a concept gallery hub at `/marimo`, grouped by generated Market
-  context concept and filterable by audience tag
 - serves the code-local dashboard roadmap registry at
   `/marimo/dashboard-registry.json`
-- links the Caddy-served shared theme at `/theme.css` for the index and
-  notebook head
+- links the Caddy-served shared theme at `/theme.css` for notebook heads
 - applies static asset response headers for Marimo packaged assets, including
   the `woff` and `woff2` MIME-type fix and immutable caching for
   `/marimo/<notebook>/assets/*`
 
-In local compose and AWS, Caddy proxies `/marimo*` traffic to
-`marimo-dashboard`. Most notebook routes are protected by the authentication
-service, while `/marimo/health`, static asset paths, and websocket paths are
-proxied through directly. Caddy does not serve Marimo packaged assets from its
-own static root; it excludes `/marimo/*/assets/*`, notebook favicon and
-manifest paths, `/marimo/health`, and websocket upgrades from `forward_auth`,
-then reverse-proxies them to `marimo-dashboard`. Caddy still serves the
-Astro-generated `/theme.css` from its static root, so notebook pages can use
-the same palette as the root portfolio page.
+In local compose and AWS, Caddy serves the protected Astro `/marimo` analyst
+catalogue shell after the same Marimo `forward_auth` check, then leaves
+`/marimo/dashboard-registry.json`, `/marimo/<notebook>/`, packaged asset,
+health, and websocket paths proxied to `marimo-dashboard`. Caddy does not serve
+Marimo packaged assets from its own static root; it excludes
+`/marimo/*/assets/*`, notebook favicon and manifest paths, `/marimo/health`,
+and websocket upgrades from `forward_auth`, then reverse-proxies them to
+`marimo-dashboard`. Caddy still serves the Astro-generated `/theme.css` from
+its static root, so notebook pages can use the same palette as the root
+portfolio and catalogue pages.
 
 ## Static assets
 
@@ -84,9 +82,11 @@ assets such as `/marimo/<notebook>/assets/<name>-<hash>.js`. Marimo already
 emits preload hints for its disconnect images and fonts, plus `modulepreload`
 hints for JavaScript chunks. The FastAPI wrapper adds
 `Cache-Control: public, max-age=31536000, immutable` to successful
-`/marimo/<notebook>/assets/*` responses and leaves `/marimo`,
+`/marimo/<notebook>/assets/*` responses and leaves
 `/marimo/dashboard-registry.json`, notebook `manifest.json`, notebook favicons,
-and `/theme.css` outside that immutable cache rule.
+and `/theme.css` outside that immutable cache rule. The exact `/marimo`
+catalogue route is Caddy-served static Astro output, not a Marimo packaged
+asset route.
 
 Component coverage in
 [tests/component/test_main.py](tests/component/test_main.py) verifies
@@ -138,20 +138,20 @@ planned or available status, notebook names and routes, backing
 `silver.gas_model` assets, Market context IDs, source chunk IDs,
 silver chunk paths, and source hashes.
 
-The `/marimo` entry route renders this registry as a concept gallery hub.
-Available registry entries link only when their backing notebook is mounted in
-the current image. Planned entries stay visible as roadmap cards but do not
-emit notebook links. The same registry is served as JSON from
-`/marimo/dashboard-registry.json` so future Marimo notebooks can render context
-panels without reading Gas market knowledge base Markdown directly. When the
-packaged generated corpus is absent, registry loading still succeeds because
-Market context IDs, source chunk IDs, silver chunk paths, and source hashes are
+The Caddy-served `/marimo` catalogue fetches this registry as JSON at runtime.
+Available registry entries can link to their backing notebook routes, while
+planned entries stay visible as roadmap entries without emitting dead notebook
+links. The registry is served as JSON from `/marimo/dashboard-registry.json` so
+the catalogue and future Marimo notebooks can render context panels without
+reading Gas market knowledge base Markdown directly. When the packaged
+generated corpus is absent, registry loading still succeeds because Market
+context IDs, source chunk IDs, silver chunk paths, and source hashes are
 code-local registry metadata. In AWS mode this remains read-only, uses the
 existing dashboard image contents, and does not require a Docker build-context
 change.
 
 Registry-backed dashboards that only browse registry metadata may have no
-backing `silver.gas_model` assets. The concept gallery renders those entries as
+backing `silver.gas_model` assets. The catalogue renders those entries as
 registry metadata only instead of inventing table dependencies.
 
 [src/marimoserver/gas_dashboard.py](src/marimoserver/gas_dashboard.py) exposes
@@ -195,7 +195,7 @@ Marimo-local dashboard registry.
 The dashboard reads no table rows and consumes Market context lineage through
 the parsed registry. Its first viewport shows registry health, mapped asset count,
 available dashboard count, planned dashboard count, and coverage-gap count.
-Concept cards link to mounted dashboard routes, planned concept-gallery cards,
+Concept cards link to mounted dashboard routes, planned catalogue entries,
 and Gas Model Table Explorer deep links where the registry asset can be
 resolved to a `silver/gas_model/<table>` entry. Concepts with no backing assets
 and registry assets without glossary concept coverage render as explicit
@@ -339,7 +339,7 @@ S3-compatible buckets, overlays the Dagster GraphQL table asset catalogue, and
 shows bucket health, table assets, storage status, catalogue controls, and
 cached inspection for selected live tables. The selected-table workbench also
 links to the data readiness overview, AWS bounded-read diagnostics, and the
-registry-backed concept gallery so operators can move from a table row to its
+registry-backed catalogue metadata so operators can move from a table row to its
 readiness, preview-policy, and dashboard-roadmap context.
 
 The explorer reads the same AWS settings passed to the Marimo service by
@@ -374,7 +374,7 @@ unmaterialized, missing, and GraphQL-unavailable rows. Selected GraphQL assets
 show asset key, group, kinds, description, `dagster/uri`, materializable and
 executable flags, latest materialization timestamp, and column metadata when
 Dagster provides it. For mapped `silver.gas_model` assets, the explorer also
-surfaces Marimo concept-gallery metadata, including matching concept IDs,
+surfaces Marimo catalogue metadata, including matching concept IDs,
 audience tags, notebook routes, Market context IDs, source chunk IDs, and
 backing asset links from the dashboard registry. If GraphQL is unavailable, the
 notebook warns clearly and continues in storage-only mode. Empty buckets render
@@ -1051,7 +1051,7 @@ The services are started by [../compose.yaml](../compose.yaml).
 
 Dashboard notebooks are mounted from [notebooks/](notebooks/) into
 `marimo-dashboard`, so adding a curated notebook there and registering it as
-available makes it reachable from the `/marimo` concept gallery.
+available makes it reachable from the `/marimo` catalogue.
 
 Research notebooks and draft issue notes stay under
 [research-workspace/](research-workspace/) and are served by
@@ -1067,8 +1067,8 @@ local compose `marimo-dashboard` and `marimo-codex-workspace` services also set
 Interactive Map `Summary` Plotly iframe output without changing the notebook
 controls, data reads, Plotly traces, or dashboard routes.
 
-With the local backend stack running, open the Marimo concept gallery through
-Caddy and choose an available card such as `data_readiness_overview`,
+With the local backend stack running, open the Marimo catalogue through Caddy
+and choose an available entry such as `data_readiness_overview`,
 `dagster_asset_catalogue_status`, `materialization_freshness`,
 `s3_bucket_health`, `glossary_explorer`, `concept_to_asset_explorer`,
 `citation_chain_explorer`, `table_explorer`, `source_coverage_matrix`,

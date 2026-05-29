@@ -198,7 +198,8 @@ preview or deployment.
 Key deployed behaviors visible in the infrastructure code:
 
 - Caddy runs on a public EC2 instance, serves the Astro portfolio at the root
-  URL, and proxies to:
+  URL, serves the protected `/marimo` analyst catalogue shell after auth, and
+  proxies to:
   - `webserver-admin.dagster:3000`
   - `webserver-guest.dagster:3000`
   - `marimo-dashboard.dagster:2718`
@@ -209,13 +210,13 @@ Key deployed behaviors visible in the infrastructure code:
   daemon services
 - the curated Marimo dashboard runs on a private `t3.small` EC2 instance with
   an encrypted 30 GiB `gp3` root volume, uses its instance profile for S3
-  reads, exposes `/marimo/health` and Marimo packaged asset routes through
-  Caddy, serves the registry-backed `/marimo` concept gallery, returns
-  immutable cache headers for content-hashed `/marimo/<notebook>/assets/*`
+  reads, exposes `/marimo/health`, `/marimo/dashboard-registry.json`, notebook
+  routes, and Marimo packaged asset routes through Caddy, returns immutable
+  cache headers for content-hashed `/marimo/<notebook>/assets/*`
   responses, exposes the data readiness overview for platform operations and
   the registry-only glossary explorer for Market context metadata browsing,
   links table explorer rows to readiness, bounded-read diagnostics, and
-  concept-gallery metadata for mapped `silver.gas_model` assets, exposes
+  catalogue metadata for mapped `silver.gas_model` assets, exposes
   materialization freshness gaps from Dagster GraphQL metadata without table
   content scans,
   exposes the gas system notices, Flow operations, Operational Meter Flow,
@@ -430,6 +431,7 @@ system's services and Dagster workflows.
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
   - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `backend-services/caddy/public/theme.css`
   - `infrastructure/aws-pulumi/configs.py`
   - `infrastructure/aws-pulumi/code_locations.py`
@@ -492,6 +494,7 @@ system's services and Dagster workflows.
   - `backend-services/marimo/notebooks/gas_quality_composition.py`
   - `backend-services/marimo/notebooks/heating_value_pressure.py`
   - `backend-services/caddy/Caddyfile`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `infrastructure/aws-pulumi/.pre-commit-config.yaml`
   - `infrastructure/aws-pulumi/pyproject.toml`
   - `infrastructure/aws-pulumi/ecs_rollouts.py`

@@ -74,6 +74,33 @@
     reverse_proxy /marimo/login*  {$DAGSTER_AUTHSERVER}
     reverse_proxy /oauth2/marimo* {$DAGSTER_AUTHSERVER}
 
+    # Caddy-owned protected catalogue shell. Registry JSON and notebook routes
+    # below remain Marimo-owned runtime paths.
+    @marimoCatalogue {
+        path /marimo /marimo/
+    }
+
+    handle @marimoCatalogue {
+        forward_auth {$DAGSTER_AUTHSERVER} {
+                uri /oauth2/marimo/validate
+                header_up Host {upstream_hostport}
+                header_up X-Real-IP {remote_host}
+                header_up X-Forwarded-For {remote_host}
+                header_up X-Forwarded-Proto {scheme}
+                header_up X-Forwarded-Host {host}
+                header_up Cookie {http.request.header.Cookie}
+
+                @error status 401
+                handle_response @error {
+                    redir * /marimo/login
+                }
+        }
+
+        root * /var/www/html
+        rewrite * /marimo/index.html
+        file_server
+    }
+
     # Protected Marimo routes
     @protectedMarimo {
         path /marimo*

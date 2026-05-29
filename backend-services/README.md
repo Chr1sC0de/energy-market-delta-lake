@@ -226,12 +226,14 @@ Useful routes:
 - `/` for the Astro portfolio page with AI workflow and infrastructure diagrams
 - `/dagster-webserver/guest` for the guest Dagster UI
 - `/dagster-webserver/admin` for the protected admin Dagster UI
-- `/marimo` for curated Marimo dashboards through Caddy, including the table
-  explorer, data readiness overview, AWS bounded-read diagnostics, market
-  prices, materialization freshness, source coverage, source table lineage,
-  schedule runs, settlement activity, customer transfer and retail activity,
-  system notices, Bid / Offer stack, gas quality and composition, heating value
-  and SCADA pressure, capacity outlook, capacity auction, capacity
+- `/marimo` for the protected Caddy-served analyst catalogue, which fetches the
+  Marimo dashboard registry at runtime and links available entries to curated
+  notebooks, including the table explorer, data readiness overview, AWS
+  bounded-read diagnostics, market prices, materialization freshness, source
+  coverage, source table lineage, schedule runs, settlement activity, customer
+  transfer and retail activity, system notices, Bid / Offer stack, gas quality
+  and composition, heating value and SCADA pressure, capacity outlook, capacity
+  auction, capacity
   transactions, schema data dictionary, citation-chain explorer, Hub / Zone
   explainer, Flow operations, Operational Meter Flow, and forecast-vs-actual
   dashboards. The schema data dictionary groups read-only
@@ -245,7 +247,7 @@ Useful routes:
   Dagster table asset catalogue, filters by group, layer or domain, status, and
   search text, and previews only materialized tables. Its selected-table
   workbench links onward to data readiness, AWS bounded-read diagnostics, and
-  concept-gallery metadata for mapped `silver.gas_model` assets.
+  catalogue metadata for mapped `silver.gas_model` assets.
 - `http://127.0.0.1:2719` for the local-only Marimo-Codex research workspace
 
 The `aemo-etl` code location should appear in Dagster under
@@ -335,7 +337,7 @@ back to storage-only discovery when GraphQL is unavailable. Preview controls reu
 cached table scan for row limits, selected columns, sort order, text search, and
 selected-column statistics. The selected row also exposes links to readiness
 and bounded-read diagnostics plus dashboard registry metadata for matching
-`silver.gas_model` concept-gallery entries.
+`silver.gas_model` catalogue entries.
 
 ## Cached Archive seed
 
@@ -856,6 +858,7 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
   - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `backend-services/caddy/public/theme.css`
   - `infrastructure/aws-pulumi/dagster_core_deployment.py`
 - `sync.scope`: `operations`

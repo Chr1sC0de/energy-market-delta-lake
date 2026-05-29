@@ -72,8 +72,8 @@ scan-on-push on each repository, and exposes digest-pinned image URIs for the
 ECS task definitions and EC2 service bootstraps that need deterministic image
 availability.
 
-The Caddy build context runs the Astro portfolio build during the Docker build
-and copies the generated static files into Caddy's `/var/www/html` root before
+The Caddy build context runs the Astro build during the Docker build and copies
+the generated static files into Caddy's `/var/www/html` root before
 the image is pushed.
 
 ## Code-location manifest prototype
@@ -147,7 +147,7 @@ flowchart LR
 | webserver admin | 256 | 1024 | 3000 | `webserver-admin` | path prefix `/dagster-webserver/admin` |
 | webserver guest | 256 | 1024 | 3000 | `webserver-guest` | `--read-only`, path prefix `/dagster-webserver/guest` |
 | daemon | 256 | 1024 | none | none | background scheduler/sensor/orchestration process |
-| Marimo dashboard | 2 vCPU | 2 GiB | 2718 | `marimo-dashboard` | private EC2 `t3.small` host for the `/marimo` concept gallery and curated notebooks |
+| Marimo dashboard | 2 vCPU | 2 GiB | 2718 | `marimo-dashboard` | private EC2 `t3.small` host for registry JSON, notebook routes, and curated notebook assets behind the Caddy `/marimo` catalogue |
 
 Cluster-level behavior:
 
@@ -320,7 +320,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   the packaged Marimo registry for Market context IDs, source chunk
   IDs, related concepts, and dashboard states without generated-file or table
   reads. The table explorer links selected rows to readiness, bounded-read
-  diagnostics, and concept-gallery metadata for mapped `silver.gas_model`
+  diagnostics, and catalogue metadata for mapped `silver.gas_model`
   assets while keeping previews bounded in AWS mode.
   The gas market prices dashboard reads the curated market price fact through
   the same bounded helper surface and does not add AWS write paths.
@@ -361,9 +361,10 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   The Hub / Zone explainer reads bounded `silver_gas_dim_zone` samples through
   the same helper surface to show source-system coverage and source-qualified
   identifiers without adding AWS write paths.
-  The `/marimo` entry route renders the registry-backed concept gallery;
-  available cards link to mounted notebooks and planned cards remain non-link
-  roadmap entries. Marimo packaged assets stay on
+  Caddy serves the protected `/marimo` analyst catalogue shell, which fetches
+  the Marimo registry JSON at runtime. Available entries link to mounted
+  notebooks and planned entries remain non-link roadmap entries. Marimo
+  packaged assets stay on
   `/marimo/<notebook>/assets/*` routes, pass through Caddy to the dashboard,
   and return immutable cache headers when the FastAPI wrapper serves them
   successfully.
@@ -441,6 +442,7 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
   - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/src/pages/marimo.astro`
   - `backend-services/caddy/public/theme.css`
   - `backend-services/dagster-core/code-locations.aws.toml`
   - `backend-services/dagster-core/Dockerfile`
