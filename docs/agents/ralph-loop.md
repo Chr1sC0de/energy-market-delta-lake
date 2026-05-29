@@ -1177,9 +1177,12 @@ Changed Caddy portfolio and static-serving inputs documented by
 `backend-services/caddy/README.md` map to the root `/` route. Ralph runs
 `npm run build` from the Caddy Subproject, serves the built `dist/` directory
 from the issue worktree with its generic Review package media helper, and
-records desktop and narrow `.webm` videos next to the package artifacts. The
-Caddy recipe is Ralph-owned and does not require a Caddy-specific
-browser-review helper.
+records desktop and narrow `.webm` videos next to the package artifacts. When
+the built Astro output contains the Caddy-served `/marimo` dashboard listing
+route, the same Caddy recipe also records desktop and narrow `.webm` videos for
+`/marimo`. The Caddy recipe is Ralph-owned and does not require a Caddy-specific
+browser-review helper; it remains separate from Marimo notebook capture for
+`/marimo/<notebook>/` routes.
 
 Ralph then generates a **Review package** at `review-package.html` in the run
 directory and links recorded sibling media from that package. The generator

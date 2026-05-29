@@ -73,17 +73,22 @@ The local backend-services compose stack builds this image from
 
 ## Review package media
 
-Ralph owns the Caddy root portfolio Review package video recipe. When an issue
-changes one of this README's `sync.sources` portfolio or static-serving inputs,
-Ralph maps that change to the generated root route `/`, runs `npm run build`
-from this Subproject, serves the built `dist/` directory from the issue
-worktree, and records desktop and narrow `.webm` videos before **Local
-integration**, Trunk push, or Exploratory handoff.
+Ralph owns the Caddy portfolio and dashboard-listing Review package video
+recipe. When an issue changes one of this README's `sync.sources` portfolio or
+static-serving inputs, Ralph maps that change to the generated root route `/`,
+runs `npm run build` from this Subproject, serves the built `dist/` directory
+from the issue worktree, and records desktop and narrow `.webm` videos before
+**Local integration**, Trunk push, or Exploratory handoff. When the changed
+branch's built Astro output also contains the Caddy-served `/marimo` dashboard
+listing route, Ralph records desktop and narrow videos for `/marimo` as sibling
+Review package media as well.
 
 The Caddy Subproject does not need a separate browser-review helper. Ralph uses
 its generic Review package media helper from `tools/ralph-loop` and stores the
 recorded videos next to the Review package in the issue run directory. Build,
-serve, or capture failures block publication.
+serve, missing-route, or capture failures block publication. This is separate
+from Marimo notebook media capture for `/marimo/<notebook>/` routes, which
+remains owned by the Marimo Review package media recipe.
 
 ## Validation
 

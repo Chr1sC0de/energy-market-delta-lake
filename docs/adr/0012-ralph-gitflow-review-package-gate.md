@@ -9,7 +9,8 @@ contract, changed files, QA evidence, and review state before work becomes part
 of the **Integration target** or a durable **Exploratory branch**. Configured
 Review package media recipes may add sibling artifacts, such as Marimo
 dashboard `.webm` recordings for changed notebook routes or Caddy root
-portfolio `.webm` recordings for changed portfolio/static-serving inputs.
+portfolio and dashboard-listing `.webm` recordings for changed
+portfolio/static-serving inputs.
 
 ## Decision
 

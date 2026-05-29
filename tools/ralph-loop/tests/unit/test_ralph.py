@@ -626,6 +626,8 @@ class FakeRunner:
         fail_review_package: bool = False,
         fail_marimo_review_media: bool = False,
         fail_caddy_review_media: bool = False,
+        fail_caddy_review_media_routes: set[str] | None = None,
+        caddy_marimo_route_exists: bool = False,
         fail_ready_issue_refresh_analysis: bool = False,
         ready_issue_refresh_analysis_markdown: str = READY_ISSUE_REFRESH_ANALYSIS_MARKDOWN,
         fail_deploy_failure_analysis: bool = False,
@@ -646,6 +648,8 @@ class FakeRunner:
         self.fail_review_package = fail_review_package
         self.fail_marimo_review_media = fail_marimo_review_media
         self.fail_caddy_review_media = fail_caddy_review_media
+        self.fail_caddy_review_media_routes = fail_caddy_review_media_routes or set()
+        self.caddy_marimo_route_exists = caddy_marimo_route_exists
         self.fail_ready_issue_refresh_analysis = fail_ready_issue_refresh_analysis
         self.ready_issue_refresh_analysis_markdown = (
             ready_issue_refresh_analysis_markdown
@@ -719,6 +723,17 @@ class FakeRunner:
                 "fake timeout",
                 log_path,
             )
+        if command == ("npm", "run", "build") and cwd.name == "caddy":
+            dist_dir = cwd / "dist"
+            dist_dir.mkdir(parents=True, exist_ok=True)
+            (dist_dir / "index.html").write_text("fake Caddy root", encoding="utf-8")
+            if self.caddy_marimo_route_exists:
+                marimo_dir = dist_dir / "marimo"
+                marimo_dir.mkdir(parents=True, exist_ok=True)
+                (marimo_dir / "index.html").write_text(
+                    "fake Caddy Marimo listing",
+                    encoding="utf-8",
+                )
         if command in self.command_outputs:
             return ralph.CompletedCommand(
                 stdout=self.command_outputs[command].pop(0),
@@ -772,7 +787,14 @@ class FakeRunner:
             and len(command) > 6
             and command[6] == "ralph_loop.review_package_media"
         ):
-            if self.fail_caddy_review_media:
+            routes = [
+                command[index + 1]
+                for index, value in enumerate(command)
+                if value == "--route"
+            ]
+            if self.fail_caddy_review_media or any(
+                route in self.fail_caddy_review_media_routes for route in routes
+            ):
                 raise ralph.CommandFailure(
                     args,
                     cwd,
@@ -782,11 +804,6 @@ class FakeRunner:
                     log_path,
                 )
             artifact_dir = Path(command[command.index("--artifact-dir") + 1])
-            routes = [
-                command[index + 1]
-                for index, value in enumerate(command)
-                if value == "--route"
-            ]
             artifact_dir.mkdir(parents=True, exist_ok=True)
             for route in routes:
                 for viewport in ("desktop", "narrow"):
@@ -2935,6 +2952,33 @@ class RalphHelperTests(unittest.TestCase):
         self.assertEqual(
             ralph.changed_caddy_root_portfolio_routes(
                 ["backend-services/caddy/README.md"]
+            ),
+            (),
+        )
+
+    def test_changed_caddy_review_package_routes_include_built_marimo_listing(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dist_dir = Path(tmp) / "dist"
+            (dist_dir / "marimo").mkdir(parents=True)
+            (dist_dir / "marimo" / "index.html").write_text(
+                "fake Marimo listing",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                ralph.changed_caddy_review_package_routes(
+                    ["backend-services/caddy/src/styles/site.css"],
+                    dist_dir=dist_dir,
+                ),
+                ("/", "/marimo"),
+            )
+
+        self.assertEqual(
+            ralph.changed_caddy_review_package_routes(
+                ["backend-services/caddy/README.md"],
+                dist_dir=Path("/unused"),
             ),
             (),
         )
@@ -13256,6 +13300,66 @@ Build it.
         self.assertIn("--route", media_call.args)
         self.assertIn("/", media_call.args)
 
+    def test_trunk_review_package_records_caddy_marimo_listing_videos(
+        self,
+    ) -> None:
+        runner = FakeRunner(
+            status_outputs=[
+                " M backend-services/caddy/src/styles/site.css\n",
+                " M backend-services/caddy/src/styles/site.css\n",
+            ],
+            diff_outputs=["backend-services/caddy/src/styles/site.css\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            caddy_marimo_route_exists=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+
+            with redirect_stdout(io.StringIO()):
+                loop._handle_implementation(issue)
+
+            manifest = load_run_manifest(tmp_path)
+            package_path = next(
+                (tmp_path / "logs").glob("issue-42-*/review-package.html")
+            )
+
+            media = manifest["review_package"]["media"]
+            self.assertEqual(
+                [(item["route"], item["viewport"]) for item in media],
+                [
+                    ("/", "desktop"),
+                    ("/", "narrow"),
+                    ("/marimo", "desktop"),
+                    ("/marimo", "narrow"),
+                ],
+            )
+            for item in media:
+                self.assertTrue(Path(item["path"]).exists())
+                self.assertEqual(item["format"], "webm")
+                self.assertEqual(item["status"], "captured")
+            package_html = package_path.read_text(encoding="utf-8")
+            self.assertIn("caddy__root__desktop.webm", package_html)
+            self.assertIn("caddy__marimo__desktop.webm", package_html)
+
+        media_calls = [
+            call
+            for call in runner.calls
+            if call.args[:7]
+            == (
+                "uv",
+                "run",
+                "--with",
+                "playwright",
+                "python",
+                "-m",
+                "ralph_loop.review_package_media",
+            )
+        ]
+        self.assertEqual(len(media_calls), 2)
+        self.assertIn("/marimo", media_calls[1].args)
+
     def test_trunk_caddy_media_failure_stops_before_main_push(
         self,
     ) -> None:
@@ -13290,6 +13394,44 @@ Build it.
             "Caddy Review package media capture failed",
             manifest["review_package"]["failure_reason"],
         )
+
+    def test_trunk_caddy_marimo_media_failure_stops_before_main_push(
+        self,
+    ) -> None:
+        runner = FakeRunner(
+            status_outputs=[
+                " M backend-services/caddy/src/styles/site.css\n",
+                " M backend-services/caddy/src/styles/site.css\n",
+            ],
+            diff_outputs=["backend-services/caddy/src/styles/site.css\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            caddy_marimo_route_exists=True,
+            fail_caddy_review_media_routes={"/marimo"},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                manifest_obj = loop._handle_implementation(issue)
+
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertIsNotNone(manifest_obj)
+        self.assertFalse(
+            any(command[:3] == ("git", "merge", "--squash") for command in commands)
+        )
+        self.assertNotIn(("git", "push", "origin", "HEAD:main"), commands)
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["review_package"]["status"], "failed")
+        self.assertIn(
+            "Caddy Review package media capture failed",
+            manifest["review_package"]["failure_reason"],
+        )
+        failed_call = next(call for call in runner.calls if "/marimo" in call.args)
+        self.assertEqual(failed_call.phase, "#42: Caddy Review package media")
 
     def test_trunk_review_package_validation_failure_stops_before_main_push(
         self,
