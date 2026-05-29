@@ -15856,6 +15856,67 @@ Build it.
             manifest["review_package"]["failure_reason"],
         )
 
+    def test_exploratory_review_package_validation_failure_stops_before_handoff(
+        self,
+    ) -> None:
+        handoff_branch = "agent/exploratory/issue-42-implement-thing"
+        ls_remote = (
+            "git",
+            "ls-remote",
+            "--exit-code",
+            "--heads",
+            "origin",
+            handoff_branch,
+        )
+        invalid_html = REVIEW_PACKAGE_HTML.replace(
+            "<h2>Issue completion review</h2>",
+            "<h2>Review focus</h2>"
+            "<p>Review whether this branch should become production.</p>"
+            '<script src="https://example.com/app.js"></script>'
+            "<h2>Issue completion review</h2>",
+        )
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            fail_commands={ls_remote: 2},
+            review_package_html=invalid_html,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.EXPLORATORY_MODE)
+            issue = make_issue({"ready-for-agent"}, EXPLORATORY_IMPLEMENTATION_BODY)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                manifest_obj = loop._handle_implementation(issue)
+
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        package_call = next(
+            call
+            for call in runner.calls
+            if call.input_text is not None
+            and "Generate a Review package" in call.input_text
+        )
+        self.assertIsNotNone(manifest_obj)
+        self.assertIn("- Delivery mode: `exploratory`", package_call.input_text or "")
+        self.assertNotIn(("git", "push", "origin", f"HEAD:{handoff_branch}"), commands)
+        self.assertFalse(
+            any(
+                command[:6] == ("gh", "issue", "edit", "42", "-R", "example/repo")
+                and "agent-reviewing" in command
+                for command in commands
+            )
+        )
+        self.assertEqual(manifest["status"], "failed")
+        self.assertIsNone(manifest["integration_commit"])
+        self.assertEqual(manifest["pushes"], {})
+        self.assertNotEqual(manifest["github_metadata"]["status"], "marked_reviewing")
+        self.assertEqual(manifest["review_package"]["status"], "validation_failed")
+        self.assertEqual(manifest["review_package"]["validation_status"], "failed")
+        self.assertIn("script tag", manifest["review_package"]["failure_reason"])
+
     def test_exploratory_operator_smoke_runs_after_push_and_records_evidence(
         self,
     ) -> None:
