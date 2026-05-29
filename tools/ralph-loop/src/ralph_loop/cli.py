@@ -5822,12 +5822,12 @@ class RalphLoop:
         run_dir: Path,
         manifest: RunManifest,
     ) -> list[dict[str, Any]]:
-        routes = changed_caddy_root_portfolio_routes(changed_files)
-        if not routes:
+        if not changed_caddy_root_portfolio_routes(changed_files):
             return []
 
         artifact_dir = run_dir
         caddy_root = worktree_path / CADDY_PREFIX
+        dist_dir = caddy_root / "dist"
         log_path = run_dir / "caddy-review-package-media.log"
         build_log_path = run_dir / "caddy-review-package-media-build.log"
         browser_install_log_path = (
@@ -5842,28 +5842,6 @@ class RalphLoop:
             "install",
             "chromium",
         ]
-        command = [
-            "uv",
-            "run",
-            "--with",
-            "playwright",
-            "python",
-            "-m",
-            "ralph_loop.review_package_media",
-            "--serve-dir",
-            str(caddy_root / "dist"),
-            "--artifact-dir",
-            str(artifact_dir),
-            "--route",
-            "/",
-            "--name-prefix",
-            "caddy__root",
-        ]
-
-        emit(
-            f"#{issue.number}: recording Caddy root portfolio Review package "
-            f"media for {', '.join(routes)}"
-        )
         try:
             self.runner.run(
                 ["npm", "run", "build"],
@@ -5872,6 +5850,13 @@ class RalphLoop:
                 phase=f"#{issue.number}: Caddy Review package media build",
                 timeout_seconds=CADDY_REVIEW_MEDIA_TIMEOUT_SECONDS,
             )
+            routes = changed_caddy_review_package_routes(
+                changed_files, dist_dir=dist_dir
+            )
+            emit(
+                f"#{issue.number}: recording Caddy Review package media for "
+                f"{', '.join(routes)}"
+            )
             self.runner.run(
                 browser_install_command,
                 cwd=worktree_path / RALPH_LOOP_PREFIX,
@@ -5879,13 +5864,31 @@ class RalphLoop:
                 phase=f"#{issue.number}: Caddy Review package media browser setup",
                 timeout_seconds=CADDY_REVIEW_MEDIA_BROWSER_SETUP_TIMEOUT_SECONDS,
             )
-            self.runner.run(
-                command,
-                cwd=worktree_path / RALPH_LOOP_PREFIX,
-                log_path=log_path,
-                phase=f"#{issue.number}: Caddy Review package media",
-                timeout_seconds=CADDY_REVIEW_MEDIA_TIMEOUT_SECONDS,
-            )
+            for route in routes:
+                command = [
+                    "uv",
+                    "run",
+                    "--with",
+                    "playwright",
+                    "python",
+                    "-m",
+                    "ralph_loop.review_package_media",
+                    "--serve-dir",
+                    str(dist_dir),
+                    "--artifact-dir",
+                    str(artifact_dir),
+                    "--route",
+                    route,
+                    "--name-prefix",
+                    caddy_review_media_name_prefix(route),
+                ]
+                self.runner.run(
+                    command,
+                    cwd=worktree_path / RALPH_LOOP_PREFIX,
+                    log_path=log_path,
+                    phase=f"#{issue.number}: Caddy Review package media",
+                    timeout_seconds=CADDY_REVIEW_MEDIA_TIMEOUT_SECONDS,
+                )
         except CommandFailure as error:
             failure = ReviewPackageFailure(
                 f"Caddy Review package media capture failed for #{issue.number}: "
@@ -5902,6 +5905,7 @@ class RalphLoop:
             )
             raise failure from error
 
+        routes = changed_caddy_review_package_routes(changed_files, dist_dir=dist_dir)
         media = caddy_review_media_manifest_entries(routes, artifact_dir)
         missing = [
             entry["path"]
@@ -10364,6 +10368,56 @@ def issue_completion_review_evidence(manifest: RunManifest) -> str:
     return "; ".join(parts)
 
 
+def review_package_status_summary(manifest: RunManifest) -> str:
+    package = manifest.data.get("review_package")
+    if not isinstance(package, dict):
+        return "not_recorded"
+    payload = review_package_evidence_payload(package)
+    if payload is None:
+        return "not_recorded"
+    parts = [
+        str(payload.get("status") or "unknown"),
+        f"validation {payload.get('validation_status') or 'unknown'}",
+    ]
+    html_path = str(payload.get("html_path") or "")
+    if html_path:
+        parts.append(f"HTML {html_path}")
+    generator_log_path = str(payload.get("generator_log_path") or "")
+    if generator_log_path:
+        parts.append(f"generator log {generator_log_path}")
+    failure_reason = str(payload.get("failure_reason") or "")
+    if failure_reason:
+        parts.append(f"failure {failure_reason}")
+    return "; ".join(parts)
+
+
+def review_package_failure_inspection_lines(manifest: RunManifest) -> list[str]:
+    context = operator_rollup_review_package_failure_context(manifest.data)
+    if context is None:
+        return []
+    lines = [
+        f"- Generator log: {context.get('generator_log_path') or 'not_recorded'}",
+        f"- Validation reason: {context.get('validation_reason') or 'not_recorded'}",
+        f"- Failure reason: {context.get('failure_reason') or 'not_recorded'}",
+    ]
+    media_failures = context.get("media_failures")
+    if isinstance(media_failures, list) and media_failures:
+        for item in media_failures:
+            if not isinstance(item, dict):
+                continue
+            route = item.get("route") or "unknown route"
+            viewport = item.get("viewport") or "unknown viewport"
+            status = item.get("status") or "failed"
+            log_path = item.get("log_path") or "not_recorded"
+            lines.append(
+                f"- Media failure: {route} {viewport} {status}; log {log_path}"
+            )
+    else:
+        lines.append("- Media failures: none recorded")
+    lines.append(f"- Next safe action: {context.get('next_safe_action')}")
+    return lines
+
+
 def adaptive_event_entries(manifest: RunManifest) -> list[dict[str, Any]]:
     events = manifest.data.get("adaptive_events")
     if not isinstance(events, list):
@@ -10456,6 +10510,7 @@ def emit_requeue_inspection(manifest: RunManifest) -> None:
         "- Run evidence: Issue completion review "
         f"{issue_completion_review_evidence(manifest)}"
     )
+    emit(f"- Run evidence: Review package {review_package_status_summary(manifest)}")
     emit(f"- Run evidence: changed files {changed_files_summary(manifest)}")
     emit(f"- Run evidence: failure {run_failure_summary(manifest)}")
 
@@ -10565,6 +10620,12 @@ def inspect_run(run_dir: Path) -> None:
     emit(f"Push status: {push_status_summary(manifest)}")
     emit(f"Metadata status: {metadata_status_value(manifest)}")
     emit(f"Issue completion review status: {issue_completion_review_summary(manifest)}")
+    emit(f"Review package status: {review_package_status_summary(manifest)}")
+    review_package_failure_lines = review_package_failure_inspection_lines(manifest)
+    if review_package_failure_lines:
+        emit("Review package failure:")
+        for line in review_package_failure_lines:
+            emit(line)
     emit(f"Ready issue refresh status: {ready_issue_refresh_status_value(manifest)}")
     adaptive_events = adaptive_event_entries(manifest)
     if adaptive_events:
@@ -10868,6 +10929,21 @@ def operator_requeue_status_lines(recovery: dict[str, Any]) -> list[str]:
             + f": {entry.get('classification')} "
             + f"({entry.get('eligibility')}); dry-run={command}; {guidance}"
         )
+        package_failure = entry.get("review_package_failure")
+        if isinstance(package_failure, dict):
+            generator_log = package_failure.get("generator_log_path") or "not_recorded"
+            validation_reason = (
+                package_failure.get("validation_reason") or "not_recorded"
+            )
+            media_failures = package_failure.get("media_failures")
+            media_count = len(media_failures) if isinstance(media_failures, list) else 0
+            lines.append(
+                "  Review package failure: "
+                f"generator_log={generator_log}; "
+                f"validation_reason={validation_reason}; "
+                f"media_failures={media_count}; "
+                f"next_action={package_failure.get('next_safe_action')}"
+            )
     return lines
 
 
@@ -13270,6 +13346,7 @@ def marimo_review_media_manifest_entries(
                     "route": route,
                     "viewport": viewport,
                     "path": str(video_path),
+                    "status": "captured",
                     "review_package_href": video_path.name,
                 }
             )
@@ -13277,9 +13354,17 @@ def marimo_review_media_manifest_entries(
 
 
 def caddy_review_video_name(route: str, viewport: str) -> str:
-    if route != "/":
+    return f"{caddy_review_media_name_prefix(route)}__{viewport}.webm"
+
+
+def caddy_review_media_name_prefix(route: str) -> str:
+    if route == "/":
+        route_slug = "root"
+    elif route == "/marimo":
+        route_slug = "marimo"
+    else:
         raise ValueError(f"Unsupported Caddy Review package route: {route}")
-    return f"caddy__root__{viewport}.webm"
+    return f"caddy__{route_slug}"
 
 
 def caddy_review_media_manifest_entries(
@@ -13297,6 +13382,7 @@ def caddy_review_media_manifest_entries(
                     "route": route,
                     "viewport": viewport,
                     "path": str(video_path),
+                    "status": "captured",
                     "review_package_href": video_path.name,
                 }
             )

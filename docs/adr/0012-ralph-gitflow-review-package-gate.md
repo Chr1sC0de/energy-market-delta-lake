@@ -9,7 +9,8 @@ contract, changed files, QA evidence, and review state before work becomes part
 of the **Integration target** or a durable **Exploratory branch**. Configured
 Review package media recipes may add sibling artifacts, such as Marimo
 dashboard `.webm` recordings for changed notebook routes or Caddy root
-portfolio `.webm` recordings for changed portfolio/static-serving inputs.
+portfolio and dashboard-listing `.webm` recordings for changed
+portfolio/static-serving inputs.
 
 ## Decision
 
@@ -50,7 +51,10 @@ human review question.
 Failures at this gate remain Ralph-owned pre-push failures: worktrees, logs,
 and any generated `review-package.html` evidence are preserved for operator
 inspection, but no **Integration target** or **Exploratory branch** is updated
-and no completion or handoff metadata is written.
+and no completion or handoff metadata is written. `--inspect-run`, Operator
+status, and Operator rollups surface the generator log, validation reason,
+media failures, and next safe action for these package failures before an
+operator opens raw Codex JSONL or browser media logs.
 During **Promotion**, package summaries and paths follow only the verified
 issue-to-commit evidence mapping. Ralph does not infer per-issue package
 ownership from unverified Promotion commits or from the full Promotion

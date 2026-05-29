@@ -700,6 +700,9 @@ to `codex-review-package.jsonl` and `review-package.html`,
 writes to `qa-*` logs, and Git operations write to their named `git-*` logs
 under the current
 `.ralph/runs/...` run directory.
+Configured Review package media recipes write recipe-specific logs, such as
+`marimo-review-package-media.log` or `caddy-review-package-media.log`, and
+store recorded sibling videos beside `review-package.html`.
 While a command is active, the log has `exit: running`; after the command
 finishes, Ralph rewrites the same log with the final exit status while
 preserving stdout, stderr, command, and cwd.
@@ -791,6 +794,9 @@ Key fields for inspection:
   comments, Operator rollups, **Exploratory acceptance review** artifacts,
   Promotion issue comments and context, and **Post-promotion review** prompts;
   it does not inline generated HTML.
+  Failed package runs also preserve the generator log, validation reason, media
+  failure evidence, and next safe action for `--inspect-run`, Operator status,
+  and rollup recovery guidance.
 - `post_promotion_followups`: enabled state, created issue URLs, duplicate
   source-marker skips, validation downgrades to `needs-triage`, warning-only
   creation failures, and recovery guidance for **Promotion** follow-ups.
@@ -876,6 +882,12 @@ branch sync state. The requeue section also prints the Ralph-owned worktree
 paths, local issue branch, label reconciliation evidence such as
 `agent-failed` and `ready-for-agent`, changed files, QA/review evidence, and
 the failure log that the requeue command will reconcile.
+When the failure type is `review_package_failed`, inspection also prints
+`Review package status` plus a `Review package failure` block with the
+generator log path, validation reason, failure reason, media failure evidence,
+and next safe action. Package failures remain eligible pre-push failures when
+QA and any required **Issue completion review** passed and no
+`integration_commit` or **Integration target** push was recorded.
 
 For eligible pre-push failures, `--recover-run <run_dir> --dry-run` reads the
 run manifest, GitHub Issue labels and comments, local worktrees, local refs, and
@@ -1165,9 +1177,12 @@ Changed Caddy portfolio and static-serving inputs documented by
 `backend-services/caddy/README.md` map to the root `/` route. Ralph runs
 `npm run build` from the Caddy Subproject, serves the built `dist/` directory
 from the issue worktree with its generic Review package media helper, and
-records desktop and narrow `.webm` videos next to the package artifacts. The
-Caddy recipe is Ralph-owned and does not require a Caddy-specific
-browser-review helper.
+records desktop and narrow `.webm` videos next to the package artifacts. When
+the built Astro output contains the Caddy-served `/marimo` dashboard listing
+route, the same Caddy recipe also records desktop and narrow `.webm` videos for
+`/marimo`. The Caddy recipe is Ralph-owned and does not require a Caddy-specific
+browser-review helper; it remains separate from Marimo notebook capture for
+`/marimo/<notebook>/` routes.
 
 Ralph then generates a **Review package** at `review-package.html` in the run
 directory and links recorded sibling media from that package. The generator
@@ -1190,10 +1205,13 @@ missing changed-file evidence, missing issue identity, empty output, and
 oversized output. It permits links to sibling `.webm` artifacts recorded by a
 Ralph media recipe. A media capture failure, generation failure, invalid HTML,
 or generator-created repo edit marks the issue `agent-failed`, records
-`review_package.status` and `failure_reason`, preserves logs and worktrees, and
+`review_package.status`, generator log path, validation status, failure reason,
+and media failure context when available, preserves logs and worktrees, and
 does not perform **Local integration**, push an **Integration target**, push an
 Exploratory handoff, comment completion evidence, apply `agent-integrated`,
-`agent-merged`, or `agent-reviewing`, or close the issue.
+`agent-merged`, or `agent-reviewing`, or close the issue. Operators can open
+the local `review-package.html` directly in a browser when it exists; linked
+sibling `.webm` videos live in the same run directory.
 
 Failing review findings become the next
 Codex repair prompt alongside the issue contract, changed files, and QA
@@ -1223,14 +1241,15 @@ branch for review, and does not apply `agent-reviewing`. Ralph does not open a
 GitHub draft PR.
 
 Operator rollup JSON and Markdown copy the same bounded **Review package**
-evidence for succeeded issue runs. **Exploratory acceptance review** JSON and
-Markdown include package path and summary when current handoffs recorded them;
-older handoffs remain valid with absent package context. During **Promotion**,
-Ralph attaches package evidence only to verified promoted issue evidence
-commits resolved through issue comments and the existing issue-to-commit
-mapping, including the per-issue Promotion comment. Unverified Promotion commits
-and full Promotion changed-file inventory remain review context only and are
-not assigned package summaries.
+evidence for succeeded issue runs and copy first-class package failure recovery
+context for failed runs. **Exploratory acceptance review** JSON and Markdown
+include package path and summary when current handoffs recorded them; older
+handoffs remain valid with absent package context. During **Promotion**, Ralph
+attaches package evidence only to verified promoted issue evidence commits
+resolved through issue comments and the existing issue-to-commit mapping,
+including the per-issue Promotion comment. Unverified Promotion commits and
+full Promotion changed-file inventory remain review context only and are not
+assigned package summaries.
 
 Human review owns the next Exploratory state decision. The Operator records
 explicit `accept`, `hold`, or `reject` decisions in a JSON artifact:

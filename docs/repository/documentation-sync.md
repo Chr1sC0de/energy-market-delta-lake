@@ -363,6 +363,18 @@ way:
   handoffs without package data remain valid absent context. The contract lives
   in
   [docs/agents/issue-tracker.md](../agents/issue-tracker.md),
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md), ADR
+  [0012](../adr/0012-ralph-gitflow-review-package-gate.md), and
+  [OPERATOR.md](../../OPERATOR.md).
+- #299: Ralph Review package media, generation, and validation failures are
+  inspectable as pre-push failures through `--inspect-run`, Operator status,
+  and Operator rollups. Recovery surfaces report generator logs, validation
+  reasons, media failures, and the next safe action, and they preserve the
+  existing rule that failed package runs do not create **Local integration**
+  commits, update **Integration targets**, push **Exploratory branches**, or
+  mark `agent-reviewing`. The operator-facing recovery contract lives in
+  [OPERATOR.md](../../OPERATOR.md),
+  [docs/agents/issue-tracker.md](../agents/issue-tracker.md),
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md), and ADR
   [0012](../adr/0012-ralph-gitflow-review-package-gate.md).
 - #166: Checkpointed Operator runs record valid deploy-repair issues in

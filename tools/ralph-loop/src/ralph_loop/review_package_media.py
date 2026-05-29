@@ -31,11 +31,18 @@ VIEWPORTS = (
 
 
 class BrowserPage(Protocol):
-    def goto(self, url: str, *, wait_until: str, timeout: float) -> None: ...
+    def goto(
+        self, url: str, *, wait_until: str, timeout: float
+    ) -> BrowserResponse | None: ...
 
     def wait_for_timeout(self, timeout: float) -> None: ...
 
     def evaluate(self, expression: str, arg: object = None) -> object: ...
+
+
+class BrowserResponse(Protocol):
+    @property
+    def status(self) -> int: ...
 
 
 class BrowserContext(Protocol):
@@ -151,14 +158,22 @@ def _record_one_route(
         viewport={"width": viewport.width, "height": viewport.height},
     )
     page = context.new_page()
-    page.goto(url, wait_until="domcontentloaded", timeout=float(timeout_ms))
-    page.wait_for_timeout(1_500)
-    body_text = page.evaluate("() => document.body?.innerText?.trim() || ''")
-    if not isinstance(body_text, str) or body_text == "":
-        raise RuntimeError(f"route rendered no visible body text: {route}")
-    if "Traceback" in body_text:
-        raise RuntimeError(f"route rendered traceback text: {route}")
-    context.close()
+    try:
+        response = page.goto(
+            url, wait_until="domcontentloaded", timeout=float(timeout_ms)
+        )
+        if response is None:
+            raise RuntimeError(f"route did not return an HTTP response: {route}")
+        if response.status >= 400:
+            raise RuntimeError(f"route returned HTTP {response.status}: {route}")
+        page.wait_for_timeout(1_500)
+        body_text = page.evaluate("() => document.body?.innerText?.trim() || ''")
+        if not isinstance(body_text, str) or body_text == "":
+            raise RuntimeError(f"route rendered no visible body text: {route}")
+        if "Traceback" in body_text:
+            raise RuntimeError(f"route rendered traceback text: {route}")
+    finally:
+        context.close()
 
     video = getattr(page, "video", None)
     if video is None:

@@ -304,6 +304,8 @@ CADDY_REVIEW_PACKAGE_ROOT_ROUTE_INPUTS = frozenset(
         f"{CADDY_PREFIX}src/styles/site.css",
     }
 )
+CADDY_REVIEW_PACKAGE_ROOT_ROUTE = "/"
+CADDY_REVIEW_PACKAGE_MARIMO_LISTING_ROUTE = "/marimo"
 RALPH_LOOP_PREFIX = "tools/ralph-loop/"
 INTEGRATION_TARGET_BASELINE_GUARD_CHANGED_FILES = (
     f"{RALPH_LOOP_PREFIX}src/ralph_loop/cli.py",
@@ -4357,8 +4359,32 @@ def changed_marimo_notebook_routes(changed_files: list[str]) -> tuple[str, ...]:
 def changed_caddy_root_portfolio_routes(changed_files: list[str]) -> tuple[str, ...]:
     for changed_file in normalized_changed_file_inventory(changed_files):
         if changed_file in CADDY_REVIEW_PACKAGE_ROOT_ROUTE_INPUTS:
-            return ("/",)
+            return (CADDY_REVIEW_PACKAGE_ROOT_ROUTE,)
     return ()
+
+
+def caddy_static_route_exists(dist_dir: Path, route: str) -> bool:
+    if route == CADDY_REVIEW_PACKAGE_ROOT_ROUTE:
+        return (dist_dir / "index.html").is_file()
+    route_path = route.strip("/")
+    if route_path == "":
+        return False
+    return (dist_dir / f"{route_path}.html").is_file() or (
+        dist_dir / route_path / "index.html"
+    ).is_file()
+
+
+def changed_caddy_review_package_routes(
+    changed_files: list[str],
+    *,
+    dist_dir: Path | None = None,
+) -> tuple[str, ...]:
+    routes = list(changed_caddy_root_portfolio_routes(changed_files))
+    if not routes or dist_dir is None:
+        return tuple(routes)
+    if caddy_static_route_exists(dist_dir, CADDY_REVIEW_PACKAGE_MARIMO_LISTING_ROUTE):
+        routes.append(CADDY_REVIEW_PACKAGE_MARIMO_LISTING_ROUTE)
+    return tuple(routes)
 
 
 def has_gas_market_knowledge_base_change(changed_files: list[str]) -> bool:
@@ -5428,6 +5454,9 @@ def review_package_summary_text(review_package: dict[str, Any]) -> str:
             return summary_text
     if isinstance(media, list) and media:
         return "Review package media captured."
+    failure_reason = str(review_package.get("failure_reason") or "").strip()
+    if failure_reason:
+        return failure_reason
     return "Review package generated and validated."
 
 
@@ -5449,6 +5478,8 @@ def review_package_evidence_payload(
         "status": status,
         "validation_status": review_package.get("validation_status"),
         "html_path": review_package.get("html_path"),
+        "generator_log_path": review_package.get("generator_log_path"),
+        "failure_reason": review_package.get("failure_reason"),
         "media_count": review_package_media_count(review_package),
         "summary": review_package.get("summary")
         if isinstance(review_package.get("summary"), dict)
