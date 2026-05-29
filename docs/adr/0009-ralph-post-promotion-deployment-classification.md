@@ -47,11 +47,6 @@ non-triggering context. Direct `$ralph-loop promote` records the decision under
 recommendation, but does not invoke AWS, Pulumi, or deployment scripts.
 Issue attempts reuse the same classification snapshot in the implementation
 manifest when **Issue completion review** is required by deployable paths.
-That snapshot is review context, not an implementation-phase mandate to run the
-credentialed deployed workflow. Missing operator-owned **Push check**,
-deployed AWS workflow, or idempotency evidence is residual risk for the review
-unless the issue contract, recorded QA plan, or an **Operator smoke** section
-explicitly requires that evidence before the review.
 
 Ralph also records source-table archive replay recovery guidance alongside, not
 inside, the deployment tier. When a Promotion changes `surrogate_key_sources`

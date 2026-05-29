@@ -3730,39 +3730,6 @@ None.
             classification.non_triggering_paths,
         )
 
-    def test_issue_completion_review_prompt_keeps_push_check_at_operator_boundary(
-        self,
-    ) -> None:
-        delivery_plan = ralph.DeliveryPlan(
-            mode=ralph.EXPLORATORY_MODE,
-            target_branch="agent/exploratory/issue-42-implement-thing",
-            label=ralph.DELIVERY_EXPLORATORY_LABEL,
-            add_labels=(),
-            remove_labels=(),
-        )
-        trigger = ralph.issue_completion_review_trigger(
-            issue=make_issue({ralph.READY_LABEL}, IMPLEMENTATION_BODY),
-            delivery_plan=delivery_plan,
-            changed_files=["backend-services/caddy/Caddyfile"],
-        )
-
-        prompt = ralph.issue_completion_review_prompt(
-            repo="example/repo",
-            issue=make_issue({ralph.READY_LABEL}, IMPLEMENTATION_BODY),
-            delivery_plan=delivery_plan,
-            changed_files=["backend-services/caddy/Caddyfile"],
-            qa_results=[],
-            run_dir=Path("/tmp/run"),
-            trigger=trigger,
-        )
-
-        self.assertIn("recommended_action", prompt)
-        self.assertIn("run-integration-tests --with-idempotency", prompt)
-        self.assertIn("Treat missing operator-owned Push check", prompt)
-        self.assertIn("as residual risk unless", prompt)
-        self.assertIn("Do not fail solely", prompt)
-        self.assertIn("sandboxed implementation QA lacks AWS", prompt)
-
     def test_security_sensitive_changed_paths_classifies_risky_paths(self) -> None:
         changed_paths = [
             ".github/workflows/push-check.yml",

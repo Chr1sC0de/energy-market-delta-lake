@@ -99,8 +99,11 @@ flowchart LR
   - creates a Route 53 A record for `ausenergymarketdata.com`
   - proxies to Cloud Map names for the private Dagster webservers and to the
     auth host private IP on port `8000`
-  - proxies `/marimo*` to `marimo-dashboard.dagster:2718`, with auth checks on
-    notebook routes and a direct `/marimo/health` probe
+  - serves exact `/marimo` and `/marimo/` requests from the protected
+    Caddy-served Astro dashboard listing after FastAPI auth validation
+  - proxies Marimo-owned `/marimo/dashboard-registry.json` and
+    `/marimo/<notebook>/` routes to `marimo-dashboard.dagster:2718`, with auth
+    checks on notebook routes and a direct `/marimo/health` probe
 
 ## Related docs
 

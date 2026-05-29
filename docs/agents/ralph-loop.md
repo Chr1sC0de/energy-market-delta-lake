@@ -2120,11 +2120,6 @@ Exhausted **Issue completion review** failures are issue failures before any
 logs, and the preserved implementation worktree. Ralph has already rerun QA and
 review for every available repair attempt recorded in `codex_attempts`; rerun
 Ralph only after repairing the incomplete work or reshaping the issue.
-For deployable changed paths, the review prompt carries the post-Promotion
-deployment classifier as context. A missing operator-owned **Push check**,
-deployed AWS workflow, or idempotency run is residual risk unless the issue
-contract, recorded QA plan, or **Operator smoke** contract explicitly requires
-that evidence before **Issue completion review**.
 
 Full-access diff scope failures are issue failures and keep the implementation
 worktree for inspection. Operators should inspect
