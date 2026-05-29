@@ -60,6 +60,14 @@ It must not create issues directly, comment, label, close, reopen, edit GitHub
 Issues, commit, push, or update refs. Ralph's outer loop owns any later GitHub
 Issue metadata mutation allowed by other phases.
 
+For deployable changed paths, the review prompt includes the post-Promotion
+deployment classifier. The classifier can recommend an operator-owned **Push
+check** or deployed AWS workflow, but missing credential-boundary evidence is
+residual risk unless the issue contract, recorded QA plan, or an **Operator
+smoke** section explicitly requires it before **Issue completion review**. The
+review must still fail for concrete incomplete work, unsafe auth/IAM/network
+changes, or missed issue QA evidence.
+
 Every accepted **Issue completion review** artifact includes a
 `## Security review` section. That section records concrete repairable security
 blockers and residual security risk, while `## Review result` remains the
