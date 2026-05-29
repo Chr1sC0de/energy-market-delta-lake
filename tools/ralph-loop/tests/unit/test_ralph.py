@@ -238,6 +238,12 @@ def review_package_html_for_prompt(prompt: str) -> str:
             issue_title = line.split("`", maxsplit=2)[1]
             break
     changed_items = "\n".join(f"<li>{html.escape(path)}</li>" for path in changed_files)
+    review_focus = ""
+    if "- Review focus" in prompt:
+        review_focus = (
+            "<h2>Review focus</h2>\n"
+            "<p>Review the Exploratory branch against the issue review focus.</p>\n"
+        )
     return f"""<!doctype html>
 <html>
 <head><meta charset="utf-8"><title>Review package for issue #42</title></head>
@@ -251,6 +257,7 @@ def review_package_html_for_prompt(prompt: str) -> str:
 <p>QA passed.</p>
 <h2>Issue completion review</h2>
 <p>Issue completion review passed.</p>
+{review_focus}
 </body>
 </html>
 """
@@ -2891,6 +2898,24 @@ class RalphHelperTests(unittest.TestCase):
             )
 
         self.assertEqual(summary.issue_number, 42)
+
+    def test_review_package_validation_requires_review_focus_for_exploratory(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            html_path = Path(tmp) / "review-package.html"
+            html_path.write_text(REVIEW_PACKAGE_HTML, encoding="utf-8")
+
+            with self.assertRaises(ralph.ReviewPackageFailure) as context:
+                ralph.validate_review_package_html(
+                    html_path,
+                    issue_number=42,
+                    changed_files=["scripts/ralph.py"],
+                    qa_results=[],
+                    delivery_mode=ralph.EXPLORATORY_MODE,
+                )
+
+        self.assertIn("review focus", str(context.exception))
 
     def test_review_package_validation_rejects_external_style_attribute_url(
         self,
@@ -15141,10 +15166,17 @@ Build it.
             manifest = load_run_manifest(Path(tmp))
             self.assertIn("Ralph exploratory handoff completed.", comment)
             self.assertIn(f"Target branch: `{handoff_branch}`", comment)
+            self.assertIn("- HTML:", comment)
+            self.assertIn("Review package for issue #42", comment)
             self.assertEqual(manifest["delivery_mode"], "exploratory")
             self.assertEqual(manifest["integration_target"], handoff_branch)
             self.assertEqual(manifest["branches"]["issue"], handoff_branch)
             self.assertEqual(manifest["github_metadata"]["status"], "marked_reviewing")
+            self.assertEqual(manifest["review_package"]["status"], "passed")
+            self.assertEqual(manifest["review_package"]["validation_status"], "passed")
+            self.assertIn(
+                "review focus", manifest["review_package"]["summary"]["sections"]
+            )
 
     def test_exploratory_marimo_media_failure_stops_before_handoff(
         self,
@@ -15216,7 +15248,7 @@ Build it.
             manifest["review_package"]["failure_reason"],
         )
 
-    def test_exploratory_marimo_media_success_records_handoff_evidence(
+    def test_exploratory_marimo_media_success_records_package_handoff_evidence(
         self,
     ) -> None:
         handoff_branch = "agent/exploratory/issue-42-implement-thing"
@@ -15250,11 +15282,31 @@ Build it.
             comment = comment_path.read_text(encoding="utf-8")
 
         commands = [call.args for call in runner.calls]
+        package_call = next(
+            call
+            for call in runner.calls
+            if call.input_text is not None
+            and "Generate a Review package" in call.input_text
+        )
+        package_index = runner.calls.index(package_call)
+        push_index = commands.index(("git", "push", "origin", f"HEAD:{handoff_branch}"))
+        self.assertLess(package_index, push_index)
+        self.assertIn("- Review focus", package_call.input_text or "")
+        self.assertIn("Handoff commit: `merge-sha`", package_call.input_text or "")
         self.assertIn(("git", "push", "origin", f"HEAD:{handoff_branch}"), commands)
         self.assertEqual(manifest["status"], "succeeded")
-        self.assertEqual(manifest["review_package"]["status"], "media_captured")
-        self.assertEqual(
-            manifest["review_package"]["validation_status"], "not_required"
+        self.assertEqual(manifest["review_package"]["status"], "passed")
+        self.assertEqual(manifest["review_package"]["validation_status"], "passed")
+        self.assertIn("html_path", manifest["review_package"])
+        self.assertLessEqual(
+            {
+                "summary",
+                "changed files",
+                "qa evidence",
+                "issue completion review",
+                "review focus",
+            },
+            set(manifest["review_package"]["summary"]["sections"]),
         )
         self.assertEqual(
             [
@@ -15267,9 +15319,54 @@ Build it.
             ],
         )
         self.assertIn("## Review package", comment)
-        self.assertIn("Review package media captured.", comment)
-        self.assertNotIn("- HTML:", comment)
+        self.assertIn("- HTML:", comment)
+        self.assertIn("Review package for issue #42", comment)
         self.assertIn("/marimo/gas_market_prices/", comment)
+
+    def test_exploratory_review_package_generation_failure_stops_before_handoff(
+        self,
+    ) -> None:
+        handoff_branch = "agent/exploratory/issue-42-implement-thing"
+        ls_remote = (
+            "git",
+            "ls-remote",
+            "--exit-code",
+            "--heads",
+            "origin",
+            handoff_branch,
+        )
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n"],
+            rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
+            fail_commands={ls_remote: 2},
+            fail_review_package=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.EXPLORATORY_MODE)
+            issue = make_issue({"ready-for-agent"}, EXPLORATORY_IMPLEMENTATION_BODY)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop._handle_implementation(issue)
+
+            manifest = load_run_manifest(tmp_path)
+
+        commands = [call.args for call in runner.calls]
+        self.assertNotIn(("git", "push", "origin", f"HEAD:{handoff_branch}"), commands)
+        self.assertFalse(
+            any(
+                command[:6] == ("gh", "issue", "edit", "42", "-R", "example/repo")
+                and "agent-reviewing" in command
+                for command in commands
+            )
+        )
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["review_package"]["status"], "failed")
+        self.assertIn(
+            "Review package generation failed",
+            manifest["review_package"]["failure_reason"],
+        )
 
     def test_exploratory_operator_smoke_runs_after_push_and_records_evidence(
         self,

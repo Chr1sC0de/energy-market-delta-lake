@@ -10,12 +10,12 @@ repo, especially **Subproject**, **Test lane**, **Fast check**, **Commit check**
 **Push check**, **Local integration**, **Delivery mode**, **Integration target**,
 **Exploratory delivery**, **Exploratory branch**, **Sandboxed issue access**,
 **Full-access implementation pass**, **Issue completion review**,
-**Security-sensitive change**, **Ready issue refresh**, **Operator workflow**,
-**Documentation sync**, **Agent skill**, **Issue context assessor**,
-**Exploratory acceptance review**, **Promotion**, **Post-promotion review**,
-**Post-Promotion deployment classification**, **AWS/Pulumi credential
-boundary**, **Gas market knowledge base**, **Market context**,
-**Dashboard standard**, **Dashboard brief**, and **Dashboard intent**.
+**Review package**, **Security-sensitive change**, **Ready issue refresh**,
+**Operator workflow**, **Documentation sync**, **Agent skill**, **Issue context
+assessor**, **Exploratory acceptance review**, **Promotion**, **Post-promotion
+review**, **Post-Promotion deployment classification**, **AWS/Pulumi credential
+boundary**, **Gas market knowledge base**, **Market context**, **Dashboard
+standard**, **Dashboard brief**, and **Dashboard intent**.
 
 Repo-wide ADRs live in `docs/adr/`. Create ADRs only when a decision is hard to
 reverse, surprising without context, and the result of a real trade-off.

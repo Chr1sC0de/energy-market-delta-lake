@@ -3,8 +3,10 @@
 Ralph publishes **Exploratory delivery** work to a durable **Exploratory
 branch** instead of integrating it to `dev` or `main` immediately. The branch is
 created from `origin/main`, named `agent/exploratory/issue-N-slug` by default,
-pushed to origin after QA, and recorded on the issue with `agent-reviewing`.
-The issue remains open until a human review accepts or rejects the work.
+pushed to origin after QA and the local **Review package** gate, and recorded on
+the issue with `agent-reviewing`. The issue remains open until a human review
+accepts or rejects the work. The **Review package** is handoff evidence for that
+review; it does not decide acceptance.
 Selected Exploratory issues may request an allowlisted **Operator smoke** for
 credentialed deployed evidence after the branch push. That smoke evidence is
 part of the handoff comment, but it does not change the acceptance boundary.
@@ -58,7 +60,8 @@ merged-target QA succeed. Conflict pauses keep that same boundary by recording
 durable run artifacts and deferring push plus GitHub metadata until the continue
 command validates the resolved acceptance worktree. The `## Review focus`
 section is therefore required before a ready `delivery-exploratory` issue can
-run. If `## Operator smoke` is present, Ralph validates the request before
+run and before the generated **Review package** can validate. If
+`## Operator smoke` is present, Ralph validates the request before
 implementation, serializes the issue outside the parallel Exploratory worker
 pool, runs the allowlisted smoke from the operator-owned outer loop after the
 branch is pushed, and only marks `agent-reviewing` if the smoke succeeds.

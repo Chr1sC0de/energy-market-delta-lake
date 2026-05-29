@@ -75,13 +75,14 @@ automated **Issue completion review** after QA and before any **Integration
 target** update or Exploratory handoff. If that review finds incomplete work,
 Ralph feeds the findings back into remaining Codex attempts, reruns QA, and
 reruns the review; exhausted findings fail the issue without **Local
-integration**. For Gitflow and Trunk delivery, Ralph also generates and
-validates the local **Review package** before **Local integration**, the `dev`
-or `main` push, completion comments, `agent-integrated`, `agent-merged`, or
-Trunk issue closure. Configured Review package media recipes, such as changed
-Marimo notebook route videos, must record before publication; media capture,
-generation, or validation failure keeps the run pre-push with logs and
-worktrees preserved. After a successful
+integration**. For Gitflow, Trunk, and Exploratory delivery, Ralph also
+generates and validates the local **Review package** before **Local
+integration**, the `dev` or `main` push, an **Exploratory branch** push,
+completion or handoff comments, `agent-integrated`, `agent-merged`,
+`agent-reviewing`, or Trunk issue closure. Configured Review package media
+recipes, such as changed Marimo notebook route videos, must record before
+publication; media capture, generation, or validation failure keeps the run
+pre-push with logs and worktrees preserved. After a successful
 **Local integration** or Exploratory handoff,
 **Ready issue refresh** reconciles the open issue queue before Ralph claims the
 next `ready-for-agent` issue.
@@ -207,7 +208,7 @@ Use this checklist:
 - Inspect changed files with `git diff --stat origin/main..origin/dev` and `git diff --name-only origin/main..origin/dev`.
 - Match each included issue to its Ralph evidence and verify it is marked
   `agent-integrated`.
-- For Gitflow and Trunk work, open the run manifest and confirm
+- For Gitflow, Trunk, and Exploratory work, open the run manifest and confirm
   `review_package.status` and `review_package.validation_status` are `passed`;
   inspect the local `review-package.html` path and any `review_package.media`
   entries from the completion comment when the code diff needs closer review.

@@ -12,11 +12,11 @@ Risky implementation paths also pass an automated **Issue completion review**
 before Ralph updates an **Integration target** or publishes an Exploratory
 handoff. A **Security-sensitive change** is one trigger reason for that existing
 gate; it is not a separate security gate, scanner block, label, **Delivery
-mode**, or issue-mutation permission. Gitflow and Trunk delivery also generate
-and validate a local
-**Review package** before **Local integration** or an **Integration target**
-push, and any configured Review package media recipe runs before Gitflow,
-Trunk, or Exploratory publication. Promotion records a
+mode**, or issue-mutation permission. Gitflow, Trunk, and Exploratory delivery
+also generate and validate a local **Review package** before **Local
+integration**, an **Integration target** push, or an **Exploratory branch**
+push, and any configured Review package media recipe runs before publication.
+Promotion records a
 deterministic **Post-Promotion deployment
 classification** from the promoted changed-file inventory and source-table
 archive replay recovery guidance when a Promotion changes existing source-table
@@ -55,7 +55,7 @@ Ralph drains agent-ready GitHub issues through a guarded local loop:
 5. Run deterministic local QA.
 6. Run **Issue completion review** when risk triggers require it.
 7. Run any configured Review package media recipe.
-8. For Gitflow or Trunk delivery, generate and validate the **Review package**.
+8. Generate and validate the **Review package**.
 9. For Gitflow or Trunk delivery, squash-merge validated work onto the latest
    **Integration target** locally.
 10. In **Gitflow delivery**, push `dev`, comment evidence, mark `agent-integrated`,
@@ -164,18 +164,19 @@ flowchart TD
   REVIEWGATE -->|Fail with attempts left| CODEX
   REVIEWGATE -->|Fail exhausted| FAIL
   DONE --> MEDIA[Run configured Review package media recipes]
-  MEDIA -->|Gitflow or Trunk| REVIEWPACKAGE[Generate and validate Review package]
-  REVIEWPACKAGE -->|Pass| INTEGRATE[Run Local integration]
+  MEDIA --> REVIEWPACKAGE[Generate and validate Review package]
+  REVIEWPACKAGE -->|Pass| DONE2{Delivery mode?}
   REVIEWPACKAGE -->|Fail| FAIL
-  INTEGRATE --> DONE2{Delivery mode?}
-  MEDIA -->|Exploratory| HANDOFF[Push Exploratory branch]
+  DONE2 -->|Gitflow or Trunk| INTEGRATE[Run Local integration]
+  INTEGRATE --> DONE3{Delivery mode?}
+  DONE2 -->|Exploratory| HANDOFF[Push Exploratory branch]
   HANDOFF --> SMOKE{Operator smoke requested?}
   SMOKE -->|Yes| SMOKERUN[Run allowlisted smoke from Ralph outer loop]
   SMOKERUN -->|Fail or timeout| FAIL
   SMOKERUN -->|Pass| REVIEW[Comment evidence and mark agent-reviewing]
   SMOKE -->|No| REVIEW
-  DONE2 -->|Gitflow| STAGE[Comment evidence and mark agent-integrated]
-  DONE2 -->|Trunk| CLOSE[Comment evidence, mark agent-merged, close issue]
+  DONE3 -->|Gitflow| STAGE[Comment evidence and mark agent-integrated]
+  DONE3 -->|Trunk| CLOSE[Comment evidence, mark agent-merged, close issue]
   STAGE --> REFRESH[Run Ready issue refresh]
   CLOSE --> REFRESH
   REVIEW --> REFRESH
@@ -781,10 +782,11 @@ Key fields for inspection:
 - `review_package`: **Review package** state for implementation runs, including
   status, local HTML path, generator log path, structured summary, optional
   media metadata, validation status, and failure reason. A successful Gitflow
-  or Trunk run records `status: passed` and `validation_status: passed` before
-  any **Local integration** commit or **Integration target** push. A successful
-  Exploratory media-only run records `status: media_captured` and
-  `validation_status: not_required` before pushing the Exploratory handoff.
+  Trunk, or Exploratory run records `status: passed` and
+  `validation_status: passed` before any **Local integration** commit,
+  **Integration target** push, or Exploratory handoff. Exploratory packages must
+  include `Review focus` and record the target branch and handoff commit in the
+  generated report.
 - `post_promotion_followups`: enabled state, created issue URLs, duplicate
   source-marker skips, validation downgrades to `needs-triage`, warning-only
   creation failures, and recovery guidance for **Promotion** follow-ups.
@@ -1163,22 +1165,24 @@ records desktop and narrow `.webm` videos next to the package artifacts. The
 Caddy recipe is Ralph-owned and does not require a Caddy-specific
 browser-review helper.
 
-For Gitflow and Trunk delivery, Ralph then generates a **Review package** at
-`review-package.html` in the run directory and links recorded sibling media from
-that package. The generator receives the final changed-file inventory, QA
-evidence, issue contract, **Delivery mode**, **Integration target**, and run
-paths after all repair and rebase work is known. Ralph validates that artifact
-before it creates the integration worktree, runs `git merge --squash`, pushes
-`dev` or `main`, comments completion evidence, applies `agent-integrated` or
-`agent-merged`, or closes a Trunk issue. Exploratory delivery records
-media-only Review package metadata in the run manifest and handoff comment, but
-does not generate or validate Review package HTML.
+Ralph then generates a **Review package** at `review-package.html` in the run
+directory and links recorded sibling media from that package. The generator
+receives the final changed-file inventory, QA evidence, issue contract,
+**Delivery mode**, **Integration target** or **Exploratory branch**, handoff
+commit when applicable, and run paths after all repair and rebase work is known.
+Ralph validates that artifact before it creates the integration worktree, runs
+`git merge --squash`, pushes `dev` or `main`, pushes an **Exploratory branch**,
+comments completion or handoff evidence, applies `agent-integrated`,
+`agent-merged`, or `agent-reviewing`, or closes a Trunk issue. For Exploratory
+delivery, the package is handoff evidence only and does not change the later
+human acceptance boundary.
 
 The **Review package** validator accepts only bounded offline static HTML with
 the required review sections `Summary`, `Changed files`, `QA evidence`, and
-`Issue completion review`. It rejects script tags, external URLs or assets,
-inline JavaScript attributes, JavaScript URLs, `file:` URLs, absolute local
-paths, missing changed-file evidence, missing issue identity, empty output, and
+`Issue completion review`; Exploratory packages must also include
+`Review focus`. It rejects script tags, external URLs or assets, inline
+JavaScript attributes, JavaScript URLs, `file:` URLs, absolute local paths,
+missing changed-file evidence, missing issue identity, empty output, and
 oversized output. It permits links to sibling `.webm` artifacts recorded by a
 Ralph media recipe. A media capture failure, generation failure, invalid HTML,
 or generator-created repo edit marks the issue `agent-failed`, records
@@ -1199,10 +1203,10 @@ reruns review. If the attempt budget is exhausted, Ralph marks the issue
 For **Local integration**, Ralph creates a temporary detached integration
 worktree at latest target, runs `git merge --squash` from the issue branch,
 creates one integration commit, pushes it to the target, and posts completion
-evidence with the commit SHA, changed files, QA commands, run log path, and for
-Gitflow and Trunk delivery the **Review package** path plus summary. When
-Exploratory delivery captured media, the handoff comment lists the media
-artifact paths without an HTML package path.
+evidence with the commit SHA, changed files, QA commands, run log path, and the
+**Review package** path plus summary. Exploratory handoff comments use the same
+package evidence and list any media artifact paths captured before the branch
+push.
 Trunk integration marks the issue `agent-merged` and closes it. Gitflow
 integration marks the issue `agent-integrated` and leaves it open for
 **Promotion**. Exploratory handoff skips the detached integration worktree and

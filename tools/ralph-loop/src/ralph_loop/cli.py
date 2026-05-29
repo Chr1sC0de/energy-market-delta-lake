@@ -5283,7 +5283,10 @@ class RalphLoop:
             )
 
             review_package: dict[str, Any] | None = None
-            if delivery_plan.mode in {GITFLOW_MODE, TRUNK_MODE}:
+            handoff_commit_sha: str | None = None
+            if delivery_plan.mode == EXPLORATORY_MODE:
+                handoff_commit_sha = self.git.rev_parse("HEAD", cwd=worktree_path)
+            if delivery_plan.mode in {GITFLOW_MODE, TRUNK_MODE, EXPLORATORY_MODE}:
                 review_package = self._run_review_package_gate(
                     issue,
                     delivery_plan=delivery_plan,
@@ -5292,18 +5295,13 @@ class RalphLoop:
                     worktree_path=worktree_path,
                     run_dir=run_dir,
                     manifest=manifest,
-                )
-            elif delivery_plan.mode == EXPLORATORY_MODE:
-                review_package = self._run_review_package_media_gate(
-                    issue,
-                    changed_files=changed_files,
-                    worktree_path=worktree_path,
-                    run_dir=run_dir,
-                    manifest=manifest,
+                    handoff_commit_sha=handoff_commit_sha,
                 )
 
             if delivery_plan.mode == EXPLORATORY_MODE:
-                commit_sha = self.git.rev_parse("HEAD", cwd=worktree_path)
+                if handoff_commit_sha is None:
+                    raise RalphError("Exploratory handoff commit is missing.")
+                commit_sha = handoff_commit_sha
                 manifest.record_integration_commit(
                     commit_sha, branch=delivery_plan.target_branch
                 )
@@ -5539,6 +5537,7 @@ class RalphLoop:
         worktree_path: Path,
         run_dir: Path,
         manifest: RunManifest,
+        handoff_commit_sha: str | None = None,
     ) -> dict[str, Any]:
         html_path = run_dir / REVIEW_PACKAGE_ARTIFACT_NAME
         log_path = run_dir / "codex-review-package.jsonl"
@@ -5566,6 +5565,7 @@ class RalphLoop:
                     changed_files=changed_files,
                     qa_results=qa_results,
                     run_dir=run_dir,
+                    handoff_commit_sha=handoff_commit_sha,
                 ),
                 worktree_path,
                 log_path,
@@ -5628,6 +5628,7 @@ class RalphLoop:
                 issue_number=issue.number,
                 changed_files=changed_files,
                 qa_results=qa_results,
+                delivery_mode=delivery_plan.mode,
             )
         except ReviewPackageFailure as error:
             manifest.record_review_package(
@@ -5655,41 +5656,6 @@ class RalphLoop:
             "summary": summary_payload,
             "media": media,
             "validation_status": "passed",
-        }
-
-    def _run_review_package_media_gate(
-        self,
-        issue: Issue,
-        *,
-        changed_files: list[str],
-        worktree_path: Path,
-        run_dir: Path,
-        manifest: RunManifest,
-    ) -> dict[str, Any] | None:
-        media = self._capture_review_package_media(
-            issue,
-            changed_files=changed_files,
-            worktree_path=worktree_path,
-            run_dir=run_dir,
-            manifest=manifest,
-        )
-        if not media:
-            return None
-
-        manifest.record_review_package(
-            "media_captured",
-            html_path=None,
-            generator_log_path=None,
-            summary=None,
-            media=media,
-            validation_status="not_required",
-        )
-        return {
-            "html_path": None,
-            "generator_log_path": None,
-            "summary": None,
-            "media": media,
-            "validation_status": "not_required",
         }
 
     def _capture_review_package_media(
@@ -13166,17 +13132,46 @@ def review_package_prompt(
     changed_files: list[str],
     qa_results: list[QAResult],
     run_dir: Path,
+    handoff_commit_sha: str | None = None,
 ) -> str:
     changed_lines = "\n".join(f"- `{path}`" for path in changed_files)
     qa_lines = ready_issue_refresh_qa_evidence_lines(qa_results)
+    target_label = "Integration target"
+    if delivery_plan.mode == EXPLORATORY_MODE:
+        target_label = "Exploratory branch"
+        gate_description = (
+            "This is a blocking Exploratory delivery handoff gate after QA and any "
+            "required Issue completion review, and before pushing the Exploratory "
+            "branch, Operator smoke, completion comments, or `agent-reviewing`."
+        )
+        required_sections = (
+            "- Summary\n"
+            "- Changed files\n"
+            "- QA evidence\n"
+            "- Issue completion review\n"
+            "- Review focus"
+        )
+        handoff_lines = textwrap.dedent(
+            f"""
+            - Handoff commit: `{handoff_commit_sha or "unknown"}`
+            """
+        ).strip()
+    else:
+        gate_description = (
+            "This is a blocking Gitflow or Trunk delivery gate after QA and any "
+            "required Issue completion review, and before Local integration, pushing "
+            "the Integration target, completion comments, `agent-integrated`, "
+            "`agent-merged`, or Trunk issue closure."
+        )
+        required_sections = (
+            "- Summary\n- Changed files\n- QA evidence\n- Issue completion review"
+        )
+        handoff_lines = ""
     return textwrap.dedent(
         f"""
         Generate a Review package for GitHub issue #{issue.number} in {repo}.
 
-        This is a blocking Gitflow or Trunk delivery gate after QA and any
-        required Issue completion review, and before Local integration, pushing
-        the Integration target, completion comments, `agent-integrated`,
-        `agent-merged`, or Trunk issue closure.
+        {gate_description}
 
         Write one complete offline static HTML document only. Do not edit repo
         files. Do not use scripts, inline JavaScript, event handler attributes,
@@ -13186,17 +13181,15 @@ def review_package_prompt(
 
         Required visible sections as `h2` headings:
 
-        - Summary
-        - Changed files
-        - QA evidence
-        - Issue completion review
+        {required_sections}
 
         Include:
 
         - Issue: `#{issue.number} {issue.title}`
         - Delivery mode: `{delivery_plan.mode}`
-        - Integration target: `{delivery_plan.target_branch}`
+        - {target_label}: `{delivery_plan.target_branch}`
         - Run logs: `{run_dir}`
+        {handoff_lines}
         - Changed files:
         {changed_lines}
         - QA evidence:

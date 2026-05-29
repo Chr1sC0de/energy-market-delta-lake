@@ -36,6 +36,10 @@ REVIEW_PACKAGE_REQUIRED_SECTIONS = (
     "qa evidence",
     "issue completion review",
 )
+EXPLORATORY_REVIEW_PACKAGE_REQUIRED_SECTIONS = (
+    *REVIEW_PACKAGE_REQUIRED_SECTIONS,
+    "review focus",
+)
 REVIEW_PACKAGE_CSS_IMPORT_PATTERN = re.compile(r"@import\b", re.IGNORECASE)
 REVIEW_PACKAGE_CSS_JAVASCRIPT_PATTERN = re.compile(
     r"(?:expression\s*\(|javascript\s*:)", re.IGNORECASE
@@ -5122,6 +5126,12 @@ def normalize_review_package_heading(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().lower())
 
 
+def review_package_required_sections(delivery_mode: str) -> tuple[str, ...]:
+    if delivery_mode == EXPLORATORY_MODE:
+        return EXPLORATORY_REVIEW_PACKAGE_REQUIRED_SECTIONS
+    return REVIEW_PACKAGE_REQUIRED_SECTIONS
+
+
 def is_meta_refresh(tag: str, attrs: list[tuple[str, str | None]]) -> bool:
     if tag != "meta":
         return False
@@ -5199,6 +5209,7 @@ def validate_review_package_html(
     issue_number: int,
     changed_files: list[str],
     qa_results: list[QAResult],
+    delivery_mode: str = GITFLOW_MODE,
     max_bytes: int = REVIEW_PACKAGE_MAX_BYTES,
 ) -> ReviewPackageSummary:
     if not html_path.exists():
@@ -5225,7 +5236,7 @@ def validate_review_package_html(
     sections = tuple(parser.heading_parts)
     missing = [
         section
-        for section in REVIEW_PACKAGE_REQUIRED_SECTIONS
+        for section in review_package_required_sections(delivery_mode)
         if section not in sections
     ]
     if missing:
