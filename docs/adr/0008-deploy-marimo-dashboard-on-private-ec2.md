@@ -48,15 +48,20 @@ browse Marimo-local Market context metadata without adding generated-file reads
 at runtime.
 
 Caddy does not serve Marimo packaged static assets from its own static root. It
-keeps `/marimo/dashboard-registry.json`, `/marimo/<notebook>/`,
-`/marimo/*/assets/*`, notebook favicons, notebook manifests,
-`/marimo/health`, and websocket upgrade requests outside Marimo `forward_auth`,
-then reverse-proxies those requests directly to `marimo-dashboard`. The Marimo
-FastAPI wrapper sets `Cache-Control: public, max-age=31536000, immutable` on
-successful `/marimo/<notebook>/assets/*` responses. Marimo-generated notebook
-HTML already emits preload hints for its packaged images and fonts plus
-`modulepreload` hints for JavaScript chunks, and current component evidence
-shows no WASM asset reference that justifies pre-serving packaged WASM.
+serves only the exact `/marimo` and `/marimo/` dashboard atlas routes from the
+Astro build after the Marimo `forward_auth` check. Marimo still owns
+`/marimo/dashboard-registry.json`, `/marimo/<notebook>/`, and other notebook
+routes, and Caddy reverse-proxies those application routes to
+`marimo-dashboard` after the same Marimo `forward_auth` check. Only
+`/marimo/health`, websocket upgrade requests, `/marimo/*/assets/*`, notebook
+favicons, notebook manifests, and notebook Apple touch icons bypass
+`forward_auth` before being reverse-proxied directly to `marimo-dashboard`. The
+Marimo FastAPI wrapper sets `Cache-Control: public, max-age=31536000,
+immutable` on successful `/marimo/<notebook>/assets/*` responses.
+Marimo-generated notebook HTML already emits preload hints for its packaged
+images and fonts plus `modulepreload` hints for JavaScript chunks, and current
+component evidence shows no WASM asset reference that justifies pre-serving
+packaged WASM.
 
 ## Considered options
 
