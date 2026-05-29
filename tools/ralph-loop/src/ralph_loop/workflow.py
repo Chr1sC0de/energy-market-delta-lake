@@ -5411,11 +5411,12 @@ def review_package_markdown_lines(review_package: dict[str, Any] | None) -> list
         "## Review package",
         "",
         f"- Status: `{payload.get('status')}`",
+        f"- Validation status: `{payload.get('validation_status') or 'not_recorded'}`",
         f"- Media count: {payload.get('media_count')}",
         f"- Summary: {payload.get('summary_text')}",
     ]
     if html_path:
-        lines.insert(3, f"- HTML: `{html_path}`")
+        lines.insert(4, f"- HTML: `{html_path}`")
     media = review_package.get("media")
     if isinstance(media, list) and media:
         lines.append("- Media:")

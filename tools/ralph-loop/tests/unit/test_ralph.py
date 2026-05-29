@@ -7900,6 +7900,7 @@ Build it.
 
         self.assertIn("## Review package", comment)
         self.assertIn("- Status: `passed`", comment)
+        self.assertIn("- Validation status: `passed`", comment)
         self.assertIn("- HTML: `/logs/issue-42/review-package.html`", comment)
         self.assertIn("- Media count: 1", comment)
         self.assertIn(
@@ -7990,6 +7991,7 @@ Build it.
         self.assertIn("Ralph promotion completed.", comment)
         self.assertIn("## Review package", comment)
         self.assertIn("- Status: `passed`", comment)
+        self.assertIn("- Validation status: `passed`", comment)
         self.assertIn("- HTML: `/logs/issue-42/review-package.html`", comment)
         self.assertIn("- Media count: 0", comment)
         self.assertIn("- Summary: Review package for issue #42", comment)
@@ -16633,6 +16635,16 @@ Build it.
                             "Ralph Gitflow integration completed.",
                             "",
                             "Commit: `abc1234`",
+                            "Delivery mode: `gitflow`",
+                            "Target branch: `dev`",
+                            "",
+                            "## Review package",
+                            "",
+                            "- Status: `passed`",
+                            "- Validation status: `passed`",
+                            "- HTML: `/logs/issue-42/review-package.html`",
+                            "- Media count: 0",
+                            "- Summary: Review package for issue #42; 1 changed file(s); 1 QA result(s)",
                         ]
                     )
                 }
@@ -16806,6 +16818,16 @@ Build it.
             runner.calls[review_index].input_text,
         )
         self.assertIn(
+            "Review package for #42: `passed`; validation `passed`; "
+            "HTML `/logs/issue-42/review-package.html`",
+            runner.calls[review_index].input_text,
+        )
+        self.assertIn(
+            "#42 Implement thing: integrated `abc1234`; Review package "
+            "`passed`; validation `passed`; HTML `/logs/issue-42/review-package.html`",
+            runner.calls[review_index].input_text,
+        )
+        self.assertIn(
             "`def5678` Manual follow-up after issue integration - "
             "unverified Promotion commit",
             runner.calls[review_index].input_text,
@@ -16828,6 +16850,8 @@ Build it.
         self.assertIn("Ralph promotion completed.", comment)
         self.assertIn("Promotion commit: `promotion-sha`", comment)
         self.assertIn("Integrated commit: `abc1234`", comment)
+        self.assertIn("- Status: `passed`", comment)
+        self.assertIn("- Validation status: `passed`", comment)
         self.assertIn("## Promotion file inventory", comment)
         self.assertIn(
             "These files are from the full Promotion range, not only issue #42.",
@@ -16880,6 +16904,19 @@ Build it.
                         "number": 42,
                         "title": "Implement thing",
                         "url": "https://github.com/example/repo/issues/42",
+                        "review_package": {
+                            "status": "passed",
+                            "validation_status": "passed",
+                            "html_path": "/logs/issue-42/review-package.html",
+                            "generator_log_path": None,
+                            "failure_reason": None,
+                            "media_count": 0,
+                            "summary": None,
+                            "summary_text": (
+                                "Review package for issue #42; "
+                                "1 changed file(s); 1 QA result(s)"
+                            ),
+                        },
                     },
                     "integrated_commit": "abc1234",
                 },
@@ -16890,6 +16927,16 @@ Build it.
                     "classification": "unverified_promotion_commit",
                 },
             ],
+        )
+        self.assertEqual(
+            manifest["github_metadata"]["issues"][0]["review_package"]["status"],
+            "passed",
+        )
+        self.assertEqual(
+            manifest["github_metadata"]["issues"][0]["review_package"][
+                "validation_status"
+            ],
+            "passed",
         )
         self.assertEqual(manifest["post_promotion_review"]["status"], "completed")
         self.assertIn(
