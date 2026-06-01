@@ -72,9 +72,9 @@ scan-on-push on each repository, and exposes digest-pinned image URIs for the
 ECS task definitions and EC2 service bootstraps that need deterministic image
 availability.
 
-The Caddy build context runs the Astro portfolio build during the Docker build
-and copies the generated static files into Caddy's `/var/www/html` root before
-the image is pushed.
+The Caddy build context runs the single-page Vite React Router portfolio build
+during the Docker build and copies the generated static files into Caddy's
+`/var/www/html` root before the image is pushed.
 
 ## Code-location manifest prototype
 
@@ -440,7 +440,9 @@ placement, image pull, task startup latency, or scale-in behavior because issue
   - `backend-services/marimo/notebooks/heating_value_pressure.py`
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
-  - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/src/App.tsx`
+  - `backend-services/caddy/src/data.ts`
+  - `backend-services/caddy/src/main.tsx`
   - `backend-services/caddy/public/theme.css`
   - `backend-services/dagster-core/code-locations.aws.toml`
   - `backend-services/dagster-core/Dockerfile`

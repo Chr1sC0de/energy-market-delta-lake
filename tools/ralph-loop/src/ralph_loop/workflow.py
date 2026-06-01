@@ -290,17 +290,16 @@ CADDY_REVIEW_PACKAGE_ROOT_ROUTE_INPUTS = frozenset(
     {
         f"{CADDY_PREFIX}Caddyfile",
         f"{CADDY_PREFIX}Dockerfile",
+        f"{CADDY_PREFIX}index.html",
         f"{CADDY_PREFIX}package.json",
-        f"{CADDY_PREFIX}astro.config.mjs",
         f"{CADDY_PREFIX}tsconfig.json",
+        f"{CADDY_PREFIX}vite.config.ts",
         f"{CADDY_PREFIX}public/theme.css",
-        f"{CADDY_PREFIX}src/pages/index.astro",
+        f"{CADDY_PREFIX}src/App.tsx",
         f"{CADDY_PREFIX}src/components/AutomationWorkflowFlow.tsx",
-        f"{CADDY_PREFIX}src/components/HeroArchitectureFallback.astro",
         f"{CADDY_PREFIX}src/components/HeroArchitectureFlow.tsx",
-        f"{CADDY_PREFIX}src/components/InfrastructureDiagram.astro",
-        f"{CADDY_PREFIX}src/components/ServiceLinks.astro",
-        f"{CADDY_PREFIX}src/layouts/PortfolioLayout.astro",
+        f"{CADDY_PREFIX}src/data.ts",
+        f"{CADDY_PREFIX}src/main.tsx",
         f"{CADDY_PREFIX}src/styles/site.css",
     }
 )

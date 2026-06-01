@@ -19,6 +19,8 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 # conftest.py sets MARIMO_NOTEBOOKS_DIR before this import.
 from marimoserver.dashboard_registry import (
+    DashboardAudience,
+    DashboardRegistryEntry,
     DashboardStatus,
     dashboard_registry,
 )
@@ -26,7 +28,9 @@ from marimoserver.main import (
     IMMUTABLE_ASSET_CACHE_CONTROL,
     NOTEBOOKS_DIR,
     StaticAssetHeadersMiddleware,
+    _inline_icon,
     _render_index_html,
+    _story_group,
     app,
     app_names,
 )
@@ -383,6 +387,34 @@ class TestIndexPage:
         assert 'http-equiv="refresh"' not in html
         assert "setinterval(" not in html
         assert "settimeout(" not in html
+
+    def test_index_renders_search_story_filters_and_spotlight(self) -> None:
+        response = _get("/marimo")
+
+        assert 'id="dashboard-search"' in response.text
+        assert "Story groups" in response.text
+        assert 'for="story-market"' in response.text
+        assert 'id="route-spotlight"' in response.text
+        assert 'data-story="market"' in response.text
+        assert 'data-story="operations"' in response.text
+        assert 'data-story="trust"' in response.text
+        assert 'data-story="concepts"' in response.text
+
+    def test_story_group_falls_back_to_market_for_market_entries(self) -> None:
+        entry = DashboardRegistryEntry(
+            concept_id="daily-position",
+            title="Balancing Position",
+            description="Daily commercial position without a narrower route hint.",
+            audiences=(DashboardAudience.ANALYST,),
+            status=DashboardStatus.PLANNED,
+            notebook_name=None,
+            backing_assets=(),
+        )
+
+        assert _story_group(entry) == "market"
+
+    def test_inline_icon_unknown_name_returns_empty_string(self) -> None:
+        assert _inline_icon("unknown") == ""
 
 
 # ---------------------------------------------------------------------------

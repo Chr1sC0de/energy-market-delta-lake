@@ -1,14 +1,14 @@
 # Caddy Portfolio And Reverse Proxy
 
 This Subproject builds the public Caddy image used by the local compose stack
-and the deployed AWS edge host. The image serves a static Astro portfolio at
-the root URL and keeps the existing Caddy reverse-proxy routes for Dagster,
-auth, and Marimo.
+and the deployed AWS edge host. The image serves a static Vite + React Router
+portfolio at the root URL and keeps the existing Caddy reverse-proxy routes for
+Dagster, auth, and Marimo.
 
 ## Table of contents
 
 - [What it does](#what-it-does)
-- [Astro portfolio](#astro-portfolio)
+- [React Router portfolio](#react-router-portfolio)
 - [Local usage](#local-usage)
 - [Review package media](#review-package-media)
 - [Validation](#validation)
@@ -17,35 +17,37 @@ auth, and Marimo.
 ## What it does
 
 - [Caddyfile](Caddyfile) keeps Caddy as the public entrypoint.
-- [Dockerfile](Dockerfile) builds the Astro app, copies `dist/` into
+- [Dockerfile](Dockerfile) builds the Vite app, copies `dist/` into
   `/var/www/html`, and then runs the Caddy runtime image.
-- The generated root page links to the guest Dagster UI, protected Dagster
-  admin UI, and protected Marimo dashboard.
+- The generated public workspace provides a single React Router route at `/`
+  with direct links ordered as public Dagster source map, private Dagster admin
+  tools, and restricted dashboards.
+  Unknown public portfolio paths redirect back to `/`.
 - The generated `/theme.css` asset is served from Caddy's static root so Marimo
   pages can keep using the same palette.
+- [Caddyfile](Caddyfile) uses a static SPA fallback for public portfolio routes
+  while excluding `/marimo*`, `/dagster-webserver*`, `/oauth2*`, `/_next*`,
+  `/graphql*`, Dagster favicon paths, and manifest paths from that fallback.
 
-## Astro portfolio
+## React Router portfolio
 
 The portfolio source lives under [src/](src/):
 
-- [src/pages/index.astro](src/pages/index.astro) composes the page.
+- [index.html](index.html), [vite.config.ts](vite.config.ts), and
+  [src/main.tsx](src/main.tsx) form the Vite + React Router entrypoint.
+- [src/App.tsx](src/App.tsx) owns the single-page public workspace, route
+  cards, and reactive preview panel for public source map, private admin tools,
+  and restricted dashboards.
+- [src/data.ts](src/data.ts) keeps legacy public labels and dashboard story
+  summaries available for future route expansion.
+- [src/styles/site.css](src/styles/site.css) owns the bold single-page visual
+  system, responsive spacing, hover/focus states, and reduced-motion fallbacks.
 - [src/components/HeroArchitectureFlow.tsx](src/components/HeroArchitectureFlow.tsx)
-  owns the invisible first-view controller and deployed runtime detail modal.
-  [src/components/HeroArchitectureFallback.astro](src/components/HeroArchitectureFallback.astro)
-  renders the visible first-view card so reloads do not swap the architecture
-  preview during client hydration.
-- [src/components/AutomationWorkflowFlow.tsx](src/components/AutomationWorkflowFlow.tsx)
-  renders the stable HTML/SVG preview for human decisions and AI execution,
-  with a master-detail selector for goal setting, build/check work,
-  **Documentation sync**, **Test lane** evidence, and human approval. Each
-  selector opens a focused React Flow detail modal with overview and deep dive
-  tabs, including links to repo-local **Agent skills**, Operator docs,
-  maintained-doc policy, QA policy docs, and **Delivery mode** context for
-  approval.
-- [src/components/InfrastructureDiagram.astro](src/components/InfrastructureDiagram.astro)
-  renders the recruiter-facing tech stack section grouped by capability area.
+  and [src/components/AutomationWorkflowFlow.tsx](src/components/AutomationWorkflowFlow.tsx)
+  remain available component assets for future richer diagrams; the current
+  public workspace uses the route preview in [src/App.tsx](src/App.tsx).
 - [public/theme.css](public/theme.css) is copied to `/theme.css` during the
-  Astro build for the portfolio and Marimo notebook pages.
+  Vite build for the portfolio and Marimo notebook pages.
 
 ## Local usage
 
@@ -55,7 +57,7 @@ Install dependencies once from this Subproject directory:
 npm install
 ```
 
-Run the Astro development server:
+Run the Vite development server:
 
 ```bash
 npm run dev
@@ -79,7 +81,7 @@ static-serving inputs, Ralph maps that change to the generated root route `/`,
 runs `npm run build` from this Subproject, serves the built `dist/` directory
 from the issue worktree, and records desktop and narrow `.webm` videos before
 **Local integration**, Trunk push, or Exploratory handoff. When the changed
-branch's built Astro output also contains the Caddy-served `/marimo` dashboard
+branch's built Vite output also contains the Caddy-served `/marimo` dashboard
 listing route, Ralph records desktop and narrow videos for `/marimo` as sibling
 Review package media as well.
 
@@ -96,6 +98,15 @@ For portfolio-only edits, run:
 
 ```bash
 npm run build
+```
+
+For screenshot-based browser review, this Subproject includes Playwright as a
+development dependency. Install the Chromium browser once, then review the local
+Vite preview route:
+
+```bash
+npx playwright install chromium
+npm run preview -- --host 127.0.0.1 --port 4173
 ```
 
 For root docs or cross-Subproject changes, run the relevant repo **Commit
@@ -116,16 +127,15 @@ check** surface from the changed Subproject or root, as described in
   - `backend-services/caddy/Caddyfile`
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
-  - `backend-services/caddy/astro.config.mjs`
+  - `backend-services/caddy/index.html`
+  - `backend-services/caddy/vite.config.ts`
   - `backend-services/caddy/tsconfig.json`
   - `backend-services/caddy/public/theme.css`
-  - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/src/App.tsx`
+  - `backend-services/caddy/src/data.ts`
+  - `backend-services/caddy/src/main.tsx`
   - `backend-services/caddy/src/components/AutomationWorkflowFlow.tsx`
-  - `backend-services/caddy/src/components/HeroArchitectureFallback.astro`
   - `backend-services/caddy/src/components/HeroArchitectureFlow.tsx`
-  - `backend-services/caddy/src/components/InfrastructureDiagram.astro`
-  - `backend-services/caddy/src/components/ServiceLinks.astro`
-  - `backend-services/caddy/src/layouts/PortfolioLayout.astro`
   - `backend-services/caddy/src/styles/site.css`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
   - `tools/ralph-loop/src/ralph_loop/review_package_media.py`

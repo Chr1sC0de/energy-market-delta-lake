@@ -223,7 +223,8 @@ without making local development performance claims.
 - `backend-services/authentication`
   - implements the OIDC/session bridge used in front of protected routes
 - `backend-services/caddy`
-  - provides the reverse-proxy image, root Astro portfolio, and routing rules
+  - provides the reverse-proxy image, single-page root React Router portfolio,
+    and routing rules
 - `backend-services/marimo`
   - notebook-oriented Subproject with a registry-backed `/marimo` concept
     gallery, registry-only glossary explorer, operational readiness and
@@ -272,7 +273,9 @@ Gas market knowledge base responsibility:
   - `backend-services/caddy/Caddyfile`
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
-  - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/src/App.tsx`
+  - `backend-services/caddy/src/data.ts`
+  - `backend-services/caddy/src/main.tsx`
   - `backend-services/caddy/public/theme.css`
   - `backend-services/marimo/src/marimoserver/main.py`
   - `backend-services/marimo/src/marimoserver/gas_dashboard.py`

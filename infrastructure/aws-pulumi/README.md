@@ -179,7 +179,8 @@ repository:
 - `backend-services/dagster-user/aemo-etl` for the default gRPC user-code
   service declared in `backend-services/dagster-core/code-locations.aws.toml`
 - `backend-services/authentication` for the auth service
-- `backend-services/caddy` for the public reverse proxy and Astro portfolio
+- `backend-services/caddy` for the public reverse proxy and single-page Vite +
+  React Router portfolio
 - `backend-services/marimo` for the curated Marimo dashboard image
 
 The Pulumi deployment uses the AWS-targeted Dagster configuration by building
@@ -197,8 +198,8 @@ preview or deployment.
 
 Key deployed behaviors visible in the infrastructure code:
 
-- Caddy runs on a public EC2 instance, serves the Astro portfolio at the root
-  URL, and proxies to:
+- Caddy runs on a public EC2 instance, serves the static single-page React
+  Router portfolio at the root URL, and proxies to:
   - `webserver-admin.dagster:3000`
   - `webserver-guest.dagster:3000`
   - `marimo-dashboard.dagster:2718`
@@ -429,7 +430,9 @@ system's services and Dagster workflows.
   - `backend-services/dagster-core/render_aws_workspace.py`
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
-  - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/src/App.tsx`
+  - `backend-services/caddy/src/data.ts`
+  - `backend-services/caddy/src/main.tsx`
   - `backend-services/caddy/public/theme.css`
   - `infrastructure/aws-pulumi/configs.py`
   - `infrastructure/aws-pulumi/code_locations.py`

@@ -92,8 +92,8 @@ flowchart LR
   IO-manager buckets.
 - The Caddy host:
   - pulls the digest-pinned `dagster/caddy` image from ECR
-  - serves the Astro-generated root portfolio and shared `/theme.css` asset
-    before proxying application routes
+  - serves the Vite-generated single-page React Router portfolio and shared
+    `/theme.css` asset before proxying application routes
   - mounts a dedicated encrypted EBS volume at `/mnt/caddy-certs`
   - persists certificate state under `/data`
   - creates a Route 53 A record for `ausenergymarketdata.com`
@@ -120,7 +120,9 @@ flowchart LR
   - `backend-services/caddy/Caddyfile`
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
-  - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/src/App.tsx`
+  - `backend-services/caddy/src/data.ts`
+  - `backend-services/caddy/src/main.tsx`
   - `backend-services/caddy/public/theme.css`
 - `sync.scope`: `architecture`
 - `sync.qa`:

@@ -131,6 +131,36 @@ _INDEX_CSS = """
             font-size: 0.82rem;
         }
 
+        .overview-strip {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .overview-card,
+        .spotlight,
+        .search-box {
+            border: 1px solid var(--emdl-line, #cfdbd6);
+            border-radius: 8px;
+            background: var(--emdl-panel, #ffffff);
+            box-shadow: var(--emdl-soft-shadow, 0 8px 28px rgb(27 35 36 / 0.08));
+        }
+
+        .overview-card {
+            padding: 12px;
+        }
+
+        .overview-card strong {
+            display: block;
+            color: var(--emdl-slate, #354348);
+        }
+
+        .overview-card span {
+            color: var(--emdl-muted, #566365);
+            font-size: 0.82rem;
+        }
+
         .concept-nav {
             display: flex;
             flex-wrap: wrap;
@@ -163,6 +193,49 @@ _INDEX_CSS = """
             position: relative;
         }
 
+        .gallery-tools {
+            position: sticky;
+            top: 0;
+            z-index: 3;
+            display: grid;
+            gap: 12px;
+            margin: 22px 0;
+            padding: 14px;
+            border: 1px solid var(--emdl-line, #cfdbd6);
+            border-radius: 8px;
+            background: rgb(var(--emdl-paper-rgb, 246 248 243) / 0.94);
+            backdrop-filter: blur(12px);
+        }
+
+        .search-box {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            gap: 10px;
+            align-items: center;
+            padding: 10px 12px;
+        }
+
+        .search-box svg {
+            color: var(--emdl-blue, #166791);
+        }
+
+        .search-box input {
+            min-width: 0;
+            border: 0;
+            outline: 0;
+            color: var(--emdl-ink, #1b2324);
+            background: transparent;
+            font: inherit;
+        }
+
+        .filter-heading {
+            margin: 0 0 6px;
+            color: var(--emdl-muted, #566365);
+            font-size: 0.74rem;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
         .audience-filter {
             position: absolute;
             inline-size: 1px;
@@ -178,15 +251,29 @@ _INDEX_CSS = """
             margin-bottom: 18px;
         }
 
-        #audience-all:checked ~ .filter-controls label[for="audience-all"],
-        #audience-platform-operations:checked ~ .filter-controls label[for="audience-platform-operations"],
-        #audience-operator:checked ~ .filter-controls label[for="audience-operator"],
-        #audience-analyst:checked ~ .filter-controls label[for="audience-analyst"],
-        #audience-stakeholder:checked ~ .filter-controls label[for="audience-stakeholder"],
-        #audience-data-engineer:checked ~ .filter-controls label[for="audience-data-engineer"] {
+        .filter-block .filter-controls {
+            margin-bottom: 0;
+        }
+
+        #audience-all:checked ~ .gallery-tools label[for="audience-all"],
+        #audience-platform-operations:checked ~ .gallery-tools label[for="audience-platform-operations"],
+        #audience-operator:checked ~ .gallery-tools label[for="audience-operator"],
+        #audience-analyst:checked ~ .gallery-tools label[for="audience-analyst"],
+        #audience-stakeholder:checked ~ .gallery-tools label[for="audience-stakeholder"],
+        #audience-data-engineer:checked ~ .gallery-tools label[for="audience-data-engineer"] {
             border-color: var(--emdl-blue, #166791);
             color: var(--emdl-panel, #ffffff);
             background: var(--emdl-blue, #166791);
+        }
+
+        #story-all:checked ~ .gallery-tools label[for="story-all"],
+        #story-market:checked ~ .gallery-tools label[for="story-market"],
+        #story-operations:checked ~ .gallery-tools label[for="story-operations"],
+        #story-trust:checked ~ .gallery-tools label[for="story-trust"],
+        #story-concepts:checked ~ .gallery-tools label[for="story-concepts"] {
+            border-color: var(--emdl-green, #3e7a54);
+            color: var(--emdl-panel, #ffffff);
+            background: var(--emdl-green, #3e7a54);
         }
 
         #audience-platform-operations:checked ~ .dashboard-grid .dashboard-card:not(.audience-platform-operations),
@@ -195,6 +282,17 @@ _INDEX_CSS = """
         #audience-stakeholder:checked ~ .dashboard-grid .dashboard-card:not(.audience-stakeholder),
         #audience-data-engineer:checked ~ .dashboard-grid .dashboard-card:not(.audience-data-engineer) {
             display: none;
+        }
+
+        #story-market:checked ~ .dashboard-grid .dashboard-card:not(.story-market),
+        #story-operations:checked ~ .dashboard-grid .dashboard-card:not(.story-operations),
+        #story-trust:checked ~ .dashboard-grid .dashboard-card:not(.story-trust),
+        #story-concepts:checked ~ .dashboard-grid .dashboard-card:not(.story-concepts) {
+            display: none;
+        }
+
+        .dashboard-card[hidden] {
+            display: none !important;
         }
 
         .dashboard-grid {
@@ -214,6 +312,11 @@ _INDEX_CSS = """
             background: var(--emdl-panel, #ffffff);
             box-shadow: var(--emdl-soft-shadow, 0 8px 28px rgb(27 35 36 / 0.08));
             text-decoration: none;
+        }
+
+        .dashboard-card:focus-visible {
+            outline: 3px solid rgb(var(--emdl-blue-rgb, 22 103 145) / 0.42);
+            outline-offset: 4px;
         }
 
         .dashboard-card--available:hover {
@@ -270,6 +373,11 @@ _INDEX_CSS = """
             background: rgb(var(--emdl-red-rgb, 158 72 57) / 0.12);
         }
 
+        .story-pill {
+            color: var(--emdl-blue, #166791);
+            background: rgb(var(--emdl-blue-rgb, 22 103 145) / 0.11);
+        }
+
         .audience-tag {
             color: var(--emdl-slate, #354348);
             background: var(--emdl-service-band, #eef4f1);
@@ -297,6 +405,28 @@ _INDEX_CSS = """
             color: var(--emdl-muted, #566365);
         }
 
+        .spotlight {
+            display: grid;
+            gap: 8px;
+            margin: 18px 0;
+            padding: 16px;
+        }
+
+        .spotlight h2 {
+            margin: 0;
+        }
+
+        .spotlight p {
+            margin: 0;
+            color: var(--emdl-muted, #566365);
+        }
+
+        .spotlight-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
         @media (max-width: 640px) {
             main {
                 width: min(100% - 24px, 1180px);
@@ -309,6 +439,31 @@ _INDEX_CSS = """
 
             h1 {
                 font-size: 2.25rem;
+            }
+
+            .overview-strip {
+                grid-template-columns: 1fr;
+            }
+
+            .gallery-tools {
+                position: static;
+            }
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                color-scheme: dark;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                transition-duration: 0.001ms !important;
+                animation-duration: 0.001ms !important;
+                animation-iteration-count: 1 !important;
+                scroll-behavior: auto !important;
             }
         }
 """
@@ -431,6 +586,18 @@ def _render_index_html(mounted_notebook_names: set[str]) -> str:
     audience_labels = "\n".join(
         _render_audience_label(audience) for audience in ROADMAP_AUDIENCES
     )
+    story_inputs = "\n".join(
+        _render_story_input(story)
+        for story in ("market", "operations", "trust", "concepts")
+    )
+    story_labels = "\n".join(
+        _render_story_label(story)
+        for story in ("market", "operations", "trust", "concepts")
+    )
+    overview_cards = "\n".join(
+        _render_overview_card(story, entries)
+        for story in ("market", "operations", "trust", "concepts")
+    )
     cards = "\n".join(
         _render_dashboard_card(entry, mounted_notebook_names) for entry in entries
     )
@@ -470,6 +637,9 @@ def _render_index_html(mounted_notebook_names: set[str]) -> str:
                     <span class="summary-label">registry concepts</span>
                 </li>
             </ul>
+            <div class="overview-strip" aria-label="Market story overview">
+{overview_cards}
+            </div>
         </section>
 
         <nav class="concept-nav" aria-label="Dashboard concepts">
@@ -485,14 +655,58 @@ def _render_index_html(mounted_notebook_names: set[str]) -> str:
                 checked
             >
 {audience_inputs}
-            <div class="filter-controls" aria-label="Audience filters">
-                <label for="audience-all">All audiences</label>
+            <input
+                class="audience-filter"
+                type="radio"
+                id="story-all"
+                name="story-filter"
+                checked
+            >
+{story_inputs}
+            <div class="gallery-tools">
+                <label class="search-box" for="dashboard-search">
+                    {_inline_icon("search")}
+                    <input
+                        id="dashboard-search"
+                        type="search"
+                        placeholder="Search dashboards, assets, audience, status"
+                        autocomplete="off"
+                    >
+                </label>
+                <div class="filter-block">
+                    <p class="filter-heading">Audience filters</p>
+                    <div class="filter-controls" aria-label="Audience filters">
+                        <label for="audience-all">All audiences</label>
 {audience_labels}
+                    </div>
+                </div>
+                <div class="filter-block">
+                    <p class="filter-heading">Story groups</p>
+                    <div class="filter-controls" aria-label="Story group filters">
+                        <label for="story-all">All stories</label>
+{story_labels}
+                    </div>
+                </div>
+            </div>
+            <div class="spotlight" id="route-spotlight" tabindex="-1">
+                <p class="eyebrow">Route spotlight</p>
+                <h2>Source to dashboard route</h2>
+                <p>
+                    Select or focus a dashboard card to inspect its story group,
+                    status, audience, and backing assets.
+                </p>
+                <div class="spotlight-meta" aria-label="Spotlight details">
+                    <span class="asset-pill">Static fallback ready</span>
+                    <span class="asset-pill">No auto-refresh timers</span>
+                </div>
             </div>
             <div class="dashboard-grid">
 {cards}
             </div>
         </section>
+        <script>
+{_INDEX_JS}
+        </script>
     </main>
 </body>
 </html>"""
@@ -523,23 +737,68 @@ def _render_audience_label(audience: DashboardAudience) -> str:
     return f'                <label for="audience-{audience_value}">{audience_label}</label>'
 
 
+def _render_story_input(story: str) -> str:
+    story_value = escape(story, quote=True)
+    return f"""\
+            <input
+                class="audience-filter story-filter"
+                type="radio"
+                id="story-{story_value}"
+                name="story-filter"
+            >"""
+
+
+def _render_story_label(story: str) -> str:
+    story_value = escape(story, quote=True)
+    return f'                        <label for="story-{story_value}">{escape(_label_from_slug(story))}</label>'
+
+
+def _render_overview_card(
+    story: str,
+    entries: tuple[DashboardRegistryEntry, ...],
+) -> str:
+    count = sum(1 for entry in entries if _story_group(entry) == story)
+    return f"""\
+                <article class="overview-card">
+                    <strong>{escape(_label_from_slug(story))}</strong>
+                    <span>{count} dashboard concepts</span>
+                </article>"""
+
+
 def _render_dashboard_card(
     entry: DashboardRegistryEntry,
     mounted_notebook_names: set[str],
 ) -> str:
     href = _notebook_href(entry, mounted_notebook_names)
+    story_group = _story_group(entry)
     audience_classes = " ".join(
         f"audience-{escape(audience.value, quote=True)}" for audience in entry.audiences
     )
     status_kind = _status_kind(entry, href)
-    card_class = f"dashboard-card dashboard-card--{status_kind} {audience_classes}"
+    card_class = (
+        f"dashboard-card dashboard-card--{status_kind} story-{story_group} "
+        f"{audience_classes}"
+    )
+    search_text = " ".join(
+        (
+            entry.title,
+            entry.description,
+            entry.status.value,
+            story_group,
+            " ".join(audience.value for audience in entry.audiences),
+            " ".join(entry.backing_assets),
+        )
+    )
     attributes = (
         f'class="{card_class}" '
         f'id="concept-{escape(entry.concept_id, quote=True)}" '
         f'data-concept-id="{escape(entry.concept_id, quote=True)}" '
-        f'data-status="{escape(entry.status.value, quote=True)}"'
+        f'data-status="{escape(entry.status.value, quote=True)}" '
+        f'data-availability="{escape(status_kind, quote=True)}" '
+        f'data-story="{escape(story_group, quote=True)}" '
+        f'data-search="{escape(search_text.lower(), quote=True)}"'
     )
-    body = _render_dashboard_card_body(entry, status_kind)
+    body = _render_dashboard_card_body(entry, status_kind, story_group)
 
     if href is not None:
         return f'                <a {attributes} href="{escape(href, quote=True)}">\n{body}\n                </a>'
@@ -550,6 +809,7 @@ def _render_dashboard_card(
 def _render_dashboard_card_body(
     entry: DashboardRegistryEntry,
     status_kind: str,
+    story_group: str,
 ) -> str:
     audience_tags = "\n".join(
         f'                    <span class="audience-tag">{escape(_label_from_slug(audience.value))}</span>'
@@ -574,6 +834,9 @@ def _render_dashboard_card_body(
                     <div class="card-topline">
                         <span class="status-pill status-pill--{escape(status_kind, quote=True)}">
                             {escape(_status_label(status_kind))}
+                        </span>
+                        <span class="status-pill story-pill">
+                            {escape(_label_from_slug(story_group))}
                         </span>
                     </div>
                     <div>
@@ -626,8 +889,140 @@ def _action_label(status_kind: str) -> str:
     return "Notebook not present in this image"
 
 
+def _story_group(entry: DashboardRegistryEntry) -> str:
+    concept_text = " ".join(
+        (
+            entry.concept_id,
+            entry.title,
+            entry.description,
+        )
+    ).lower()
+    searchable = " ".join((concept_text, " ".join(entry.backing_assets))).lower()
+    if any(
+        token in concept_text
+        for token in (
+            "price",
+            "schedule",
+            "settlement",
+            "bid",
+            "offer",
+            "allocation",
+            "market",
+            "mos",
+        )
+    ):
+        return "market"
+    if any(
+        token in searchable
+        for token in (
+            "readiness",
+            "health",
+            "lineage",
+            "coverage",
+            "freshness",
+            "diagnostic",
+            "dictionary",
+            "citation",
+            "asset catalogue",
+        )
+    ):
+        return "trust"
+    if any(
+        token in searchable
+        for token in (
+            "flow",
+            "storage",
+            "capacity",
+            "linepack",
+            "notice",
+            "forecast",
+            "operation",
+        )
+    ):
+        return "operations"
+    if any(
+        token in searchable
+        for token in (
+            "concept",
+            "glossary",
+            "explainer",
+            "participant",
+            "facility",
+            "connection",
+            "hub",
+            "gas day",
+        )
+    ):
+        return "concepts"
+    return "market"
+
+
 def _label_from_slug(value: str) -> str:
     return value.replace("-", " ").title()
+
+
+def _inline_icon(name: str) -> str:
+    if name == "search":
+        return """\
+                    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                        <path d="m21 21-4.3-4.3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/>
+                    </svg>"""
+    return ""
+
+
+_INDEX_JS = """
+(() => {
+    const search = document.querySelector("#dashboard-search");
+    const cards = Array.from(document.querySelectorAll(".dashboard-card"));
+    const spotlight = document.querySelector("#route-spotlight");
+
+    const updateSearch = () => {
+        const query = search.value.trim().toLowerCase();
+        for (const card of cards) {
+            const haystack = card.getAttribute("data-search") || "";
+            card.hidden = query.length > 0 && !haystack.includes(query);
+        }
+    };
+
+    const updateSpotlight = (card) => {
+        if (!spotlight || !card) {
+            return;
+        }
+        const title = card.querySelector("h2")?.textContent || "Dashboard route";
+        const description = card.querySelector("p")?.textContent || "";
+        const story = card.getAttribute("data-story") || "market";
+        const status = card.getAttribute("data-availability") || card.getAttribute("data-status") || "available";
+        const assets = Array.from(card.querySelectorAll(".asset-pill"))
+            .slice(0, 4)
+            .map((node) => `<span class="asset-pill">${node.textContent}</span>`)
+            .join("");
+        spotlight.innerHTML = `
+            <p class="eyebrow">Route spotlight</p>
+            <h2>${title}</h2>
+            <p>${description}</p>
+            <div class="spotlight-meta" aria-label="Spotlight details">
+                <span class="asset-pill">${story}</span>
+                <span class="asset-pill">${status}</span>
+                ${assets}
+            </div>
+        `;
+    };
+
+    if (search) {
+        search.addEventListener("input", updateSearch);
+    }
+
+    for (const card of cards) {
+        card.addEventListener("mouseenter", () => updateSpotlight(card));
+        card.addEventListener("focus", () => updateSpotlight(card));
+    }
+
+    if (cards.length > 0) {
+        updateSpotlight(cards[0]);
+    }
+})();
+"""
 
 
 app.mount("/marimo", server.build())

@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-COPY astro.config.mjs tsconfig.json ./
+COPY index.html tsconfig.json vite.config.ts ./
 COPY public ./public
 COPY src ./src
 RUN npm run build

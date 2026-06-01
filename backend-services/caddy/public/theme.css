@@ -25,3 +25,22 @@
   --emdl-shadow: 0 18px 46px rgb(var(--emdl-ink-rgb) / 0.1);
   --emdl-soft-shadow: 0 8px 28px rgb(var(--emdl-ink-rgb) / 0.08);
 }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --emdl-ink-rgb: 229 237 232;
+    --emdl-muted-rgb: 167 183 178;
+    --emdl-paper-rgb: 16 22 23;
+    --emdl-panel-rgb: 24 32 34;
+    --emdl-line-rgb: 69 86 86;
+    --emdl-blue-rgb: 102 184 220;
+    --emdl-green-rgb: 115 195 147;
+    --emdl-amber-rgb: 225 169 84;
+    --emdl-red-rgb: 224 132 112;
+    --emdl-slate-rgb: 218 228 226;
+    --emdl-service-band-rgb: 28 43 42;
+    --emdl-shadow: 0 22px 58px rgb(0 0 0 / 0.36);
+    --emdl-soft-shadow: 0 10px 32px rgb(0 0 0 / 0.26);
+  }
+}

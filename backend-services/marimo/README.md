@@ -74,7 +74,7 @@ proxied through directly. Caddy does not serve Marimo packaged assets from its
 own static root; it excludes `/marimo/*/assets/*`, notebook favicon and
 manifest paths, `/marimo/health`, and websocket upgrades from `forward_auth`,
 then reverse-proxies them to `marimo-dashboard`. Caddy still serves the
-Astro-generated `/theme.css` from its static root, so notebook pages can use
+Vite-generated `/theme.css` from its static root, so notebook pages can use
 the same palette as the root portfolio page.
 
 ## Static assets

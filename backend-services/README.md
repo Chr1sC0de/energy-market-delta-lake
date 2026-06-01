@@ -33,7 +33,7 @@ architecture is defined in `infrastructure/aws-pulumi/`.
 | `authentication` | OIDC/session bridge for protected routes | internal |
 | `marimo-dashboard` | Curated Marimo dashboard service | internal |
 | `marimo-codex-workspace` | Local-only Marimo-Codex research workspace | `127.0.0.1:2719` |
-| `caddy` | Local reverse proxy, Astro portfolio, and public entrypoint | `80`, `443` |
+| `caddy` | Local reverse proxy, Vite + React Router portfolio, and public entrypoint | `80`, `443` |
 
 ______________________________________________________________________
 
@@ -223,15 +223,17 @@ Navigate to <https://localhost> in your browser.
 
 Useful routes:
 
-- `/` for the Astro portfolio page with AI workflow and infrastructure diagrams
+- `/` for the single-page React Router market workspace with direct links to
+  the public Dagster source map, private Dagster admin tools, and restricted
+  dashboards
 - `/dagster-webserver/guest` for the guest Dagster UI
 - `/dagster-webserver/admin` for the protected admin Dagster UI
-- `/marimo` for curated Marimo dashboards through Caddy, including the table
-  explorer, data readiness overview, AWS bounded-read diagnostics, market
-  prices, materialization freshness, source coverage, source table lineage,
-  schedule runs, settlement activity, customer transfer and retail activity,
-  system notices, Bid / Offer stack, gas quality and composition, heating value
-  and SCADA pressure, capacity outlook, capacity auction, capacity
+- `/marimo` for restricted curated Marimo dashboards through Caddy, including
+  the table explorer, data readiness overview, AWS bounded-read diagnostics,
+  market prices, materialization freshness, source coverage, source table
+  lineage, schedule runs, settlement activity, customer transfer and retail
+  activity, system notices, Bid / Offer stack, gas quality and composition,
+  heating value and SCADA pressure, capacity outlook, capacity auction, capacity
   transactions, schema data dictionary, citation-chain explorer, Hub / Zone
   explainer, Flow operations, Operational Meter Flow, and forecast-vs-actual
   dashboards. The schema data dictionary groups read-only
@@ -855,7 +857,9 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/dagster-core/Dockerfile`
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
-  - `backend-services/caddy/src/pages/index.astro`
+  - `backend-services/caddy/src/App.tsx`
+  - `backend-services/caddy/src/data.ts`
+  - `backend-services/caddy/src/main.tsx`
   - `backend-services/caddy/public/theme.css`
   - `infrastructure/aws-pulumi/dagster_core_deployment.py`
 - `sync.scope`: `operations`

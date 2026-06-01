@@ -2941,10 +2941,10 @@ class RalphHelperTests(unittest.TestCase):
         self.assertEqual(
             ralph.changed_caddy_root_portfolio_routes(
                 [
-                    "backend-services/caddy/src/pages/index.astro",
+                    "backend-services/caddy/src/App.tsx",
                     "./backend-services/caddy/src/styles/site.css",
                     "backend-services/caddy/README.md",
-                    "backend-services/caddy/src/pages/index.astro",
+                    "backend-services/caddy/src/main.tsx",
                 ]
             ),
             ("/",),
@@ -13247,10 +13247,10 @@ Build it.
     ) -> None:
         runner = FakeRunner(
             status_outputs=[
-                " M backend-services/caddy/src/pages/index.astro\n",
-                " M backend-services/caddy/src/pages/index.astro\n",
+                " M backend-services/caddy/src/App.tsx\n",
+                " M backend-services/caddy/src/App.tsx\n",
             ],
-            diff_outputs=["backend-services/caddy/src/pages/index.astro\n"],
+            diff_outputs=["backend-services/caddy/src/App.tsx\n"],
             rev_parse_outputs=["base-sha\n", "base-sha\n", "merge-sha\n"],
         )
         with tempfile.TemporaryDirectory() as tmp:
