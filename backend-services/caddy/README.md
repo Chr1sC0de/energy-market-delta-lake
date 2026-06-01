@@ -24,7 +24,7 @@ Dagster, auth, and Marimo.
   tools, and restricted dashboards.
   Unknown public portfolio paths redirect back to `/`.
 - The generated `/theme.css` asset is served from Caddy's static root so Marimo
-  pages can keep using the same palette.
+  pages can use the shared light, readability-safe palette.
 - [Caddyfile](Caddyfile) uses a static SPA fallback for public portfolio routes
   while excluding `/marimo*`, `/dagster-webserver*`, `/oauth2*`, `/_next*`,
   `/graphql*`, Dagster favicon paths, and manifest paths from that fallback.
@@ -47,7 +47,9 @@ The portfolio source lives under [src/](src/):
   remain available component assets for future richer diagrams; the current
   public workspace uses the route preview in [src/App.tsx](src/App.tsx).
 - [public/theme.css](public/theme.css) is copied to `/theme.css` during the
-  Vite build for the portfolio and Marimo notebook pages.
+  Vite build for the portfolio and Marimo notebook pages. The shared theme stays
+  light-only because Marimo's generated notebook shell owns its own dark-mode
+  styling.
 
 ## Local usage
 

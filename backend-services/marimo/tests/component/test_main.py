@@ -380,6 +380,15 @@ class TestIndexPage:
         assert "var(--emdl-paper" in response.text
         assert "#1a73e8" not in response.text
 
+    def test_index_css_prevents_card_tag_overflow(self) -> None:
+        response = _get("/marimo")
+
+        assert ".dashboard-card > *" in response.text
+        assert "min-width: 0;" in response.text
+        assert "max-width: 100%;" in response.text
+        assert "overflow-wrap: anywhere;" in response.text
+        assert "white-space: normal;" in response.text
+
     def test_index_does_not_emit_auto_refresh_timer(self) -> None:
         response = _get("/marimo")
         html = response.text.lower()

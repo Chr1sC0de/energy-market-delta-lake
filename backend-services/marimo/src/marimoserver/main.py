@@ -304,6 +304,7 @@ _INDEX_CSS = """
         .dashboard-card {
             display: grid;
             gap: 14px;
+            min-width: 0;
             min-height: 340px;
             padding: 20px;
             border: 1px solid var(--emdl-line, #cfdbd6);
@@ -312,6 +313,10 @@ _INDEX_CSS = """
             background: var(--emdl-panel, #ffffff);
             box-shadow: var(--emdl-soft-shadow, 0 8px 28px rgb(27 35 36 / 0.08));
             text-decoration: none;
+        }
+
+        .dashboard-card > * {
+            min-width: 0;
         }
 
         .dashboard-card:focus-visible {
@@ -344,6 +349,7 @@ _INDEX_CSS = """
             display: flex;
             flex-wrap: wrap;
             gap: 7px;
+            min-width: 0;
         }
 
         .status-pill,
@@ -351,11 +357,18 @@ _INDEX_CSS = """
         .asset-pill {
             display: inline-flex;
             align-items: center;
+            max-width: 100%;
+            min-width: 0;
             min-height: 28px;
             padding: 4px 8px;
             border-radius: 999px;
             font-size: 0.76rem;
             font-weight: 700;
+            line-height: 1.2;
+            overflow-wrap: anywhere;
+            text-align: left;
+            white-space: normal;
+            word-break: break-word;
         }
 
         .status-pill--available {

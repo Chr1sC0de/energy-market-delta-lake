@@ -61,7 +61,7 @@ The dashboard app in [src/marimoserver/main.py](src/marimoserver/main.py):
   context concept and filterable by audience tag
 - serves the code-local dashboard roadmap registry at
   `/marimo/dashboard-registry.json`
-- links the Caddy-served shared theme at `/theme.css` for the index and
+- links the Caddy-served shared light theme at `/theme.css` for the index and
   notebook head
 - applies static asset response headers for Marimo packaged assets, including
   the `woff` and `woff2` MIME-type fix and immutable caching for
@@ -74,8 +74,9 @@ proxied through directly. Caddy does not serve Marimo packaged assets from its
 own static root; it excludes `/marimo/*/assets/*`, notebook favicon and
 manifest paths, `/marimo/health`, and websocket upgrades from `forward_auth`,
 then reverse-proxies them to `marimo-dashboard`. Caddy still serves the
-Vite-generated `/theme.css` from its static root, so notebook pages can use
-the same palette as the root portfolio page.
+Vite-generated `/theme.css` from its static root, so notebook pages can use a
+shared light, readability-safe palette without inheriting a global dark color
+scheme into Marimo's generated notebook shell.
 
 ## Static assets
 

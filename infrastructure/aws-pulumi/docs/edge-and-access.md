@@ -93,7 +93,7 @@ flowchart LR
 - The Caddy host:
   - pulls the digest-pinned `dagster/caddy` image from ECR
   - serves the Vite-generated single-page React Router portfolio and shared
-    `/theme.css` asset before proxying application routes
+    light `/theme.css` asset before proxying application routes
   - mounts a dedicated encrypted EBS volume at `/mnt/caddy-certs`
   - persists certificate state under `/data`
   - creates a Route 53 A record for `ausenergymarketdata.com`
