@@ -226,8 +226,10 @@ selection use `tag:aemo_etl_layer=gas_model`; metadata assets such as
 `silver/metadata/silver_table_metadata` are intentionally outside that durable
 target.
 
-Detailed gas-model ERDs remain under `docs/gas_model/`:
+The gas-model maintainer contract and detailed ERDs remain under
+`docs/gas_model/`:
 
+- [Gas-model maintainer contract](docs/gas_model/)
 - [Gas dimensions ERD](docs/gas_model/gas_dim_erd.md)
 - [Gas operations mart ERD](docs/gas_model/gas_operations_mart_erd.md)
 - [Gas market mart ERD](docs/gas_model/gas_market_mart_erd.md)
@@ -398,7 +400,7 @@ aemo-etl/
 - [Local development guide](docs/development/local_development.md)
 - [ADR 0003: bounded current-state bronze source tables](../../../docs/adr/0003-bounded-current-state-bronze-source-tables.md)
 - [ADR 0006: STTM gas_model fit-plus-extend modeling](../../../docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md)
-- [Gas-model ERDs](docs/gas_model/)
+- [Gas-model maintainer contract](docs/gas_model/)
 
 ## Sync metadata
 
@@ -479,6 +481,7 @@ aemo-etl/
   - `backend-services/dagster-user/aemo-etl/Makefile`
   - `backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml`
   - `backend-services/dagster-user/aemo-etl/pyproject.toml`
+  - `backend-services/dagster-user/aemo-etl/docs/gas_model/README.md`
   - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
   - `docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md`
 - `sync.scope`: `architecture, tooling`

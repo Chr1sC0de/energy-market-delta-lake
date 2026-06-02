@@ -287,7 +287,7 @@ erDiagram
 
 ## Related docs
 
-- [Gas-model index](README.md)
+- [Gas-model maintainer contract](README.md)
 - [aemo-etl project README](../../README.md)
 - [High-level architecture](../architecture/high_level_architecture.md)
 - [Ingestion sequence diagrams](../architecture/ingestion_flows.md)
@@ -296,6 +296,7 @@ erDiagram
 
 - `sync.owner`: `docs`
 - `sync.sources`:
+  - `backend-services/dagster-user/aemo-etl/docs/gas_model/README.md`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_dim_date.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_dim_participant.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_participant_market_membership.py`

@@ -545,7 +545,7 @@ Delta lock table to verify included media bytes move from
 - [ADR 0003: bounded current-state bronze source tables](../../../../../docs/adr/0003-bounded-current-state-bronze-source-tables.md)
 - [ADR 0006: STTM gas_model fit-plus-extend modeling](../../../../../docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md)
 - [ADR 0010: Gas market knowledge base](../../../../../docs/adr/0010-gas-market-knowledge-base.md)
-- [Gas-model ERDs](../gas_model/)
+- [Gas-model maintainer contract](../gas_model/)
 
 ## Sync metadata
 
@@ -618,6 +618,7 @@ Delta lock table to verify included media bytes move from
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_operational_meter_flow.py`
+  - `backend-services/dagster-user/aemo-etl/docs/gas_model/README.md`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/unzipper/definitions.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/unzipper/sensors.py`
   - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`

@@ -384,7 +384,7 @@ flowchart TD
 - [Local development guide](../development/local_development.md)
 - [ADR 0003: bounded current-state bronze source tables](../../../../../docs/adr/0003-bounded-current-state-bronze-source-tables.md)
 - [ADR 0006: STTM gas_model fit-plus-extend modeling](../../../../../docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md)
-- [Gas-model ERDs](../gas_model/)
+- [Gas-model maintainer contract](../gas_model/)
 
 ## Sync metadata
 
@@ -461,6 +461,7 @@ flowchart TD
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/table_metadata.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_dim_date.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_operational_meter_flow.py`
+  - `backend-services/dagster-user/aemo-etl/docs/gas_model/README.md`
   - `docs/adr/0003-bounded-current-state-bronze-source-tables.md`
   - `docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md`
 - `sync.scope`: `architecture`
