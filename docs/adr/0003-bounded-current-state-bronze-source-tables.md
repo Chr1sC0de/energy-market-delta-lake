@@ -55,6 +55,30 @@ Replace mode processes archive files in bounded batches. The first non-empty
 batch overwrites the target table, and later non-empty batches use the same
 current-state merge behavior as normal source-table bronze ingestion.
 
+## Maintainer checks before changing a source-table contract
+
+Use the reader journey in
+[AEMO ETL ingestion flows](../../backend-services/dagster-user/aemo-etl/docs/architecture/ingestion_flows.md#source-table-current-state-reader-journey)
+before changing a `df_from_s3_keys` source-table definition. A maintainer should
+inspect the current source-table module or STTM manifest entry, the registered
+`DFFromS3KeysSourceTableSpec`, the bronze and silver Dagster metadata, and any
+table-specific object or lazyframe hooks before editing the contract.
+
+For a schema or `glob_pattern` change, check that the landing objects selected
+by the event-driven sensor still belong to the intended source table, that the
+declared source columns match headered or schema-ordered headerless source
+files, and that downstream source silver and `gas_model` consumers can still
+read the current-state rows.
+
+For a `surrogate_key_sources` change, inspect recent duplicate-key diagnostics,
+`check_skipped_s3_keys` WARN metadata, existing archive coverage for the table,
+and downstream consumers that depend on current row grain. A key migration can
+leave old-key rows in bronze because current-state merge does not delete target
+rows that are absent from later files. Recovery therefore needs an operator-run
+archive replay dry-run, followed by `--replace` only when the selected table,
+archive prefix, file count, batch plan, and target URI match the intended
+rebuild.
+
 ## Considered options
 
 - Keep append-history in source-table bronze: simple to audit inside the table,

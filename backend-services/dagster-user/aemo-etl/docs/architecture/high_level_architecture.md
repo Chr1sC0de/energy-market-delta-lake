@@ -220,6 +220,15 @@ Source-table bronze semantics:
 - archived source files remain the replay source for rebuilding source-table
   bronze
 
+For the maintainer reader journey through source-table specs, pending landing
+objects, sensor-triggered materialization, current-state writes, asset checks,
+and archive replay recovery, read
+[Ingestion Flows: Source-table current-state reader journey](ingestion_flows.md#source-table-current-state-reader-journey).
+Treat that section and ADR
+[0003](../../../../../docs/adr/0003-bounded-current-state-bronze-source-tables.md)
+as the source-table current-state contract before changing a source-table
+definition, `surrogate_key_sources`, or table-specific hook.
+
 `aemo-replay-bronze-archive` is the standalone rebuild path for those same
 bronze source tables. It imports the same source-table definitions, defaults to
 dry-run planning, reports matching archive files, planned batches, total bytes,
@@ -242,7 +251,7 @@ The corresponding silver asset:
 - reads the bronze Delta table
 - selects the latest `source_file` per `surrogate_key` and deduplicates the current snapshot
 - overwrites the current parquet snapshot in the AEMO bucket
-- auto-materializes when its bronze dependency changes
+- runs after its paired bronze asset in the same `<name_suffix>_job`
 
 ### Gas-model assets
 
