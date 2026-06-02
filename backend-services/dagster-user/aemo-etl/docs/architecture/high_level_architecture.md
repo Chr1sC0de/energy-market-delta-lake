@@ -222,29 +222,32 @@ Source-table bronze semantics:
 
 For the maintainer reader journey through source-table specs, pending landing
 objects, sensor-triggered materialization, current-state writes, asset checks,
-and archive replay recovery, read
-[Ingestion Flows: Source-table current-state reader journey](ingestion_flows.md#source-table-current-state-reader-journey).
-Treat that section and ADR
+archive source coverage, cached seed, and archive replay recovery, read
+[Ingestion Flows: Source-table current-state reader journey](ingestion_flows.md#source-table-current-state-reader-journey)
+and
+[Ingestion Flows: Archive source coverage, cached seed, and bronze replay journey](ingestion_flows.md#archive-source-coverage-cached-seed-and-bronze-replay-journey).
+Treat those sections and ADR
 [0003](../../../../../docs/adr/0003-bounded-current-state-bronze-source-tables.md)
 as the source-table current-state contract before changing a source-table
 definition, `surrogate_key_sources`, or table-specific hook.
 
-`aemo-replay-bronze-archive` is the standalone rebuild path for those same
-bronze source tables. It imports the same source-table definitions, defaults to
-dry-run planning, reports matching archive files, planned batches, total bytes,
-and target Delta table URI, and only writes when `--replace` is provided.
-Operators choose exactly one scope with `--all`, `--domain`, or `--table`.
-Replace mode processes archived source files in bounded batches, writes the
-first non-empty batch as an overwrite, then applies the same current-state merge
-predicate used by normal source-table bronze ingestion.
-
+Archive source planning is shared by the cached seed and replay paths.
 `aemo-e2e-archive-seed` is the local **End-to-end test** seed path. It imports
 `defs()`, selects the full curated `gas_model` target through
 `tag:aemo_etl_layer=gas_model`, derives the required source-table and zip-domain
 seed spec from the Dagster asset graph, refreshes a configurable latest slice
 from the live Archive bucket into `backend-services/.e2e/aemo-etl`, and lets
 later LocalStack runs load that cache before Dagster starts. The default slice is
-10 raw objects per required source table and 3 zip objects per required domain.
+3 raw objects per required source table and 3 zip objects per required domain.
+
+`aemo-replay-bronze-archive` is the standalone rebuild path for those same
+source-table bronze tables. It imports the same source-table definitions,
+defaults to dry-run planning, reports matching archive files, planned batches,
+total bytes, and target Delta table URI, and only writes when `--replace` is
+provided. Operators choose exactly one scope with `--all`, `--domain`, or
+`--table`. Replace mode processes archived source files in bounded batches,
+writes the first non-empty batch as an overwrite, then applies the same
+current-state merge predicate used by normal source-table bronze ingestion.
 
 The corresponding silver asset:
 
@@ -452,6 +455,7 @@ flowchart TD
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/scraper.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/refresh_aemo_gas_document_manifest.py`
   - `backend-services/dagster-user/aemo-etl/pyproject.toml`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_source_planning.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`

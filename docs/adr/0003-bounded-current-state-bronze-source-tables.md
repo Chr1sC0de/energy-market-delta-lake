@@ -51,6 +51,13 @@ operator intent:
   total bytes, and target Delta table URI
 - pass `--replace` only when the dry-run confirms the intended archive scope
 
+The dry-run plan is the protection boundary for replay recovery. It uses the
+same archive source planner as cached Archive seed refresh, but selects all
+matching source-table objects instead of a latest-object seed slice. Operators
+must confirm credentials, Archive bucket, AEMO bucket, source-table scope,
+archive prefix, glob pattern, matching file list, batch count, total bytes, and
+target table URI before replacing current-state bronze data.
+
 Replace mode processes archive files in bounded batches. The first non-empty
 batch overwrites the target table, and later non-empty batches use the same
 current-state merge behavior as normal source-table bronze ingestion.
@@ -191,8 +198,11 @@ archive replay commands.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int690_v1_deviation_price_data_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/sttm/int691_v1_sttm_ctp_register_rpt_1.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/resources.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_source_planning.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
   - `tools/ralph-loop/src/ralph_loop/state.py`
   - `tools/ralph-loop/src/ralph_loop/workflow.py`

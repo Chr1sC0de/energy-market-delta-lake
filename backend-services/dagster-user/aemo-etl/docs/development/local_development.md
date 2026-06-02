@@ -8,8 +8,7 @@ This guide covers the local workflow for running `aemo-etl` against LocalStack-b
 - [Environment variables](#environment-variables)
 - [Install dependencies](#install-dependencies)
 - [Local Dagster workflow](#local-dagster-workflow)
-- [Cached Archive seed runbook](#cached-archive-seed-runbook)
-- [Bronze archive rebuild runbook](#bronze-archive-rebuild-runbook)
+- [Archive source coverage, cached seed, and bronze replay](#archive-source-coverage-cached-seed-and-bronze-replay)
 - [AEMO gas document manifest refresh](#aemo-gas-document-manifest-refresh)
 - [Test assumptions](#test-assumptions)
 - [Useful commands](#useful-commands)
@@ -148,11 +147,23 @@ During that flow, `dagster.dev.yaml` configures Dagster run, schedule, and event
 - `DAGSTER_POSTGRES_PASSWORD=dagster_pass`
 - `DAGSTER_POSTGRES_DB=dagster`
 
-## Cached Archive seed runbook
+## Archive source coverage, cached seed, and bronze replay
 
-Use `aemo-e2e-archive-seed` to prepare local **End-to-end test** inputs for the
-full `gas_model` target without requiring every later local stack run to have
-live AWS archive access.
+Use this runbook when archive-backed local testing or source-table bronze
+recovery depends on archived AEMO inputs. It covers two operator paths that
+share archive source coverage planning:
+
+- `aemo-e2e-archive-seed` prepares cached Archive inputs for local
+  **End-to-end test** runs of the full `gas_model` target.
+- `aemo-replay-bronze-archive` rebuilds source-table bronze Delta tables from
+  archived source files after an operator has inspected a dry-run plan.
+
+Both paths plan archive coverage from source-table `archive_prefix` and
+`glob_pattern` contracts. The planner reports requested, available, selected,
+and shortfall counts for each source requirement, then builds bounded object
+batches where the caller needs batching. Seed refresh uses a latest-object slice
+by sorted archive key. Bronze replay uses all matching source-table objects for
+the selected scope.
 
 Run commands from this Subproject:
 
@@ -160,38 +171,78 @@ Run commands from this Subproject:
 cd backend-services/dagster-user/aemo-etl
 ```
 
-Inspect the derived seed spec:
+### Choose the archive path
+
+Use the cached Archive seed when you need repeatable local inputs for the
+isolated AEMO ETL **End-to-end test** stack or LocalStack-backed developer
+compose. The seed path reads from the live Archive bucket only during
+`refresh`. Later LocalStack loads read the ignored local cache and write objects
+into LocalStack landing storage before Dagster starts.
+
+Use bronze archive replay when current-state source-table bronze data must be
+rebuilt from archive storage. Replay reads source-table specs plus Archive
+bucket objects, stages parsed rows locally, and writes selected bronze Delta
+tables in the AEMO bucket only when `--replace` is present. It does not update
+the cached seed, landing storage, source-table specs, or generated artifacts.
+
+The current-state ingestion contract stays in
+[Ingestion Flows: Source-table current-state reader journey](../architecture/ingestion_flows.md#source-table-current-state-reader-journey)
+and ADR
+[0003](../../../../../docs/adr/0003-bounded-current-state-bronze-source-tables.md).
+Replay uses the same source-table parser, duplicate-key diagnostics, and
+current-state write helper as normal source-table bronze ingestion; this section
+only explains the operator path around that contract.
+
+### Inspect archive source coverage for local seed
+
+Inspect the derived seed spec first:
 
 ```bash
 uv run aemo-e2e-archive-seed spec
 ```
 
-The CLI imports `aemo_etl.definitions.defs()`, selects the full `gas_model`
-target and upstream assets, and emits JSON containing the required source-table
-archive glob patterns plus zip seed domains.
+The CLI imports `aemo_etl.definitions.defs()`, selects the curated
+`gas_model` target by `tag:aemo_etl_layer=gas_model`, walks its upstream asset
+closure, and writes JSON to stdout. The JSON names the required source-table
+archive prefixes and glob patterns plus the zip archive domains needed by
+unzipper-backed inputs. The command does not read S3 and does not write a local
+cache.
 
 Refresh is opt-in. It defaults to `dev-energy-market-archive`, 3 latest raw
-objects per required source table, and 3 latest zip objects per required domain:
+objects per required source table, and 3 latest zip objects per required
+domain:
 
 ```bash
 uv run aemo-e2e-archive-seed refresh
 ```
 
-Override the slice deliberately when a smaller local **End-to-end test** cache is
-needed:
+Override the slice only when the local **End-to-end test** scenario should use a
+different cache horizon:
 
 ```bash
 uv run aemo-e2e-archive-seed refresh --raw-latest-count 2 --zip-latest-count 1
 ```
 
-The cache and `seed-run-manifest.json` are written under
-`backend-services/.e2e/aemo-etl` by default. If any required source table or zip
-domain has fewer live archive objects than requested, refresh exits non-zero and
-records the shortfall in that manifest. For source tables that are validly
-absent from the live archive slice, add `--allow-empty-source-table-seed` to
-write explicit zero-byte placeholders into the local cache; zip-domain
-shortfalls still fail because the e2e stack needs at least one zip per required
-domain.
+`refresh` reads object listings and selected object bytes from the configured
+Archive bucket. It writes cached objects under
+`backend-services/.e2e/aemo-etl/archive-seed/objects`, writes
+`archive-seed/seed-spec.json`, and writes `seed-run-manifest.json` under
+`backend-services/.e2e/aemo-etl`. If any source table or zip domain has fewer
+objects than requested, the command exits non-zero after writing a failed
+manifest with the shortfall evidence.
+
+For source tables that are validly absent from the live archive slice, add
+`--allow-empty-source-table-seed` to write explicit zero-byte placeholders into
+the local cache:
+
+```bash
+uv run aemo-e2e-archive-seed refresh --allow-empty-source-table-seed
+```
+
+Zip-domain shortfalls still fail because the e2e stack needs at least one zip
+per required domain to exercise unzipper-backed inputs.
+
+### Load the cached seed into LocalStack
 
 To load the cached seed into LocalStack during local compose startup:
 
@@ -200,16 +251,14 @@ cd backend-services
 AEMO_ETL_E2E_SEED_ENABLED=1 podman-compose up --build -d
 ```
 
-`aemo-etl-seed-localstack` validates the cache, uploads the selected cached
-objects into LocalStack landing storage, and writes `seed-run-manifest.json`.
-The broader developer stack keeps its `podman-compose` dependency graph shallow
-so the stack can start reliably under Podman. Use
-`backend-services/scripts/aemo-etl-e2e run` when a strict seed-before-Dagster
-gate is required. This load path only needs LocalStack credentials and does not
-read the live archive bucket.
+`aemo-etl-seed-localstack` validates the cache against the selected seed
+horizon, uploads the selected cached Archive objects into LocalStack landing
+storage, and writes `seed-run-manifest.json`. This load path only needs
+LocalStack credentials. It does not read the live Archive bucket.
 
-For the isolated AEMO ETL **End-to-end test** stack, run the backend-services
-command instead of the broader fixed developer compose stack:
+The broader developer stack keeps its `podman-compose` dependency graph shallow
+for Podman startup. Use `backend-services/scripts/aemo-etl-e2e run` when a
+strict seed-before-Dagster gate is required:
 
 ```bash
 backend-services/scripts/aemo-etl-e2e run
@@ -217,125 +266,47 @@ backend-services/scripts/aemo-etl-e2e run
 
 That command starts Postgres, LocalStack, the cached Archive seed loader, the
 AEMO ETL gRPC service, one Dagster webserver, and the Dagster daemon with
-generated e2e Dagster config. It builds missing local images by default, supports
-`--rebuild`, derives the Podman socket from `XDG_RUNTIME_DIR`, and validates the
-cached seed under `backend-services/.e2e/aemo-etl`, or the explicit
-`--seed-root` path, using the selected scenario's seed horizon.
-Successful non-reuse runs attempt to clean containers, Dagster run-worker
-containers, named volumes, and the e2e network; pre-run cleanup treats
-already-absent e2e resources as benign. Post-success cleanup also treats an
-already-absent e2e network as benign when compose has already removed the stack,
-while other post-run cleanup warnings or failures stay visible in the run
-manifest as cleanup status and `cleanup_issues` without changing a successful
-dataflow result. Failures preserve the stack plus run manifests unless
-`--always-clean` is used. The run manifest records total gate, stack startup,
-Dagster dataflow monitor, and cleanup durations plus cleanup phase status, final
-Dagster run, target progress, target materialization timestamp, and asset-check
-telemetry. For direct-launch scenarios, the dataflow manifest also records
-scenario evidence: selected scenario, launch mode, target selector,
-GraphQL-derived target asset count, target asset-check count, target keys, STTM
-target keys, selected upstream closure count, skipped live source asset keys,
-dependency-wave count, run-batch count, asset batch size, and nested
-source-definition evidence when available. For direct-launch gas_model scenarios,
-the top-level `source_definitions` section records the
-`uv run dg list defs --assets "tag:aemo_etl_layer=gas_model" --json` command,
-working directory, executable asset count, asset-check count, full target asset
-keys, and STTM target keys.
-After startup, it uses Dagster GraphQL to drive the selected scenario. The
-default `full-gas-model` scenario keeps automation stopped and launches explicit
-Dagster asset-run batches by dependency wave for every materializable
+generated e2e Dagster config. It builds missing local images by default,
+supports `--rebuild`, derives the Podman socket from `XDG_RUNTIME_DIR`, and
+validates the cached seed under `backend-services/.e2e/aemo-etl`, or the
+explicit `--seed-root` path, using the selected scenario's seed horizon.
+
+The default `full-gas-model` scenario keeps automation stopped and launches
+explicit Dagster asset-run batches by dependency wave for every materializable
 curated `gas_model` asset selected by `tag:aemo_etl_layer=gas_model` plus its
-materializable upstream closure. It uses host webserver port `3001`, a 90 minute
-timeout, 1 raw object per required source table, 1 zip object per required
-domain, and Dagster `max_concurrent_runs` `6`.
-The `promotion-gas-model` scenario uses the same direct-launch shape from the
-isolated source worktree for Ralph **Promotion** with the same one-object seed
-horizon, uses a 30 minute timeout, and adds the #141
+materializable upstream closure. It uses host webserver port `3001`, a 90
+minute timeout, 1 raw object per required source table, 1 zip object per
+required domain, and Dagster `max_concurrent_runs` `6`. The
+`promotion-gas-model` scenario uses the same one-object seed horizon for Ralph
+**Promotion**, uses a 30 minute timeout, and adds the #141
 stale-runtime/current-source validation guard. Both direct scenarios skip live
-`bronze_nemweb_public_files_*` discovery/listing assets. Asset batches use
-Dagster's in-process executor inside Podman run-worker containers. Direct
-launches pace asset-run batch submission against `max_concurrent_runs` before
-starting more batches in a dependency wave so the queued-run guard remains
-bounded. Override these values with
-`--webserver-port`, `--timeout-seconds`, `--max-concurrent-runs`,
-`--raw-latest-count`, and `--zip-latest-count`. Ralph **Promotion** also passes
-`--rebuild` so the local e2e image tags are rebuilt from the source worktree
-instead of reusing a stale AEMO ETL or Dagster image.
+`bronze_nemweb_public_files_*` discovery/listing assets so the stack starts from
+seeded LocalStack objects.
 
-The required **End-to-end test** coverage remains the approved #77 contract:
-exercise Dagster, LocalStack/S3, Podman run-worker containers, and the Dagster
-GraphQL monitor; materialize every materializable curated Dagster asset selected
-by `tag:aemo_etl_layer=gas_model`; and preserve final asset-check status for
-that target. Current
-`source_definitions.executable_asset_count` evidence is derived from
-`uv run dg list defs --assets "tag:aemo_etl_layer=gas_model" --json` in the
-source worktree before stack startup. The runtime GraphQL
-`dataflow.scenario_evidence.target_asset_count` must match that source count
-before Promotion asset batches launch, so a stale 29-asset runtime graph fails
-against current 36-asset source definitions. That stale-runtime/current-source
-guard belongs to the `promotion-gas-model` scenario and was closed by #141; the
-`full-gas-model` scenario shares the same source-definition evidence for
-check-count provenance and records expanded baseline evidence without enforcing
-that guard. At the current source revision,
-`dg list defs --assets "tag:aemo_etl_layer=gas_model" --json` reports 36
-curated executable `gas_model` assets, including the eight
-`silver_gas_fact_sttm_*` assets and excluding
-`silver/metadata/silver_table_metadata`. Ralph runs this as a **Promotion** gate
-after the aggregate **Push check** for the source revision and before `main` is
-merged, pushed, or issue metadata is updated. It protects work that has already
-reached `dev` through **Local integration** in Gitflow
-**Delivery mode**; it is not a separate **Test lane** and it is not a local
-development benchmark.
-
-Each `run-manifest.json` records the #75 telemetry fields: total gate, stack
-startup, Dagster dataflow monitor, and cleanup durations; cleanup phase status
-and issues; peak active and queued Dagster run counts; final run status counts;
-target progress; target materialization timestamps; and final missing or failed
-asset-check counts. Direct-launch `dataflow.scenario_evidence` also records the
-selected scenario, launch mode, target selector, target asset count derived from
-the current GraphQL asset graph, source-definition-backed target asset-check
-count when available, target keys, STTM target keys, selected upstream closure
+Successful non-reuse runs attempt to clean containers, Dagster run-worker
+containers, named volumes, and the e2e network. Failures preserve the stack plus
+run manifests unless `--always-clean` is used. Each `run-manifest.json` records
+total gate, stack startup, Dagster dataflow monitor, and cleanup durations plus
+cleanup phase status, final Dagster run, target progress, target materialization
+timestamp, and asset-check telemetry. Direct-launch evidence includes the
+selected scenario, launch mode, target selector, target asset count, target
+asset-check count, target keys, STTM target keys, selected upstream closure
 count, skipped live source asset keys, dependency-wave count, run-batch count,
-asset batch size, and source-definition evidence when available. The #76 budget
-report prints those values in command output before #79 enforcement is applied.
+asset batch size, and source-definition evidence when available.
 
-The `promotion-gas-model` scenario enforces #79 Promotion guard regression
-budgets from the approved #78 targeted baseline: total gate duration at or
-below 30 minutes, peak active runs at or below `6`, peak queued runs at or below
-`6`, total Dagster runs at or below the current direct-launch
-`dataflow.scenario_evidence.batch_count`, target progress matching the current
-`source_definitions.executable_asset_count`, and missing or failed target assets
-and asset checks at `0`. Budget failures print observed values, thresholds,
-dynamic target-count evidence, planned-batch evidence, and the
-`run-manifest.json` path. Duration or run count failures point to run
-explosion, queue contention, unexpected extra Dagster runs beyond the launch
-plan, or local environment slowdown that needs evidence before rerun or
-launch-shape changes. Target-count mismatches mean the running Dagster asset
-graph is stale for the source revision. Target progress and asset-check failures
-mean the coverage contract was not satisfied and the source revision must not
-be promoted until the dataflow regression is fixed. Missing telemetry is also a
-Promotion gate failure because Ralph cannot prove the source revision satisfied
-the contract. The full scenario records the expanded baseline duration, run
-count, target count, target asset-check count, and missing/failed counts with
-`budget.status` set to `not-enforced`.
+Ralph runs `promotion-gas-model` as a **Promotion** gate after the aggregate
+**Push check** for the source revision and before `main` is merged, pushed, or
+issue metadata is updated. It protects work that has reached `dev` through
+**Local integration** in Gitflow **Delivery mode**. It is not a separate
+**Test lane** and it is not a local development benchmark.
 
-The generated compose stack uses fixed service IPs for Postgres, LocalStack,
-and the AEMO ETL code server so Podman run-worker containers do not depend on
-container DNS during high-concurrency **Promotion** gates.
-
-## Bronze archive rebuild runbook
+### Plan bronze archive replay
 
 Use `aemo-replay-bronze-archive` when an operator needs to rebuild
-source-table bronze Delta tables from archived source files. This runbook is for
-source-table bronze assets generated by `df_from_s3_keys`; it is not for
-`bronze_nemweb_public_files_*` discovery/listing assets or for `unzipper_*`
+source-table bronze Delta tables from archived source files. This command
+targets source-table bronze assets generated by `df_from_s3_keys`; it does not
+target `bronze_nemweb_public_files_*` discovery/listing assets or `unzipper_*`
 assets.
-
-Run commands from this Subproject:
-
-```bash
-cd backend-services/dagster-user/aemo-etl
-```
 
 Point the command at the intended S3-compatible environment before planning.
 For LocalStack, source `.localstack.env` and use local test credentials. For
@@ -343,10 +314,11 @@ AWS, leave `AWS_ENDPOINT_URL` unset and use the intended AWS credentials.
 
 Choose exactly one target scope:
 
-- `--all` rebuilds every registered source-table bronze asset
+- `--all` rebuilds every registered source-table bronze asset.
 - `--domain gbb`, `--domain sttm`, or `--domain vicgas` rebuilds one
-  source-table domain
-- `--table gbb.bronze_gasbb_contacts` rebuilds one source table
+  source-table domain.
+- `--table gbb.bronze_gasbb_contacts` rebuilds one source table by suffix,
+  bronze table name, or domain-qualified table ID.
 
 Dry-run is the default. Use it first and keep the output as rebuild evidence:
 
@@ -356,11 +328,21 @@ uv run aemo-replay-bronze-archive --domain sttm
 uv run aemo-replay-bronze-archive --table gbb.bronze_gasbb_contacts --json
 ```
 
-Review the dry-run output before writing. It reports the archive prefix, glob
-pattern, matching archive files, planned batch count, total bytes, and target
-Delta table URI. The default replay bounds are 134,217,728 bytes and 25 files
-per batch; override them with `--batch-bytes` or `--batch-files` only when the
+Dry-run lists Archive objects, applies the same target selection and batching
+logic that replace mode will use, and writes the plan to stdout. It does not
+read object bytes, stage rows, or write Delta tables. The output reports the
+source-table ID, Archive bucket and prefix, glob pattern, matching archive file
+list, matching file count, planned batch count, total bytes, and target Delta
+table URI. The default replay bounds are 134,217,728 bytes and 25 files per
+batch; override them with `--batch-bytes` or `--batch-files` only when the
 operator deliberately wants a different bound.
+
+This dry-run path protects source-table replay work by proving the scope before
+any table replacement happens. It also exposes credential and bucket mistakes:
+the target table URI, Archive prefix, file count, and file list must match the
+intended environment and source table before `--replace` is safe.
+
+### Replace current-state bronze after operator checks
 
 Run replace only after the dry-run confirms the intended scope:
 
@@ -368,35 +350,54 @@ Run replace only after the dry-run confirms the intended scope:
 uv run aemo-replay-bronze-archive --table gbb.bronze_gasbb_contacts --replace
 ```
 
-Replace mode writes the selected source-table bronze Delta table in the AEMO
-bucket from archive storage. The first non-empty replay batch overwrites the
-target table. Later non-empty batches use the same current-state merge predicate
-as normal bronze ingestion: merge on `surrogate_key`, update matched rows only
-when `source_content_hash` changes, insert new keys, and retain target rows that
-are absent from the later batch.
+Before replacing current-state bronze data, check:
+
+- the selected environment, credentials, `--archive-bucket`, and `--aemo-bucket`
+  point at the intended LocalStack or AWS storage
+- the scope selects the intended table, domain, or complete source-table set
+- the Archive prefix and glob pattern match the source-table contract
+- the matching archive file list contains the expected historical source files
+  and excludes unrelated discovery/listing or zip-only inputs
+- the planned batch count, total bytes, and default or overridden batch bounds
+  are reasonable for the rebuild
+- the target Delta table URI names the table that should be replaced
+- downstream source silver and `gas_model` rematerialization expectations are
+  clear for the affected source table
+
+Replace mode reads selected Archive objects, parses supported non-empty inputs,
+stages rows locally, and writes the selected source-table bronze Delta table in
+the AEMO bucket. The first non-empty replay batch overwrites the target table.
+Later non-empty batches use the same current-state merge predicate as normal
+bronze ingestion: merge on `surrogate_key`, update matched rows only when
+`source_content_hash` changes, insert new keys, and retain target rows that are
+absent from the later batch.
 
 Archive replay also uses the same duplicate-source diagnostics as live bronze
-ingestion. If the latest source rows contain distinct records for the same
-`surrogate_key`, replay fails before writing so the table key can be corrected
-instead of rebuilding a table with arbitrary current rows.
+ingestion for each staged replay batch. If latest source rows in a batch contain
+distinct records for the same `surrogate_key`, that batch fails so the table key
+can be corrected. Earlier batches in the same `--replace` run may already have
+overwritten or merged into the target table, so keep the dry-run evidence and
+plan remediation before retrying. Headered CSV files use their declared
+headers, headerless CSV files use the manifest schema order, and physical CSV
+lines containing NUL bytes are dropped before surrogate keys and
+`source_content_hash` are calculated.
 
-Archive replay uses the same source-table parser as live bronze ingestion:
-headered CSV files use their declared headers, headerless CSV files use the
-manifest schema order, and physical CSV lines containing NUL bytes are dropped
-before surrogate keys and `source_content_hash` are calculated.
+After replace, review the command output for written batch, written file, and
+skipped file counts. Then materialize the paired source silver and affected
+`gas_model` assets through the normal Dagster path and inspect asset checks,
+especially skipped-key or duplicate-key diagnostics on the affected source
+table.
 
-Treat `--replace` as explicit operator intent to rebuild the selected table from
-the selected archive scope. If the dry-run archive file list or target Delta URI
-does not match the intended rebuild, stop and correct the target selection,
-bucket options, or credentials before writing.
+### STTM source-table replay coverage
 
-For STTM, the current source-table replay surface covers complete v19.1
-spec-backed public reports: `INT651` through `INT684` and `INT687` through
-`INT691`. Valid replay targets run from
+The current STTM source-table replay surface covers complete v19.1 spec-backed
+public reports: `INT651` through `INT684` and `INT687` through `INT691`. Valid
+replay targets run from
 `sttm.bronze_int651_v1_ex_ante_market_price_rpt_1` through
 `sttm.bronze_int691_v1_sttm_ctp_register_rpt_1`, excluding `INT685` and
 `INT685B` because those live root CSV reports are landing-only gaps absent from
 the v19.1 STTM report specification manifest.
+
 That replay surface feeds the manifest-backed STTM `gas_model` expansion policy
 in ADR
 [0006](../../../../../docs/adr/0006-sttm-gas-model-uses-fit-plus-extend-modeling.md):
@@ -522,6 +523,8 @@ make integration-test
 make integration-test-testmon
 make duplicate-check
 make run-prek
+uv run aemo-e2e-archive-seed spec
+uv run aemo-e2e-archive-seed refresh
 uv run aemo-refresh-gas-document-media-manifest --no-commit
 uv run aemo-replay-bronze-archive --domain gbb
 uv run aemo-replay-bronze-archive --domain sttm
@@ -555,6 +558,7 @@ across the Subproject.
   - `backend-services/dagster-user/aemo-etl/Makefile`
   - `backend-services/dagster-user/aemo-etl/.pre-commit-config.yaml`
   - `backend-services/dagster-user/aemo-etl/pyproject.toml`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_source_planning.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`

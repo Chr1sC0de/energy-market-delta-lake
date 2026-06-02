@@ -5,6 +5,7 @@ These diagrams show the main ingestion paths implemented by the current factorie
 ## Table of contents
 
 - [Source-table current-state reader journey](#source-table-current-state-reader-journey)
+- [Archive source coverage, cached seed, and bronze replay journey](#archive-source-coverage-cached-seed-and-bronze-replay-journey)
 - [GBB ingestion flow](#gbb-ingestion-flow)
 - [VICGAS ingestion flow](#vicgas-ingestion-flow)
 - [STTM ingestion flow](#sttm-ingestion-flow)
@@ -185,6 +186,61 @@ If the change affects `surrogate_key_sources` for an existing source table,
 normal ingestion will not delete rows that were retained under the old key.
 Ralph **Promotion** can record table-specific archive replay guidance, but the
 operator owns the dry-run and `--replace` recovery commands.
+
+## Archive source coverage, cached seed, and bronze replay journey
+
+Archive source coverage starts with the same source-table specs that normal
+bronze ingestion registers through `df_from_s3_keys`. Each requirement names an
+Archive prefix such as `bronze/gbb` and a source-table glob pattern. The shared
+planner matches Archive object keys case-insensitively under that prefix,
+normalizes object sizes, reports available and selected object counts, records
+shortfalls, de-duplicates selected keys, and groups selected objects into
+batches when the caller sets byte or file limits.
+
+Two maintenance paths use that coverage plan:
+
+- `aemo-e2e-archive-seed` derives a full `gas_model` local **End-to-end test**
+  seed spec from Dagster definitions. It selects required source-table archive
+  slices and zip-domain slices from the upstream closure of
+  `tag:aemo_etl_layer=gas_model`.
+- `aemo-replay-bronze-archive` selects registered source-table bronze specs by
+  `--all`, `--domain`, or `--table`, then builds a dry-run or replace plan for
+  those source-table Delta tables.
+
+The seed path uses a latest-object policy. `spec` imports definitions and writes
+the derived source requirements to stdout. `refresh` lists the configured live
+Archive bucket, downloads the selected latest source-table and zip-domain
+objects, writes the ignored cache under `backend-services/.e2e/aemo-etl`, and
+writes `seed-run-manifest.json`. `load-localstack` reads that local cache,
+validates the same coverage horizon, uploads selected cached objects into
+LocalStack landing storage, and writes a new seed-run manifest. It does not read
+the live Archive bucket.
+
+The replay path uses all matching source-table objects for the selected scope.
+Dry-run is the default. It lists Archive objects and prints the table ID,
+Archive bucket, Archive prefix, glob pattern, matching file list, file count,
+planned batch count, total bytes, and target Delta table URI. It does not read
+object bytes and it does not write Delta tables. Replace mode reads the
+selected Archive objects, stages parsed rows locally, overwrites the target
+table with the first non-empty batch, and merges later batches with the same
+current-state predicate used by normal source-table bronze ingestion.
+
+Operators should use dry-run output as the replay boundary. Before replacing a
+current-state bronze table, check the intended credentials and bucket names,
+source-table scope, Archive prefix, glob pattern, matching file list, batch
+count, total bytes, and target Delta table URI. Those checks catch wrong
+environment, wrong table, stale spec, and incomplete archive coverage before a
+destructive overwrite starts.
+
+Replay recovery stays tied to bounded current-state source-table ingestion.
+Replay uses the same parser, duplicate-key diagnostics, `surrogate_key`,
+`source_content_hash`, and no-delete-on-absence merge semantics described in
+the source-table reader journey above. After replace, source silver and affected
+`gas_model` assets need normal Dagster rematerialization from the rebuilt
+bronze table.
+
+For the operator command sequence, see
+[Local Development: Archive source coverage, cached seed, and bronze replay](../development/local_development.md#archive-source-coverage-cached-seed-and-bronze-replay).
 
 ## GBB ingestion flow
 
@@ -592,7 +648,9 @@ the cached objects into LocalStack landing storage before Dagster starts. The
 default seed slice is 3 raw objects per required source table and 3 zip objects
 per required domain. Refresh can also write explicit zero-byte placeholders for
 valid source-table archive gaps; zip-domain coverage remains mandatory so
-unzipper-backed e2e inputs are still present.
+unzipper-backed e2e inputs are still present. The archive coverage, seed load,
+and bronze replay command journey is documented in
+[Archive source coverage, cached seed, and bronze replay journey](#archive-source-coverage-cached-seed-and-bronze-replay-journey).
 
 The AEMO gas document Integration test uses the same LocalStack buckets and
 Delta lock table to verify included media bytes move from
@@ -674,6 +732,7 @@ Delta lock table to verify included media bytes move from
   - `backend-services/dagster-user/aemo-etl/pyproject.toml`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/s3_pending_objects.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/delta_tables.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_source_planning.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/replay_bronze_archive.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
