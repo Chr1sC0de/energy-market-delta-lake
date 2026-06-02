@@ -21,12 +21,12 @@ Use this page as the agent documentation map. The imperative policy lives in
 - Ralph internals, the one issue attempt lifecycle, **Local integration**,
   **Delivery mode**, **Integration target**, **Full-access implementation
   pass**, **Issue completion review**, **Security-sensitive change**, **Ready
-  issue refresh**, **Exploratory acceptance review**, **Promotion**, and
-  **Post-promotion review**, including **Post-Promotion deployment
-  classification**, source-table archive replay recovery, deploy-repair issue
-  creation after failed checkpointed deployment evidence, adaptive Step size and
-  Stiffness ratio vocabulary, verified-only post-push metadata recovery, and
-  checkpointed Operator runs:
+  issue refresh**, **Exploratory acceptance review**, Run manifest and recovery
+  artifact inspection, **Promotion**, and **Post-promotion review**, including
+  **Post-Promotion deployment classification**, source-table archive replay
+  recovery, deploy-repair issue creation after failed checkpointed deployment
+  evidence, adaptive Step size and Stiffness ratio vocabulary, verified-only
+  post-push metadata recovery, and checkpointed Operator runs:
   [ralph-loop.md](ralph-loop.md)
 - GitHub Issue queue rules:
   [issue-tracker.md](issue-tracker.md)

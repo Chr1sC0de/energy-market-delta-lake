@@ -859,213 +859,254 @@ fails, the same log path appears in the failure output or issue evidence.
 
 ## Run manifest
 
-Every implementation run and **Promotion** run writes
-`.ralph/runs/.../ralph-run.json`. The manifest is rewritten as milestones
-complete, so a failed run still records the last known recovery state.
+Every child implementation, **Promotion**, and Exploratory acceptance run writes
+one `.ralph/runs/.../ralph-run.json`. Ralph rewrites that file after each
+milestone. Operators use it as the durable ledger for what Ralph has already
+proved, which local files it preserved, and which recovery boundary is still
+safe. The manifest matters most after failed or partial work: it is the source
+for `--inspect-run`, Operator status, rollups, recovery guidance, and
+same-run verified metadata recovery.
 
-Key fields for inspection:
+Use the manifest to inspect evidence. Do not edit it by hand and do not treat
+it as issue policy. The issue lifecycle is described in
+[One issue attempt lifecycle](#one-issue-attempt-lifecycle), and the
+**Promotion** boundary is described in [Promotion pass](#promotion-pass).
+The manifest records the facts those sections need: **Delivery mode**,
+**Integration target**, commits, pushes, QA evidence, metadata status, and
+recovery guidance.
 
-- `schema_version`: manifest format version.
-- `run_kind`: `implementation` or `promotion`.
-- `status` and `stage`: current run outcome and latest milestone.
-- `events`: timestamped milestone history.
-- `adaptive_events`: structured adaptive-event evidence with event type
-  (`hard_stop`, `gated_retry`, or `residual_update`), trigger reason, related
-  issue number, residual work summary when applicable, whether automatic Codex
-  retry is allowed, and whether the event consumes per-issue attempt budget.
-  `hard_stop` records automatic retry and attempt-budget consumption as false.
-- `issue`: implementation issue number, title, and URL.
-- `github_metadata.issues`: promoted issue numbers, recorded issue evidence
-  commits, per-issue Promotion metadata command log paths, and manual recovery
-  evidence warnings during **Promotion**.
-- `configuration.exploratory_concurrency`: the configured Exploratory preview
-  bound for the Ralph run.
-- `delivery_mode`: issue **Delivery mode**; **Promotion** records `gitflow`.
-- `integration_target`: branch Ralph is updating for the run.
-- `source_branch`: **Promotion** source branch, usually `dev`.
-- `source_tree`: **Promotion** source branch revision and source worktree used
-  for QA.
-- `promotion_worktree_preflight`: stale Promotion source or target worktree
-  checks, including the blocking path, git-worktree registration state, current
-  head, dirty state when inspectable, and recovery guidance.
-- `promotion_commit_inventory`: full promoted source commit range with each
-  commit SHA, subject, and whether it matched verified issue evidence or
-  remained an unverified **Promotion** commit. When one evidence commit maps to
-  multiple issues, the inventory records every issue mapping.
-- `deployment_classification`: deterministic **Post-Promotion deployment
-  classification** with the selected tier, reason, recommended action,
-  deployable paths, non-triggering **Agent workflow changes**, and other
-  non-triggering paths. Direct Promotion records this field and prints the
-  recommendation without running AWS or Pulumi commands.
-- `source_table_replay_recovery`: deterministic recovery guidance for
-  promoted AEMO ETL source-table `surrogate_key_sources` changes. When an
-  existing `df_from_s3_keys` source-table definition changes key columns, the
-  manifest records affected table IDs, old and new key sources, and dry-run and
-  `--replace` `aemo-replay-bronze-archive --table <table>` commands from the
-  AEMO ETL **Subproject**. Direct Promotion and **Post-promotion review** do
-  not run AWS, Pulumi, deployment, or archive replay commands.
-- `deploy_repair_issues`: deploy-failure analysis status, Markdown artifact
-  path, created issue URLs, duplicate source-marker skips, validation downgrades
-  to `needs-triage`, warning-only creation failures, and recovery guidance for
-  checkpointed Operator deployment failures.
-- `post_promotion_review`: enabled state, skip reason, warning-only review
-  status, review log path, and Markdown artifact path for **Promotion** runs.
-- `issue_completion_review`: trigger reasons, deployment classifier snapshot,
-  security-sensitive path evidence, redacted security diff evidence,
-  high-stiffness evidence, structured Stiffness ratio evidence, review log and
-  Markdown artifact paths, per-review attempt results, repair attempts, and
-  failure state for implementation runs.
-- `review_package`: **Review package** state for implementation runs, including
-  status, local HTML path, generator log path, structured summary, optional
-  media metadata, validation status, and failure reason. A successful Gitflow
-  Trunk, or Exploratory run records `status: passed` and
-  `validation_status: passed` before any **Local integration** commit,
-  **Integration target** push, or Exploratory handoff. Exploratory packages must
-  include `Review focus` and record the target branch and handoff commit in the
-  generated report. Ralph propagates only bounded package evidence, such as
-  status, local HTML path, media count, and summary text, into completion
-  comments, Operator rollups, **Exploratory acceptance review** artifacts,
-  Promotion issue comments and context, and **Post-promotion review** prompts;
-  it does not inline generated HTML.
-  Failed package runs also preserve the generator log, validation reason, media
-  failure evidence, and next safe action for `--inspect-run`, Operator status,
-  and rollup recovery guidance.
-- `post_promotion_followups`: enabled state, created issue URLs, duplicate
-  source-marker skips, validation downgrades to `needs-triage`, warning-only
-  creation failures, and recovery guidance for **Promotion** follow-ups.
-- `ready_issue_refresh`: enabled state, skip reason, read-only analysis status,
-  candidate issue numbers, candidate issue metadata, analysis log path, Markdown
-  artifact path, mutation results, recovery guidance, and failure state for
-  implementation runs after successful **Local integration** or Exploratory
-  handoff and for **Promotion** runs after verified issue closures.
-- `operator_smoke`: requested **Operator smoke** state for Exploratory delivery
-  runs, including smoke id, allowlisted command path, command args, cwd, log
-  path, timeout, copied evidence path when the smoke emits `run manifest:`, exit
-  status, status, and error.
-- `drain_scheduler.fatal_stop`: drain fatal-stop state for implementation runs,
-  including whether the live drain scheduler was enabled, whether the child
-  triggered or observed the stop, the fatal reason, error message, recovery log
-  path, and active Exploratory worker issue numbers.
-- `branch_sync`: Gitflow `main`-into-`dev` sync status, sync worktree path,
-  merge or push log path, conflicted files, failure type, and recovery guidance
-  when Ralph must stop before issue implementation.
-- `formatter_recovery`: implementation commit formatter-rewrite recovery
-  status, formatter-modified tracked files, staged files, original and retry
-  commit log paths, rerun **Commit check** results, failure type, and recovery
-  guidance.
-- `full_access_implementation`: whether a **Full-access implementation pass** was
-  enabled or required, the normalized context anchors, changed files,
-  out-of-scope files, status, and recovery guidance.
-- `decisions`: explicit Exploratory acceptance decisions, per-issue validation
-  state, handoff branch and commit, accepted `dev` commit, metadata operations,
-  and recovery context for `exploratory_acceptance_apply` runs.
-- `acceptance_conflict`: paused Exploratory acceptance conflict status,
-  acceptance worktree path, conflicted files, `decisions.json`,
-  `conflicts.json`, `codex-resolution-prompt.md`, continue command, and
-  recovery guidance.
-- `branches`: issue, source, and target branch names that apply to the run.
-- `paths`: repo root, run directory, worktree container, and implementation,
-  branch-sync, integration, Promotion source, Promotion target, or Exploratory
-  acceptance worktree paths.
-- `changed_files`: current file diff used for QA, **Local integration**, or
-  Exploratory handoff or acceptance.
-- `qa_results`: selected QA commands, cwd, log path, and pass/fail state.
-- `qa_results[].run_manifest_evidence`: durable evidence captured from a
-  successful QA command that prints `run manifest:`. Ralph copies the emitted
-  JSON manifest into the Ralph run directory when it still exists, or writes a
-  JSON evidence extract from the QA log when the source manifest is unavailable.
-  The entry records the original source path, durable artifact path, artifact
-  kind, and key e2e observations.
-- `qa_runtime_env`: effective `DAGSTER_HOME`, `XDG_CACHE_HOME`, and
-  `UV_CACHE_DIR` values plus whether each came from the operator environment or
-  Ralph's writable fallback.
-- `sandboxed_issue_access`: non-secret token source, wrapper path, allowed
-  command set, and network access state for spawned Codex subprocesses.
-- `integration_commit`: published implementation commit. For Gitflow and Trunk
-  delivery this is the **Local integration** commit; for Exploratory delivery
-  this is the **Exploratory branch** commit.
-- `promotion_commit`: **Promotion** commit pushed to `main`.
-- `local_branch_fast_forwards`: checked-out local source branch and
-  **Integration target** branch fast-forward status, worktree path,
-  current and target commits, and recovery command plus reason when a local
-  branch is not safe to update.
-- `pushes`: per-branch push state, commit SHA, and push log path.
-- `github_metadata`: claim, completion, failure, Promotion comment, label, and
-  close state.
-- `failure`: user-facing error message and command log path when the run fails.
+The Ralph artifact model has four separate evidence surfaces:
+
+- Child run manifest: `.ralph/runs/.../ralph-run.json` is the machine-readable
+  record for one implementation run, **Promotion** run, or Exploratory
+  acceptance apply run. It records operator evidence and bounded inputs that
+  later Ralph-owned steps use.
+- Run-directory files: command logs, Codex JSONL, `issue-completion-review.md`,
+  `review-package.html`, `ready-issue-refresh-analysis.md`,
+  `post-promotion-review.md`, copied QA manifests, and conflict artifacts live
+  beside the child manifest. Manifest fields point to the current artifact
+  path when retries create suffixed files.
+- Operator manifests: `.ralph/operator-runs/.../operator-run.json` and the
+  `operator-run-rollup.md` and `operator-run-rollup.json` files summarize a
+  checkpointed drain-and-**Promotion** run. They link back to child
+  `ralph-run.json` paths instead of replacing child evidence.
+- GitHub Issue comments: completion, failure, handoff, Promotion, manual
+  Gitflow recovery, and pre-push requeue comments are the public issue
+  evidence. They carry bounded summaries and commit evidence. The child
+  manifest keeps the full local logs and artifact paths.
+
+Keep the similarly named QA `run-manifest.json` separate from the Ralph child
+manifest. When a successful **Test lane** command prints `run manifest:`, Ralph
+records that QA surface under `qa_results[].run_manifest_evidence` and copies
+or reconstructs a durable JSON artifact in the same run directory, commonly
+named `qa-...-run-manifest.json`. Failed QA commands keep their command logs,
+but they do not get this copied manifest evidence field. The copied QA file
+proves the QA command result; it does not define Ralph recovery state.
+
+The fields most operators inspect are:
+
+- Run identity: `schema_version`, `run_kind`, `status`, `stage`,
+  `started_at`, `updated_at`, `repo`, `issue`, `delivery_mode`,
+  `integration_target`, `source_branch`, `branches`, and `paths`.
+  `run_kind` distinguishes implementation, **Promotion**, and Exploratory
+  acceptance apply runs. `paths.run_dir` is the canonical run directory; if it
+  is missing, Ralph falls back to the manifest file's parent directory.
+  `delivery_mode` must be one of the supported **Delivery mode** values;
+  **Promotion** records `gitflow`.
+- Timeline evidence: `events` records timestamped milestones. `adaptive_events`
+  records `hard_stop`, `gated_retry`, or `residual_update` evidence with the
+  trigger reason, related issue number, residual work summary when present,
+  automatic retry eligibility, and per-issue attempt-budget behavior.
+  A `hard_stop` means automatic Codex retry is not allowed and the operator
+  must inspect branch state, issue metadata, and logs before manual recovery.
+- Work evidence: `changed_files`, `codex_attempts`, `qa_results`,
+  `qa_results[].run_manifest_evidence`, `qa_runtime_env`,
+  `sandboxed_issue_access`, `full_access_implementation`, `review_package`,
+  `issue_completion_review`, and `operator_smoke` record the implementation
+  work, selected **Test lane** commands, logs, copied QA evidence, sandboxed
+  issue access, review gates, Review package state, and any requested
+  Exploratory **Operator smoke**.
+- Publication evidence: `commits`, `integration_commit`, `promotion_commit`,
+  `pushes`, and `github_metadata` record local commits, published commits,
+  per-branch push status, command log paths, completion or failure metadata,
+  and issue label or closure work. For Gitflow and Trunk delivery,
+  `integration_commit` is the **Local integration** commit. For Exploratory
+  delivery, it is the **Exploratory branch** commit.
+- Recovery evidence: `failure`, `branch_sync`, `formatter_recovery`,
+  `ready_issue_refresh`, `drain_scheduler.fatal_stop`,
+  `acceptance_conflict`, `decisions`, `local_branch_fast_forwards`,
+  `promotion_worktree_preflight`, `deploy_repair_issues`,
+  `post_promotion_followups`, and recovery guidance fields tell an operator
+  where Ralph stopped and which artifact or command to inspect next.
+- **Promotion** evidence: `source_tree`, `promotion_commit_inventory`,
+  `deployment_classification`, `deployment_execution`,
+  `source_table_replay_recovery`, `post_promotion_review`,
+  `post_promotion_followups`,
+  `local_branch_fast_forwards`, and `github_metadata.issues` belong to
+  **Promotion** runs. They record the source revision under test, the full
+  promoted commit inventory, verified and unverified **Promotion** commits,
+  deployment recommendation or checkpointed Operator deployment execution,
+  source-table archive replay guidance, review artifact paths, follow-up issue
+  creation outcome, local branch fast-forward status, and per-issue Promotion
+  metadata command logs.
+
+Several manifest fields are also bounded inputs to later Ralph-owned agents or
+helpers. Completion comments receive changed files, QA summaries, **Issue
+completion review** status, and Review package summaries. Operator rollups,
+Exploratory acceptance review artifacts, Promotion issue comments, and
+**Post-promotion review** prompts receive their own bounded subsets, usually
+summary text, paths, commit evidence, QA surfaces, or package evidence.
+`deployment_classification` and `source_table_replay_recovery` are passed as
+operator guidance. Ralph does not inline `review-package.html`, run deployment
+commands during direct **Promotion**, or let sandboxed review agents mutate
+GitHub Issues.
 
 ## Run inspection and recovery
 
-Use `--inspect-run <run_dir>` first when a terminal shows a post-push metadata
-failure, a completed issue looks inconsistent in GitHub, or an AFK run needs a
-read-only summary. Inspection reads only `<run_dir>/ralph-run.json` and reports
-the issue, **Delivery mode**, **Integration target**, QA status, push status,
-metadata status, Issue completion review status, adaptive event summaries,
-requeue eligibility, and recommended next action. It does not call `gh`, run git
-commands, edit labels, comment, close issues, or change refs.
+Start every failed or partial investigation with the read-only command:
 
-For failed implementation runs with no recorded `integration_commit`,
-inspection classifies whether the run is eligible for Ralph-owned pre-push
-requeue recovery. Eligible runs must have passed implementation QA, passed
-Issue completion review or skipped it because it was not required, and have no
-recorded **Integration target** push. Inspection distinguishes those safe
-pre-push failures from runs that already recorded an `integration_commit`, a
-pushed **Integration target**, incomplete QA/review evidence, or unresolved
-branch sync state. The requeue section also prints the Ralph-owned worktree
-paths, local issue branch, label reconciliation evidence such as
-`agent-failed` and `ready-for-agent`, changed files, QA/review evidence, and
-the failure log that the requeue command will reconcile.
-When the failure type is `review_package_failed`, inspection also prints
-`Review package status` plus a `Review package failure` block with the
-generator log path, validation reason, failure reason, media failure evidence,
-and next safe action. Package failures remain eligible pre-push failures when
-QA and any required **Issue completion review** passed and no
-`integration_commit` or **Integration target** push was recorded.
+```bash
+python3 scripts/ralph.py --inspect-run .ralph/runs/issue-25-20260504T010203Z
+```
 
-For eligible pre-push failures, `--recover-run <run_dir> --dry-run` reads the
-run manifest, GitHub Issue labels and comments, local worktrees, local refs, and
-ancestor evidence. It reports the issue, eligibility decision, labels to add
-and remove, comment body to post, backup ref behavior, and Ralph-owned
+`--inspect-run` accepts either a run directory or a direct path to
+`ralph-run.json`. It reads that manifest and prints the run directory,
+`run_kind`, issue, **Delivery mode**, **Integration target**, QA status,
+branch-sync status, push status, GitHub metadata status, **Issue completion
+review** status, Review package status, **Ready issue refresh** status,
+adaptive events, requeue eligibility, and the recommended next action. It does
+not call `gh`, run git commands, inspect worktrees, edit labels, comment, close
+issues, push, or change refs.
+
+For checkpointed Operator runs, inspect the Operator surface first:
+
+```bash
+python3 scripts/ralph.py --operator-run-status latest
+python3 scripts/ralph.py --operator-run-status .ralph/operator-runs/operator-20260506T010203Z
+```
+
+Operator status reads `operator-run.json`, reports the current checkpoint,
+active child manifest path, rollup paths, queue counts, detached process state,
+pre-push requeue classification for open `agent-failed` issues, and the
+recommended next action. For completed or stopped runs, read
+`operator-run-rollup.md` before opening child logs. The rollup tells you which
+child `ralph-run.json` needs deeper inspection.
+
+Use this recovery decision order:
+
+1. If `--inspect-run` reports a `hard_stop` adaptive event, inspect the
+   manifest, logs, branch state, and GitHub Issue metadata manually. Do not run
+   an automatic Codex retry or consume more issue attempt budget until the
+   residual work is understood.
+2. If the run is a **Promotion** manifest, inspect the **Promotion** fields and
+   artifacts manually. `--recover-run` is for implementation run manifests.
+   Follow [Promotion pass](#promotion-pass) for the lifecycle boundary.
+3. If an implementation run failed before publication and inspection reports
+   `Requeue eligibility: eligible`, preview pre-push requeue with
+   `--recover-run <run_dir> --dry-run`.
+4. If an implementation run records `integration_commit` and a pushed
+   **Integration target** but GitHub Issue metadata is incomplete, use live
+   `--recover-run <run_dir>` only after the manifest evidence passes the
+   verified post-push recovery guard.
+5. If GitHub metadata already matches the completed **Delivery mode** and
+   `ready_issue_refresh.status` failed, do not recover the completed issue.
+   Inspect `ready_issue_refresh.mutation_results`, the analysis log, and the
+   artifact path, then reconcile only the affected candidate issue metadata.
+
+Common recovery states point to different evidence:
+
+- `adaptive_events[].event_type: hard_stop`: inspect the latest adaptive event
+  and the named residual work before any manual metadata change.
+- `branch_sync.status: failed`: inspect the sync worktree, merge or push log,
+  conflicted files, and `branch_sync.recovery_guidance`.
+- `formatter_recovery.status: failed`: inspect formatter-modified files,
+  staged files, original and retry **Commit check** logs, and
+  `formatter_recovery.recovery_guidance`.
+- `review_package.status: failed` or `validation_status: failed`: inspect the
+  package generator log, validation reason, media failures, preserved
+  implementation worktree, and the pre-push requeue decision.
+- `ready_issue_refresh.status: failed`: inspect the analysis log, Markdown
+  artifact, `mutation_results`, and `ready_issue_refresh.recovery_guidance`.
+  The integrated issue may already be complete.
+- `promotion_worktree_preflight.status: failed`: inspect the recorded
+  **Promotion** worktree path and remove only a clean stale worktree.
+- `post_promotion_review.status` or `post_promotion_followups.status` warning
+  failures: inspect the **Promotion** manifest, review artifact, follow-up
+  validation results, and recovery guidance. Successful **Promotion** remains
+  succeeded unless the manifest status says otherwise.
+- `acceptance_conflict.status`: inspect the acceptance worktree,
+  `decisions.json`, `conflicts.json`, `codex-resolution-prompt.md`, and the
+  recorded continue command.
+- `github_metadata.status` after a recorded push: inspect the published commit,
+  push evidence, completion or handoff comment state, and **Delivery mode**
+  before live metadata recovery.
+
+Failed implementation runs without `integration_commit` may be eligible for
+Ralph-owned pre-push requeue recovery. Eligible runs must record `status` equal
+to `failed`, passed implementation QA, passed **Issue completion review** or
+`skipped_not_required`, no `integration_commit`, no recorded **Integration
+target** push state, and no failed or running branch sync. A recorded pushed,
+failed, or running target push makes the run ineligible for pre-push requeue.
+Inspection prints the Ralph-owned worktree paths, local issue branch, label
+reconciliation evidence for `agent-failed` and `ready-for-agent`, changed
+files, QA and review evidence, Review package state, and failure log. When the
+failure type is `review_package_failed`, inspection also prints the generator
+log path, validation reason, failure reason, media failure evidence, and next
+safe action.
+
+Preview a safe pre-push requeue before mutating anything:
+
+```bash
+python3 scripts/ralph.py --recover-run .ralph/runs/issue-25-20260504T010203Z --dry-run
+```
+
+The dry run reads the child manifest, GitHub Issue labels and comments, local
+worktrees, local refs, and ancestor evidence. It reports the labels to add or
+remove, the requeue comment body, backup ref behavior, and Ralph-owned
 worktrees or local issue branch cleanup that live mode would perform. It does
 not rerun Codex, rerun QA, create a **Local integration** commit, push an
 **Integration target**, close an issue, or run **Promotion**.
-In the checkpointed **Operator workflow**, status and rollup surface this same
+
+The live pre-push requeue path uses the same checks. It refuses runs with a
+recorded `integration_commit`, any recorded **Integration target** push state,
+success runtime labels such as `agent-integrated`, `agent-merged`, or
+`agent-reviewing`, a local implementation or integration commit already
+reachable from `origin/<integration-target>`, non-Ralph-owned manifest paths,
+unexpected branches, or dirty Ralph-owned worktrees. When a local issue branch
+commit exists, Ralph preserves it under a stable local
+`refs/ralph/requeue/...` backup ref before deleting the local issue branch.
+Ralph removes only manifest-derived Ralph-owned worktrees and the manifest
+local issue branch, comments the requeue evidence, removes `agent-failed`, adds
+`ready-for-agent`, and leaves category and **Delivery mode** labels unchanged.
+Repeating the command after partial cleanup is safe: existing backup refs,
+absent worktrees, absent issue branches, existing comments, and already
+reconciled labels are reported instead of treated as corruption.
+
+In the checkpointed **Operator workflow**, status and rollups surface this same
 classification for open `agent-failed` issues. The Operator runs
-**Automatic pre-push requeue** by default before **Promotion**: it selects the
+**Automatic pre-push requeue** by default before **Promotion**. It selects the
 latest eligible pre-push run for each failed issue, even when a later failed
 retry only records a worktree-collision failure, counts existing Ralph requeue
 evidence comments, and invokes the live `--recover-run` path while the issue is
 below the configured limit. Operators can disable that behavior with
 `--no-auto-pre-push-requeue`; `--auto-pre-push-requeue-limit` defaults to `2`.
 After live requeue restores the issue to `ready-for-agent`, the normal
-oldest-first Operator queue scan can claim it without special-case scheduling.
-When the limit is reached, Ralph leaves the issue `agent-failed` and records an
-`auto_pre_push_requeue_limit_reached` Operator checkpoint for inspection.
+oldest-first Operator queue scan can claim it. When the limit is reached, Ralph
+leaves the issue `agent-failed` and records
+`auto_pre_push_requeue_limit_reached` in the Operator checkpoint for
+inspection.
 
-The live pre-push requeue path uses the same eligibility checks. It refuses
-runs with recorded `integration_commit`, any recorded **Integration target**
-push state, success runtime labels such as `agent-integrated`, `agent-merged`,
-or `agent-reviewing`, a local implementation or integration commit already
-reachable from `origin/<integration-target>`, non-Ralph-owned manifest paths,
-unexpected branches, or dirty Ralph-owned worktrees. When a local issue branch
-commit exists, Ralph preserves it under a stable local
-`refs/ralph/requeue/...` backup ref before deleting the local issue branch.
-Ralph removes only manifest-derived Ralph-owned worktrees and the manifest
-local issue branch, comments the requeue evidence, removes `agent-failed`,
-adds `ready-for-agent`, and leaves category and **Delivery mode** labels
-unchanged. Repeating the command after partial cleanup is safe: existing backup
-refs, absent worktrees, absent issue branches, existing comments, and already
-reconciled labels are reported instead of treated as corruption.
+Post-push metadata recovery uses live `--recover-run <run_dir>` only for
+implementation manifests whose `integration_commit` records a published commit.
+Recovery fetches the expected **Integration target** and refuses to proceed
+unless the recorded commit is reachable from `origin/<integration-target>`.
+The manifest must also record a pushed **Integration target** and fully passed
+QA evidence. This keeps issue comment, label, and closure repair behind proof
+that the **Local integration** commit or Exploratory handoff commit reached the
+expected branch.
 
-For post-push metadata recovery, use `--recover-run <run_dir>` only for
-implementation runs whose manifest records a published implementation commit.
-Recovery fetches the expected target branch and refuses to proceed unless the
-recorded commit is reachable from `origin/<integration-target>`. This guard
-keeps GitHub metadata reconciliation behind proof that the **Local integration**
-commit or Exploratory handoff commit reached the expected branch.
-
-After reachability is verified, recovery reconciles GitHub metadata to the
-issue's **Delivery mode**:
+After reachability is verified, recovery reconciles GitHub Issue metadata to
+the issue's **Delivery mode**:
 
 - **Trunk delivery**: ensure the completion comment exists, remove runtime
   labels, apply `agent-merged`, and close the issue.

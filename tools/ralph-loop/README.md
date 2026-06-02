@@ -62,6 +62,12 @@ review evidence, and issue state changes. It also defines Step size, Stiffness
 ratio, Residual work, and adaptive events for queue-local retry and recovery
 behavior:
 [docs/agents/ralph-loop.md](../../docs/agents/ralph-loop.md#adaptive-vocabulary).
+Use the same doc's
+[Run manifest](../../docs/agents/ralph-loop.md#run-manifest) and
+[Run inspection and recovery](../../docs/agents/ralph-loop.md#run-inspection-and-recovery)
+sections to distinguish child run manifests, QA run-manifest evidence,
+Operator rollups, **Promotion** manifests, and GitHub Issue comments before
+choosing manual recovery.
 ADR
 [0011](../../docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md)
 records the initial stiffness thresholds and verified-only post-push metadata
