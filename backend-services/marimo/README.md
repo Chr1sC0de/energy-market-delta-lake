@@ -11,6 +11,7 @@ Marimo-Codex research workspace image.
 - [Image split](#image-split)
 - [Dashboard standard](#dashboard-standard)
 - [Dashboard registry](#dashboard-registry)
+- [Readiness and catalogue workflow](#readiness-and-catalogue-workflow)
 - [Glossary explorer](#glossary-explorer)
 - [Concept-to-asset explorer](#concept-to-asset-explorer)
 - [Schema data dictionary explorer](#schema-data-dictionary-explorer)
@@ -167,6 +168,82 @@ notebooks call it with their registry concept IDs near the top of the notebook.
 renders the AWS bounded-read diagnostic surface from environment-derived
 Marimo config and registry metadata only. It does not call S3 or Dagster
 GraphQL at runtime.
+
+## Readiness and catalogue workflow
+
+The readiness and catalogue dashboards form one read-only operator workflow.
+Together they use configured S3 discovery, Dagster GraphQL catalogue metadata,
+bounded `silver.gas_model` reads, and code-local dashboard registry metadata,
+with each surface using the inputs it needs to answer a different question. Use
+the workflow before drilling into the individual dashboard reference sections
+below.
+
+1. Start with the
+   [Data Readiness Overview](notebooks/data_readiness_overview.py). This is the
+   Operational first stop at `/marimo/data_readiness_overview/`. Its
+   always-visible data health cards summarize configured S3 bucket reachability,
+   discovered table prefixes, Dagster GraphQL availability, table catalogue
+   status, latest materialization timestamp coverage, and bounded-read policy.
+   It does not preview table contents.
+2. If the S3 card is degraded, open
+   [S3 Bucket Health](notebooks/s3_bucket_health.py) at
+   `/marimo/s3_bucket_health/`. It stays inside the configured-bucket boundary
+   and distinguishes reachable, empty, truncated, missing, and unavailable
+   buckets, plus Delta and Parquet table-like prefixes.
+3. If Dagster or catalogue coverage is degraded, use
+   [Dagster Asset Catalogue Status](notebooks/dagster_asset_catalogue_status.py)
+   at `/marimo/dagster_asset_catalogue_status/` and
+   [Materialization Freshness](notebooks/materialization_freshness.py) at
+   `/marimo/materialization_freshness/`. Catalogue status explains whether
+   Dagster GraphQL exposes table assets, schema metadata, asset groups, and
+   `dagster/uri` values, then joins those assets to configured storage
+   discovery. Freshness explains latest materialization timestamps and
+   freshness gaps for table-like assets. These dashboards inspect metadata;
+   they do not scan table rows or change Dagster definitions.
+4. When a specific row needs schema, metadata, or a bounded preview, use the
+   [Table Explorer](notebooks/table_explorer.py) at
+   `/marimo/table_explorer/`. It overlays Dagster GraphQL table assets with
+   discovered S3-compatible Delta or Parquet prefixes, then lets an operator
+   inspect one selected live table through the configured preview policy.
+5. When the question is source metadata coverage rather than infrastructure
+   readiness, use the
+   [Source Coverage Matrix](notebooks/source_coverage_matrix.py) at
+   `/marimo/source_coverage_matrix/`. It reads bounded samples of
+   catalogue-discovered `silver.gas_model` tables and shows whether loaded rows
+   expose `source_system`, `source_table`, or `source_tables` metadata.
+6. When the question is source-table lineage for a curated table, use the
+   [Source Table Lineage Explorer](notebooks/source_table_lineage_explorer.py).
+   The route is `/marimo/source_table_lineage_explorer/`. It expands populated
+   `source_system`/`source_systems`, `source_table`/`source_tables`, and extra
+   `source_*` fields, then links the rows back to table explorer, asset
+   metadata, concept cards, Market context IDs, and source chunk IDs where
+   registry metadata exists.
+
+The catalogue overlay is a joined view of two read-only inventories: configured
+S3-compatible table prefixes and Dagster GraphQL table assets. It is not a
+catalogue synchronization job. It does not create buckets, materialize assets,
+edit registry records, alter loader behavior, write generated dashboard
+artifacts, or infer missing source lineage beyond the metadata and loaded
+bounded rows available to the current notebook refresh.
+
+| Surface | Dashboard intent | Primary source | Operator answer | Limitation |
+| --- | --- | --- | --- | --- |
+| Data readiness overview | Operational | Existing S3 discovery, Dagster catalogue metadata, and bounded-read config | Is the platform ready enough to investigate data? | No table previews or row scans |
+| Dagster asset catalogue status | Operational | Dagster GraphQL table assets plus storage overlay | Which table assets, schema metadata, and `dagster/uri` rows are visible? | GraphQL outages leave storage-only rows but no asset metadata |
+| Materialization freshness | Operational | Latest Dagster materialization timestamps plus storage overlay | Which table-like assets are stale, unmaterialized, storage-missing, or GraphQL-unavailable? | Metadata only; no table-content freshness calculation |
+| S3 bucket health | Operational | Configured S3-compatible buckets and object listing | Which configured buckets and table prefixes are reachable? | AWS checks configured buckets only and caps discovery at 10,000 objects per bucket |
+| Table explorer | Analytical | Catalogue overlay plus selected live table read | What schema, metadata, and bounded rows exist for this table? | Preview behavior follows the bounded-read policy; AWS disables full-scan controls |
+| Source coverage matrix | Analytical | Bounded `silver.gas_model` reads plus catalogue links | Which source systems and source tables are represented in loaded rows? | Missing source columns or empty reads are coverage gaps, not automatic model defects |
+| Source table lineage explorer | Analytical | Bounded source coverage reads plus registry metadata | Which source tables and extra `source_*` lineage fields feed a curated asset? | Registry and loaded-row metadata only; it does not read generated Market context Markdown |
+
+The workflow follows the [Marimo dashboard standard](docs/dashboard-standard.md):
+each curated dashboard keeps a **Dashboard brief** near the top, declares a
+**Dashboard intent**, and keeps first-viewport data health visible. In this
+workflow, data health means source, freshness, load status, row coverage, and
+degraded-state warnings stay visible before detailed tables. Unavailable
+LocalStack or AWS data, unavailable Dagster GraphQL, missing materializations,
+empty reads, and bounded AWS preview mode are expected dashboard states, not
+implicit runtime behavior changes.
 
 ## Glossary explorer
 
@@ -400,14 +477,13 @@ are seeded.
 ## Source coverage matrix
 
 [notebooks/source_coverage_matrix.py](notebooks/source_coverage_matrix.py) is
-an analytical dashboard over source metadata coverage across registry-backed
-`silver.gas_model` facts and dimensions. It derives the asset list from the
-Marimo dashboard registry, loads bounded rows through the shared gas model
-loader, and enriches rows with table explorer links from the S3/Dagster
-catalogue overlay when available. The linked table explorer route consumes the
-coverage row's `search`, `table`, or `asset` query parameter so operators land
-on the matching catalogue filter or selected metadata row instead of the
-default first table.
+an analytical dashboard over source metadata coverage across
+catalogue-discovered `silver.gas_model` facts and dimensions. It derives the
+asset list from the S3/Dagster catalogue overlay, loads bounded rows through
+the shared gas model loader, and enriches rows with table explorer links when
+available. The linked table explorer route consumes the coverage row's
+`search`, `table`, or `asset` query parameter so operators land on the matching
+catalogue filter or selected metadata row instead of the default first table.
 
 The dashboard summarizes each asset by `source_system` and either scalar
 `source_table` values or expanded `source_tables` list values. Assets with no
