@@ -41,12 +41,26 @@ class _FakeBrowserPage:
 
     def evaluate(self, expression: str, arg: object = None) -> object:
         self.evaluate_calls.append((expression, arg))
-        if isinstance(arg, dict) and arg.get("text") == "Traceback":
+        if (
+            isinstance(arg, dict)
+            and arg.get("text") == "Traceback (most recent call last)"
+        ):
             return False
         return True
 
     def screenshot(self, *, path: str, full_page: bool) -> bytes:
         raise AssertionError("screenshots are off for this helper behavior test")
+
+
+class _VisibleTextPage:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    def evaluate(self, expression: str, arg: object = None) -> object:
+        assert "shadowRoot" in expression
+        assert isinstance(arg, dict)
+        target = str(arg["text"]).lower()
+        return target in self.text.lower()
 
 
 def _load_review_script() -> ModuleType:
@@ -539,7 +553,7 @@ def test_review_run_checks_shadow_dom_text_and_controls() -> None:
     assert wait_arg == {"text": "Dashboard brief", "exact": False}
     assert all("shadowRoot" in call[0] for call in page.evaluate_calls)
     assert [call[1] for call in page.evaluate_calls] == [
-        {"text": "Traceback", "exact": False},
+        {"text": "Traceback (most recent call last)", "exact": False},
         {"text": "Refresh readiness", "exact": True},
         {"text": "Refresh readiness", "exact": True},
     ]
@@ -549,6 +563,27 @@ def test_review_run_checks_shadow_dom_text_and_controls() -> None:
             "(http://example.test/marimo/data_readiness_overview/)"
         ),
         "verified required text: Dashboard brief",
-        "verified absent text: Traceback",
+        "verified absent text: Traceback header",
         "exercised controls: refresh readiness button",
     ]
+
+
+def test_absent_traceback_check_allows_normal_tracebacks_copy() -> None:
+    review = _load_review_script()
+    page = _VisibleTextPage(
+        "This dashboard renders empty states instead of tracebacks."
+    )
+
+    review._require_absent_visible_text(page, "Traceback (most recent call last)")
+
+
+def test_absent_traceback_check_fails_python_traceback_header() -> None:
+    review = _load_review_script()
+    page = _VisibleTextPage("Traceback (most recent call last):")
+
+    try:
+        review._require_absent_visible_text(page, "Traceback (most recent call last)")
+    except RuntimeError as error:
+        assert "unexpected dashboard text was visible" in str(error)
+    else:
+        raise AssertionError("expected traceback header to fail browser review")

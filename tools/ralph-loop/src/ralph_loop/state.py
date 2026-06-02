@@ -46,6 +46,8 @@ def run_configuration_payload(config: LoopConfig) -> dict[str, Any]:
     return {
         "max_codex_attempts": config.max_codex_attempts,
         "exploratory_concurrency": config.exploratory_concurrency,
+        "auto_pre_push_requeue": config.auto_pre_push_requeue,
+        "auto_pre_push_requeue_limit": config.auto_pre_push_requeue_limit,
     }
 
 
@@ -3817,7 +3819,7 @@ def operator_requeue_recovery_entry(
     child_sources: list[dict[str, Any]],
 ) -> dict[str, Any]:
     issue_number = operator_manifest_int(issue.get("number"), default=0)
-    child_source = operator_requeue_child_source_for_issue(
+    child_source = operator_requeue_recovery_child_source_for_issue(
         child_sources,
         issue_number=issue_number,
     )
@@ -3837,6 +3839,15 @@ def operator_requeue_recovery_entry(
         }
 
     manifest_path = str(child_source.get("manifest_path") or "")
+    latest_child_source = operator_latest_child_source_for_issue(
+        child_sources,
+        issue_number=issue_number,
+    )
+    latest_manifest_path = (
+        str(latest_child_source.get("manifest_path") or "")
+        if latest_child_source is not None
+        else manifest_path
+    )
     read_status = str(child_source.get("manifest_read_status") or "unknown")
     child_data = child_source.get("data")
     if not isinstance(child_data, dict):
@@ -3850,6 +3861,7 @@ def operator_requeue_recovery_entry(
             "eligibility": "unknown",
             "reasons": [reason],
             "manifest_path": manifest_path,
+            "latest_manifest_path": latest_manifest_path,
             "guidance": "Open the child manifest path before choosing recovery.",
         }
 
@@ -3865,6 +3877,8 @@ def operator_requeue_recovery_entry(
         "eligibility": eligibility,
         "reasons": list(reasons),
         "manifest_path": manifest_path,
+        "latest_manifest_path": latest_manifest_path,
+        "selected_older_eligible_run": latest_manifest_path != manifest_path,
         "run_dir": run_dir,
         "review_package_failure": operator_rollup_review_package_failure_context(
             child_data
@@ -3882,7 +3896,7 @@ def operator_requeue_recovery_entry(
     }
 
 
-def operator_requeue_child_source_for_issue(
+def operator_latest_child_source_for_issue(
     child_sources: list[dict[str, Any]],
     *,
     issue_number: int,
@@ -3902,6 +3916,43 @@ def operator_requeue_child_source_for_issue(
     if not candidates:
         return None
     return candidates[-1]
+
+
+def operator_requeue_recovery_child_source_for_issue(
+    child_sources: list[dict[str, Any]],
+    *,
+    issue_number: int,
+) -> dict[str, Any] | None:
+    latest = operator_latest_child_source_for_issue(
+        child_sources,
+        issue_number=issue_number,
+    )
+    if latest is None:
+        return None
+    candidates = []
+    for source in child_sources:
+        if source.get("kind") != "implementation":
+            continue
+        issue = source.get("issue")
+        if not isinstance(issue, dict):
+            continue
+        if operator_manifest_int(issue.get("number"), default=0) != issue_number:
+            continue
+        candidates.append(source)
+    for source in reversed(candidates):
+        child_data = source.get("data")
+        if not isinstance(child_data, dict):
+            continue
+        eligibility, _reasons = requeue_eligibility_for_manifest_data(child_data)
+        if (
+            operator_requeue_recovery_classification(
+                child_data,
+                eligibility=eligibility,
+            )
+            == "eligible_pre_push_requeue"
+        ):
+            return source
+    return latest
 
 
 def operator_requeue_recovery_classification(

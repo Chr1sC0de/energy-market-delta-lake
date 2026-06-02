@@ -1480,7 +1480,9 @@ for a repeatable Playwright development review of promoted dashboards that need
 browser evidence. The helper opens each target route at a desktop viewport
 (`1440x1100`) and a narrow viewport (`390x900`), verifies the dashboard brief
 and required first-screen text, and exercises the declared refresh/filter
-controls where the dashboard has them.
+controls where the dashboard has them. It fails on visible Python traceback
+headers such as `Traceback (most recent call last)`, while allowing normal
+dashboard prose that says empty states replace notebook tracebacks.
 
 Start the FastAPI-mounted dashboard server from this Subproject:
 
@@ -1581,9 +1583,13 @@ uv run --with playwright python scripts/review_promoted_dashboards.py \
 Video recording is also off by default. Ralph enables `--videos` only for
 configured Review package media recipes, such as a changed curated notebook
 route that maps to a configured or registry-backed `/marimo/<notebook>/`
-dashboard route. Those `.webm` files are durable run-directory artifacts for the
-Review package; ordinary development-review screenshots stay temporary unless
-an issue or Operator asks for durable artifacts.
+dashboard route. Ralph starts this Subproject's FastAPI app from the issue
+worktree on a free loopback port, waits for `/health`, runs the browser-review
+helper, and stops the server after capture. `RALPH_MARIMO_REVIEW_BASE_URL`
+remains an operator override for an already-running review server. Those
+`.webm` files are durable run-directory artifacts for the **Review package**;
+ordinary development-review screenshots stay temporary unless an issue or
+Operator asks for durable artifacts.
 
 ## Validation
 

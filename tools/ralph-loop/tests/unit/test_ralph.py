@@ -785,6 +785,42 @@ class FakeRunner:
                 "-m",
             )
             and len(command) > 6
+            and command[6] == "ralph_loop.marimo_review_package_media"
+        ):
+            if self.fail_marimo_review_media:
+                raise ralph.CommandFailure(
+                    args,
+                    cwd,
+                    1,
+                    "",
+                    "fake media failure",
+                    log_path,
+                )
+            artifact_dir = Path(command[command.index("--artifact-dir") + 1])
+            routes = [
+                command[index + 1]
+                for index, value in enumerate(command)
+                if value == "--route"
+            ]
+            artifact_dir.mkdir(parents=True, exist_ok=True)
+            for route in routes:
+                for viewport in ("desktop", "narrow"):
+                    video_path = artifact_dir / ralph.marimo_review_video_name(
+                        route, viewport
+                    )
+                    video_path.write_bytes(b"fake webm")
+            return ralph.CompletedCommand(stdout="fake media evidence\n", stderr="")
+        if (
+            command[:6]
+            == (
+                "uv",
+                "run",
+                "--with",
+                "playwright",
+                "python",
+                "-m",
+            )
+            and len(command) > 6
             and command[6] == "ralph_loop.review_package_media"
         ):
             routes = [
@@ -1148,6 +1184,8 @@ def make_loop(
     max_issues: int = ralph.DEFAULT_DRAIN_BUDGET,
     max_codex_attempts: int = ralph.DEFAULT_CODEX_ATTEMPT_BUDGET,
     exploratory_concurrency: int = ralph.DEFAULT_EXPLORATORY_CONCURRENCY,
+    auto_pre_push_requeue: bool = True,
+    auto_pre_push_requeue_limit: int = ralph.DEFAULT_AUTO_PRE_PUSH_REQUEUE_LIMIT,
     dry_run: bool = False,
     allow_dirty_worktree: bool = False,
     allow_full_access_implementation: bool = False,
@@ -1178,6 +1216,8 @@ def make_loop(
         max_issues=max_issues,
         max_codex_attempts=max_codex_attempts,
         exploratory_concurrency=exploratory_concurrency,
+        auto_pre_push_requeue=auto_pre_push_requeue,
+        auto_pre_push_requeue_limit=auto_pre_push_requeue_limit,
         dry_run=dry_run,
         allow_dirty_worktree=allow_dirty_worktree,
         allow_full_access_implementation=allow_full_access_implementation,
@@ -1519,6 +1559,100 @@ def write_failed_review_package_requeue_manifest(
     ]
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return run_dir
+
+
+def requeue_manifest_paths(run_dir: Path) -> tuple[Path, Path, str, str]:
+    manifest = json.loads((run_dir / "ralph-run.json").read_text(encoding="utf-8"))
+    paths = manifest["paths"]
+    branches = manifest["branches"]
+    return (
+        Path(paths["implementation_worktree"]),
+        Path(paths["integration_worktree"]),
+        branches["issue"],
+        f"refs/ralph/requeue/{ralph.slugify(run_dir.name)}",
+    )
+
+
+def requeue_worktree_list(
+    *,
+    repo_root: Path,
+    implementation_worktree: Path,
+    integration_worktree: Path,
+    issue_branch: str,
+    implementation_head: str = "impl-sha",
+    integration_head: str = "integration-sha",
+) -> str:
+    return "\n".join(
+        [
+            f"worktree {repo_root}",
+            "HEAD base-sha",
+            "branch refs/heads/main",
+            "",
+            f"worktree {implementation_worktree}",
+            f"HEAD {implementation_head}",
+            f"branch refs/heads/{issue_branch}",
+            "",
+            f"worktree {integration_worktree}",
+            f"HEAD {integration_head}",
+            "detached",
+            "",
+        ]
+    )
+
+
+def requeue_command_outputs(
+    *,
+    run_dir: Path,
+    implementation_worktree: Path,
+    integration_worktree: Path,
+    issue_branch: str,
+    backup_ref: str,
+    labels: list[str] | None = None,
+    comments: list[dict[str, Any]] | None = None,
+    implementation_head: str = "impl-sha",
+    integration_head: str = "integration-sha",
+) -> dict[tuple[str, ...], list[str]]:
+    repo_root = run_dir.parents[1] / "repo"
+    return {
+        issue_view_command(234): [
+            json.dumps(
+                issue_payload(
+                    234,
+                    labels
+                    or [
+                        ralph.AGENT_FAILED_LABEL,
+                        "enhancement",
+                        ralph.DELIVERY_GITFLOW_LABEL,
+                    ],
+                )
+            )
+        ],
+        issue_comments_command(234): [json.dumps({"comments": comments or []})],
+        ("git", "worktree", "list", "--porcelain"): [
+            requeue_worktree_list(
+                repo_root=repo_root,
+                implementation_worktree=implementation_worktree,
+                integration_worktree=integration_worktree,
+                issue_branch=issue_branch,
+                implementation_head=implementation_head,
+                integration_head=integration_head,
+            )
+        ],
+        (
+            "git",
+            "for-each-ref",
+            "--format=%(objectname)",
+            "--count=1",
+            f"refs/heads/{issue_branch}",
+        ): [f"{implementation_head}\n"],
+        (
+            "git",
+            "for-each-ref",
+            "--format=%(objectname)",
+            "--count=1",
+            backup_ref,
+        ): [""],
+    }
 
 
 def issue_view_output(*, labels: list[str] | None = None) -> str:
@@ -6345,8 +6479,10 @@ Build it.
             ralph.parse_args(["--help"])
 
         help_text = output.getvalue()
+        normalized_help = " ".join(help_text.split())
         self.assertIn("Defaults to", help_text)
-        self.assertIn("10. Use 0 for unlimited", help_text)
+        self.assertIn("10. Use 0 for", normalized_help)
+        self.assertIn("unlimited.", normalized_help)
         self.assertIn("--allow-dirty-worktree", help_text)
         self.assertIn("--skip-post-promotion-review", help_text)
         self.assertIn("--skip-post-promotion-followups", help_text)
@@ -6474,6 +6610,11 @@ Build it.
         for payload in payloads:
             self.assertEqual(payload["configuration"]["exploratory_concurrency"], 5)
             self.assertEqual(payload["configuration"]["max_codex_attempts"], 7)
+            self.assertTrue(payload["configuration"]["auto_pre_push_requeue"])
+            self.assertEqual(
+                payload["configuration"]["auto_pre_push_requeue_limit"],
+                ralph.DEFAULT_AUTO_PRE_PUSH_REQUEUE_LIMIT,
+            )
 
     def test_build_config_enables_ready_issue_refresh_for_drain_by_default(
         self,
@@ -6491,6 +6632,31 @@ Build it.
 
         self.assertTrue(config.ready_issue_refresh_enabled)
         self.assertFalse(config.skip_ready_issue_refresh)
+
+    def test_build_config_records_auto_pre_push_requeue_options(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): ["/work/repo\n"],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+
+        config = ralph.build_config(
+            ralph.parse_args(
+                [
+                    "--drain-promote-all",
+                    "--no-auto-pre-push-requeue",
+                    "--auto-pre-push-requeue-limit",
+                    "3",
+                ]
+            ),
+            runner,
+        )
+
+        self.assertFalse(config.auto_pre_push_requeue)
+        self.assertEqual(config.auto_pre_push_requeue_limit, 3)
 
     def test_build_config_skips_default_ready_issue_refresh_for_drain(self) -> None:
         runner = FakeRunner(
@@ -11359,6 +11525,214 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn("issue contract is malformed", guidance)
         self.assertIn("did not pass the gates needed for requeue", guidance)
 
+    def test_operator_requeue_recovery_prefers_latest_eligible_pre_push_run(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            eligible_run_dir = write_failed_review_package_requeue_manifest(
+                tmp_path,
+                media_failure=True,
+            )
+            eligible_manifest_path = eligible_run_dir / ralph.MANIFEST_NAME
+            eligible_data = json.loads(
+                eligible_manifest_path.read_text(encoding="utf-8")
+            )
+            latest_run_dir = tmp_path / "logs" / "issue-234-latest-collision"
+            latest_run_dir.mkdir(parents=True)
+            latest_manifest_path = latest_run_dir / ralph.MANIFEST_NAME
+            latest_data = {
+                **eligible_data,
+                "paths": {**eligible_data["paths"], "run_dir": str(latest_run_dir)},
+                "qa_results": [],
+                "issue_completion_review": {"status": "not_started"},
+                "failure": {
+                    "message": "Worktree already exists: /tmp/worktrees/agent-234"
+                },
+                "review_package": {"status": "not_started"},
+            }
+            latest_manifest_path.write_text(
+                json.dumps(latest_data, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+        def child_source(manifest_path: Path, data: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "manifest_path": str(manifest_path),
+                "manifest_read_status": "loaded",
+                "manifest_error": None,
+                "kind": "implementation",
+                "status": data["status"],
+                "stage": data["stage"],
+                "issue": data["issue"],
+                "data": data,
+            }
+
+        recovery = ralph.operator_rollup_requeue_recovery(
+            {
+                "issues": {
+                    "failed": [
+                        {
+                            "number": 234,
+                            "title": "Fix Marimo dashboard",
+                            "url": "https://example.test/234",
+                        }
+                    ]
+                }
+            },
+            [
+                child_source(eligible_manifest_path, eligible_data),
+                child_source(latest_manifest_path, latest_data),
+            ],
+        )
+
+        entry = recovery["eligible_pre_push"][0]
+        self.assertEqual(entry["manifest_path"], str(eligible_manifest_path))
+        self.assertEqual(entry["latest_manifest_path"], str(latest_manifest_path))
+        self.assertTrue(entry["selected_older_eligible_run"])
+
+    def test_operator_auto_requeues_eligible_pre_push_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_push_requeue_manifest(tmp_path)
+            implementation_worktree, integration_worktree, issue_branch, backup_ref = (
+                requeue_manifest_paths(run_dir)
+            )
+            implementation_worktree.mkdir(parents=True)
+            integration_worktree.mkdir(parents=True)
+            command_outputs = requeue_command_outputs(
+                run_dir=run_dir,
+                implementation_worktree=implementation_worktree,
+                integration_worktree=integration_worktree,
+                issue_branch=issue_branch,
+                backup_ref=backup_ref,
+            )
+            command_outputs[issue_comments_command(234)].append(
+                json.dumps({"comments": []})
+            )
+            runner = FakeRunner(
+                status_outputs=["", ""],
+                command_outputs=command_outputs,
+                fail_commands={
+                    (
+                        "git",
+                        "merge-base",
+                        "--is-ancestor",
+                        "impl-sha",
+                        "origin/dev",
+                    ),
+                    (
+                        "git",
+                        "merge-base",
+                        "--is-ancestor",
+                        "integration-sha",
+                        "origin/dev",
+                    ),
+                },
+            )
+            issue = make_issue(
+                {ralph.AGENT_FAILED_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=234,
+                title="Fix Marimo dashboard",
+            )
+            operator_run_dir = (
+                tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            )
+            operator = ScriptedOperatorRun(
+                make_loop(tmp_path, runner, drain=True).config,
+                runner,
+                run_dir=operator_run_dir,
+                max_cycles=1,
+                snapshots=[
+                    operator_snapshot(failed=[issue]),
+                    operator_snapshot(),
+                ],
+            )
+            operator.manifest.record_child_run(run_dir / ralph.MANIFEST_NAME)
+
+            with redirect_stdout(io.StringIO()):
+                operator.run()
+
+            manifest = json.loads(
+                (operator_run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text(
+                    encoding="utf-8"
+                )
+            )
+
+        commands = [call.args for call in runner.calls]
+        checkpoints = [item["checkpoint"] for item in manifest["checkpoints"]]
+        self.assertIn("auto_pre_push_requeue_started", checkpoints)
+        self.assertIn("auto_pre_push_requeued", checkpoints)
+        self.assertIn("queue_clean", checkpoints)
+        self.assertIn(("git", "update-ref", backup_ref, "impl-sha"), commands)
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "234",
+                "-R",
+                "example/repo",
+                "--add-label",
+                "ready-for-agent",
+                "--remove-label",
+                "agent-failed",
+            ),
+            commands,
+        )
+
+    def test_operator_auto_requeue_respects_issue_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_push_requeue_manifest(tmp_path)
+            comments = [
+                {"body": ralph.PRE_PUSH_REQUEUE_COMMENT_TITLE},
+                {"body": ralph.PRE_PUSH_REQUEUE_COMMENT_TITLE},
+            ]
+            runner = FakeRunner(
+                command_outputs={
+                    issue_comments_command(234): [
+                        json.dumps({"comments": comments}),
+                    ]
+                }
+            )
+            issue = make_issue(
+                {ralph.AGENT_FAILED_LABEL, ralph.DELIVERY_GITFLOW_LABEL},
+                IMPLEMENTATION_BODY,
+                number=234,
+                title="Fix Marimo dashboard",
+            )
+            operator_run_dir = (
+                tmp_path / "repo" / ".ralph" / "operator-runs" / "operator-test"
+            )
+            operator = ScriptedOperatorRun(
+                make_loop(tmp_path, runner, drain=True).config,
+                runner,
+                run_dir=operator_run_dir,
+                max_cycles=1,
+                snapshots=[operator_snapshot(failed=[issue])],
+            )
+            operator.manifest.record_child_run(run_dir / ralph.MANIFEST_NAME)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                with self.assertRaises(ralph.RalphError):
+                    operator.run()
+
+            manifest = json.loads(
+                (operator_run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text(
+                    encoding="utf-8"
+                )
+            )
+
+        commands = [call.args for call in runner.calls]
+        checkpoints = [item["checkpoint"] for item in manifest["checkpoints"]]
+        self.assertIn("auto_pre_push_requeue_limit_reached", checkpoints)
+        self.assertIn("queue_blocked", checkpoints)
+        self.assertFalse(
+            any(command[:2] == ("git", "update-ref") for command in commands)
+        )
+
     def test_operator_status_marks_stopped_detached_manifest_as_stale(self) -> None:
         runner = FakeRunner()
         with tempfile.TemporaryDirectory() as tmp:
@@ -13185,8 +13559,9 @@ Build it.
                     "--with",
                     "playwright",
                     "python",
-                    "scripts/review_promoted_dashboards.py",
+                    "-m",
                 )
+                and call.args[6] == "ralph_loop.marimo_review_package_media"
             )
             browser_install_call = next(
                 call
@@ -13203,8 +13578,8 @@ Build it.
                 )
             )
             self.assertEqual(browser_install_call.cwd.name, "marimo")
-            self.assertEqual(media_call.cwd.name, "marimo")
-            self.assertIn("--videos", media_call.args)
+            self.assertEqual(media_call.cwd.name, "ralph-loop")
+            self.assertIn("--marimo-root", media_call.args)
             self.assertIn("--route", media_call.args)
 
     def test_trunk_marimo_media_failure_stops_before_main_push(
@@ -15722,11 +16097,12 @@ Build it.
                 "--with",
                 "playwright",
                 "python",
-                "scripts/review_promoted_dashboards.py",
+                "-m",
             )
+            and call.args[6] == "ralph_loop.marimo_review_package_media"
         )
-        self.assertEqual(media_call.cwd.name, "marimo")
-        self.assertIn("--videos", media_call.args)
+        self.assertEqual(media_call.cwd.name, "ralph-loop")
+        self.assertIn("--marimo-root", media_call.args)
         self.assertIn("--route", media_call.args)
         self.assertEqual(manifest["status"], "failed")
         self.assertEqual(manifest["review_package"]["status"], "failed")

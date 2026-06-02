@@ -68,6 +68,9 @@ Ralph pushes the durable **Exploratory branch**. Configured Review package media
 recipes run before package generation and link sibling artifacts from the
 package; ADR [0012](0012-ralph-gitflow-review-package-gate.md) records the
 static HTML contract, optional sibling media artifacts, and failure boundary.
+Before **Promotion**, checkpointed Operator runs automatically requeue eligible
+pre-push failures under the per-issue requeue limit; exhausted or ineligible
+failures remain `agent-failed` and block Promotion for operator inspection.
 After each successful issue **Local integration** or Exploratory handoff,
 **Ready issue refresh** reconciles the open issue queue before Ralph schedules
 more issue attempts; a parallel drain still lets already active Exploratory
@@ -180,6 +183,7 @@ follow-up contract or needs triage evidence.
 - `sync.sources`:
   - `scripts/ralph.py`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/marimo_review_package_media.py`
   - `tools/ralph-loop/src/ralph_loop/state.py`
   - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `docs/agents/ralph-loop.md`

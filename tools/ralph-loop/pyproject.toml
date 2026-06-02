@@ -33,6 +33,7 @@ format.docstring-code-format = true
 lint.select = [ "ANN", "C901", "D", "E", "F", "I" ]
 lint.per-file-ignores."__init__.py" = [ "I" ]
 lint.per-file-ignores."src/ralph_loop/cli.py" = [ "ANN401", "C901", "D", "F403", "F405" ]
+lint.per-file-ignores."src/ralph_loop/marimo_review_package_media.py" = [ "D" ]
 lint.per-file-ignores."src/ralph_loop/review_package_media.py" = [ "D" ]
 lint.per-file-ignores."src/ralph_loop/state.py" = [ "ANN401", "C901", "D", "F403", "F405" ]
 lint.per-file-ignores."src/ralph_loop/workflow.py" = [ "ANN401", "C901", "D" ]

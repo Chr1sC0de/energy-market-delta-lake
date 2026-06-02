@@ -424,7 +424,14 @@ not start an automatic Codex retry, do not count a retry against the issue
 attempt budget, and inspect branch plus issue state first.
 
 For an open `agent-failed` issue that Operator status or rollup classifies as
-eligible for pre-push requeue, first run the Ralph-owned dry run:
+eligible for pre-push requeue, the checkpointed **Operator workflow** runs
+**Automatic pre-push requeue** by default before **Promotion**. Ralph counts
+existing pre-push requeue evidence comments per issue and stops automatic
+requeue after the configured limit, leaving the issue `agent-failed` for
+operator inspection. Use `--no-auto-pre-push-requeue` for a manual recovery
+session, or adjust `--auto-pre-push-requeue-limit` when launching the Operator.
+
+For manual recovery, first run the Ralph-owned dry run:
 
 ```bash
 python3 scripts/ralph.py --recover-run .ralph/runs/issue-N-... --dry-run
@@ -494,8 +501,10 @@ reason. The rollup also includes a requeue-recovery section for open
 `agent-failed` issues, including the dry-run `--recover-run` command when
 pre-push requeue is available. Failed **Review package** entries include the
 same generator log, validation reason, media failure, and next safe action
-reported by `--inspect-run`. Runs that stop for **Exploratory acceptance
-review** also write
+reported by `--inspect-run`. Operator checkpoints also record automatic
+pre-push requeue start, success, limit, and failure events so operators can see
+whether Ralph recovered the issue or stopped at the per-issue limit. Runs that
+stop for **Exploratory acceptance review** also write
 `exploratory-acceptance-review.md` and
 `exploratory-acceptance-review.json` beside the rollup. Use the JSON rollup for
 tooling or status-oriented review without tailing child Codex JSONL or rich
@@ -525,6 +534,7 @@ Keep failed worktrees unless the maintainer asks for cleanup.
   - `tools/ralph-loop/README.md`
   - `tools/ralph-loop/pyproject.toml`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/marimo_review_package_media.py`
   - `tools/ralph-loop/src/ralph_loop/state.py`
   - `tools/ralph-loop/src/ralph_loop/workflow.py`
   - `tools/ralph-loop/tests/unit/test_ralph.py`
