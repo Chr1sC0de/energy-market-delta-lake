@@ -127,6 +127,11 @@ metadata. These identifiers are metadata only: dashboards must not require
 generated gold or silver Markdown artifacts to exist on disk at runtime.
 Generated gold Markdown remains read-only corpus output rather than a dashboard
 runtime dependency.
+The Marimo glossary, concept-to-asset, schema data dictionary, and
+citation-chain explorer views consume those identifiers from the code-local
+dashboard registry, with the data dictionary adding Dagster GraphQL schema
+metadata. They are maintainer views over registry or schema metadata, not
+corpus publication surfaces and not generated corpus routers.
 
 Embeddings or vector storage can be added later only after the extracted text
 and Docling Hybrid chunks exist. A future irreversible storage choice should get
@@ -138,6 +143,13 @@ its own ADR.
 - `sync.sources`:
   - `CONTEXT.md`
   - `README.md`
+  - `backend-services/marimo/README.md`
+  - `backend-services/marimo/docs/dashboard-standard.md`
+  - `backend-services/marimo/src/marimoserver/dashboard_registry.py`
+  - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
+  - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
+  - `backend-services/marimo/src/marimoserver/data_dictionary_explorer.py`
+  - `backend-services/marimo/src/marimoserver/citation_chain_explorer.py`
   - `docs/README.md`
   - `docs/agents/README.md`
   - `docs/agents/domain.md`

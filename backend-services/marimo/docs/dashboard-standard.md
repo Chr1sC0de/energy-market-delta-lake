@@ -9,6 +9,7 @@ notebooks in local compose or the deployed AWS dashboard.
 
 - [Authoring contract](#authoring-contract)
 - [Dashboard brief](#dashboard-brief)
+- [Registry provenance](#registry-provenance)
 - [Dashboard intent](#dashboard-intent)
 - [Always-visible data health](#always-visible-data-health)
 - [Bounded loaders](#bounded-loaders)
@@ -65,6 +66,39 @@ uses code-local `DashboardRegistryEntry` metadata from
 dashboard usage metadata, related concepts, Market context IDs, source chunk
 IDs, silver chunk paths, source hashes, and backing `silver.gas_model` assets
 without reading generated Market context Markdown at runtime.
+
+## Registry provenance
+
+Registry-backed dashboards use the Marimo dashboard registry as runtime
+metadata. They do not read generated corpus Markdown from
+`tools/gas-market-knowledge-base/generated/`, and they do not require the
+external `$ENERGY_MARKET_CORPUS_ROOT` artifact tree to exist in the dashboard
+container. ADR
+[0010](../../../docs/adr/0010-gas-market-knowledge-base.md) owns that generated
+corpus boundary.
+
+Use `DashboardRegistryEntry` fields this way:
+
+- `concept_id` names the Marimo dashboard-roadmap concept and selects the
+  registry context panel.
+- `market_context_ids` names the related **Market context** records, such as
+  `glossary:flow`. Treat these as stable IDs, not source text.
+- `source_chunks` records `SourceChunkReference` values with a source chunk ID,
+  optional silver chunk path, and optional source hash. Missing path or hash
+  metadata should render as a coverage gap.
+- `backing_assets` links the concept to `silver.gas_model.*` assets for table
+  explorer, source-lineage, concept-to-asset, and data dictionary navigation.
+- `external_artifact_refs` may preserve legacy corpus artifact references for
+  review, but the dashboard must not treat those references as maintained
+  router docs or runtime Markdown inputs.
+
+The maintainer explorer views stay scoped to their runtime inputs. The
+glossary explorer groups registry concepts with `glossary:*` Market context
+IDs and source chunk IDs. The concept-to-asset explorer maps those concepts to
+registry `backing_assets`. The schema data dictionary adds Dagster GraphQL
+schema metadata to the concept-to-asset mapping. The citation-chain explorer
+audits Market context IDs, source chunks, silver chunk paths, and source hashes
+from the registry, then renders missing fields as coverage gaps.
 
 ## Dashboard intent
 
@@ -243,6 +277,8 @@ Mixed maintained-doc and runtime dashboard changes also run the root
 - `sync.sources`:
   - `AGENTS.md`
   - `CONTEXT.md`
+  - `docs/adr/0010-gas-market-knowledge-base.md`
+  - `tools/gas-market-knowledge-base/README.md`
   - `backend-services/marimo/README.md`
   - `backend-services/marimo/pyproject.toml`
   - `backend-services/compose.yaml`
