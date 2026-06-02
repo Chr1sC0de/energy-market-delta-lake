@@ -333,7 +333,15 @@ way:
   [docs/agents/issue-tracker.md](../agents/issue-tracker.md), and
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md), and ADR
   [0012](../adr/0012-ralph-gitflow-review-package-gate.md) records the static
-  HTML validation boundary.
+  HTML validation boundary. Ralph-owned Marimo Review package media starts the
+  Marimo FastAPI app on loopback for capture instead of depending on an
+  existing port.
+- Current Ralph Operator recovery: **Automatic pre-push requeue** restores
+  eligible pre-push failures before **Promotion** under a per-issue evidence
+  limit, and leaves exhausted issues `agent-failed` for operator inspection.
+  The canonical term lives in [CONTEXT.md](../../CONTEXT.md), with operator
+  behavior in [OPERATOR.md](../../OPERATOR.md) and
+  [docs/agents/ralph-loop.md](../agents/ralph-loop.md).
 - #294/#295: Ralph Trunk and Exploratory delivery reuse the blocking
   **Review package** gate before **Local integration**, the `main` push,
   Exploratory handoff, completion or handoff comments, `agent-merged`,
@@ -487,6 +495,7 @@ These commands support the intended flow:
   - `tools/ralph-loop/README.md`
   - `tools/ralph-loop/pyproject.toml`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/marimo_review_package_media.py`
   - `tools/ralph-loop/src/ralph_loop/review_package_media.py`
   - `tools/ralph-loop/src/ralph_loop/state.py`
   - `tools/ralph-loop/src/ralph_loop/workflow.py`

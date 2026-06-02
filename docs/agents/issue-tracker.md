@@ -112,8 +112,10 @@ flag, or GitHub Issue mutation permission.
 Ralph then runs configured Review package media recipes before **Local
 integration**, Trunk push, or Exploratory handoff. Media recipes may add sibling
 artifacts, such as Marimo `.webm` recordings for changed configured notebook
-routes. For **Gitflow delivery**, **Trunk delivery**, and **Exploratory
-delivery**, Ralph also generates and validates a **Review package** before
+routes. Ralph owns Marimo media startup by launching the Marimo FastAPI app from
+the issue worktree on loopback before browser review unless the operator
+supplies an explicit base URL. For **Gitflow delivery**, **Trunk delivery**, and
+**Exploratory delivery**, Ralph also generates and validates a **Review package** before
 **Local integration**, the `dev` or `main` push, an **Exploratory branch** push,
 completion or handoff comments, `agent-integrated`, `agent-merged`,
 `agent-reviewing`, or Trunk issue closure. The artifact is an ignored local
@@ -226,12 +228,14 @@ log path, and recovery guidance. It is separate from issue-specific QA,
 For open `agent-failed` issues, Operator status and rollup distinguish
 Ralph-owned pre-push requeue recovery from post-push metadata recovery, manual
 Gitflow recovery, malformed ready issue contracts, and implementation failures
-that did not pass requeue gates. Requeue-eligible pre-push failures use
-`--recover-run <run_dir> --dry-run` first, then live `--recover-run` only when
-the plan restores `ready-for-agent` without pushing an **Integration target** or
-creating a new **Local integration** commit. After that label restoration,
-normal queue scanning can claim the issue; no priority label or special
-scheduling path is needed.
+that did not pass requeue gates. The checkpointed **Operator workflow** runs
+**Automatic pre-push requeue** for eligible failures before **Promotion** while
+the issue is below the configured per-issue requeue limit. Manual recovery still
+uses `--recover-run <run_dir> --dry-run` first, then live `--recover-run` only
+when the plan restores `ready-for-agent` without pushing an **Integration
+target** or creating a new **Local integration** commit. After that label
+restoration, normal queue scanning can claim the issue; no priority label or
+special scheduling path is needed.
 Review package media, generation, and validation failures are pre-push failures
 when QA and any required **Issue completion review** passed and no
 `integration_commit` or **Integration target** push was recorded. `--inspect-run`,
@@ -337,6 +341,7 @@ review** trigger rather than a separate security gate.
   - `docs/adr/0013-ralph-security-sensitive-issue-completion-review.md`
   - `scripts/ralph.py`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/marimo_review_package_media.py`
   - `tools/ralph-loop/src/ralph_loop/state.py`
   - `tools/ralph-loop/src/ralph_loop/workflow.py`
 - `sync.scope`: `operations`

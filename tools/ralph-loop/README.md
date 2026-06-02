@@ -31,6 +31,9 @@ make run-prek
   compatibility re-exports
 - `src/ralph_loop/review_package_media.py`: Ralph-owned Playwright helper that
   serves static build output and records Review package route `.webm` videos
+- `src/ralph_loop/marimo_review_package_media.py`: Ralph-owned Marimo Review
+  package media helper that starts the Marimo FastAPI app on loopback, waits
+  for health, runs dashboard browser review, and records `.webm` videos
 - `src/ralph_loop/workflow.py`: pure label, **Delivery mode**, QA selection,
   comment, **Issue completion review** trigger, **Security-sensitive change**
   path classification, structured Stiffness ratio parsing, Operator smoke
@@ -84,6 +87,7 @@ instead of adding a separate security gate or scanner block.
   - `tools/ralph-loop/Makefile`
   - `tools/ralph-loop/pyproject.toml`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/marimo_review_package_media.py`
   - `tools/ralph-loop/src/ralph_loop/review_package_media.py`
   - `tools/ralph-loop/src/ralph_loop/state.py`
   - `tools/ralph-loop/src/ralph_loop/workflow.py`

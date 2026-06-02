@@ -5742,16 +5742,18 @@ class RalphLoop:
             "--with",
             "playwright",
             "python",
-            "scripts/review_promoted_dashboards.py",
-            "--base-url",
-            os.environ.get(
-                MARIMO_REVIEW_MEDIA_BASE_URL_ENV,
-                MARIMO_REVIEW_MEDIA_DEFAULT_BASE_URL,
-            ),
+            "-m",
+            "ralph_loop.marimo_review_package_media",
+            "--marimo-root",
+            str(worktree_path / MARIMO_PREFIX),
             "--artifact-dir",
             str(artifact_dir),
-            "--videos",
+            "--review-timeout-seconds",
+            str(MARIMO_REVIEW_MEDIA_TIMEOUT_SECONDS),
         ]
+        base_url = os.environ.get(MARIMO_REVIEW_MEDIA_BASE_URL_ENV, "").strip()
+        if base_url != "":
+            command.extend(["--base-url", base_url])
         for route in routes:
             command.extend(["--route", route])
 
@@ -5769,7 +5771,7 @@ class RalphLoop:
             )
             self.runner.run(
                 command,
-                cwd=worktree_path / MARIMO_PREFIX,
+                cwd=self.config.repo_root / RALPH_LOOP_PREFIX,
                 log_path=log_path,
                 phase=f"#{issue.number}: Marimo Review package media",
                 timeout_seconds=MARIMO_REVIEW_MEDIA_TIMEOUT_SECONDS,
@@ -7782,6 +7784,8 @@ class RalphOperatorRun:
                 )
                 return
             if snapshot.failed:
+                if self._auto_requeue_pre_push_failures(snapshot):
+                    continue
                 self._stop_for_queue_condition(
                     "agent-failed issue(s) remain and need operator recovery.",
                     snapshot=snapshot,
@@ -8243,6 +8247,116 @@ class RalphOperatorRun:
             recovery_guidance=guidance,
         )
 
+    def _auto_requeue_pre_push_failures(
+        self,
+        snapshot: OperatorQueueSnapshot,
+    ) -> bool:
+        if not self.config.auto_pre_push_requeue:
+            return False
+        if self.config.auto_pre_push_requeue_limit <= 0:
+            return False
+
+        final_queue = {
+            "issues": {
+                "failed": [
+                    issue_payload_for_operator(issue) for issue in snapshot.failed
+                ]
+            }
+        }
+        recovery = operator_rollup_requeue_recovery(
+            final_queue,
+            operator_status_child_sources(self.manifest.data),
+        )
+        entries = recovery.get("eligible_pre_push")
+        if not isinstance(entries, list) or not entries:
+            return False
+
+        recovered_count = 0
+        requeue = RalphRunRecovery(self.config, self.runner)
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            issue_payload = entry.get("issue")
+            if not isinstance(issue_payload, dict):
+                continue
+            issue_number = operator_manifest_int(issue_payload.get("number"), default=0)
+            run_dir_text = str(entry.get("run_dir") or "")
+            if issue_number <= 0 or run_dir_text == "":
+                continue
+
+            comments = self.github.issue_comments(issue_number)
+            requeue_count = pre_push_requeue_comment_count(comments)
+            limit = self.config.auto_pre_push_requeue_limit
+            details = {
+                "issue_number": issue_number,
+                "run_dir": run_dir_text,
+                "manifest_path": entry.get("manifest_path"),
+                "latest_manifest_path": entry.get("latest_manifest_path"),
+                "existing_requeue_count": requeue_count,
+                "limit": limit,
+            }
+            if requeue_count >= limit:
+                guidance = (
+                    f"Automatic pre-push requeue limit reached for issue "
+                    f"#{issue_number}; inspect the failed run manually."
+                )
+                self.manifest.record_checkpoint(
+                    "auto_pre_push_requeue_limit_reached",
+                    message=guidance,
+                    issue_payload=issue_payload,
+                    details=details,
+                    recovery_guidance=guidance,
+                )
+                emit(guidance, err=True)
+                continue
+
+            self.manifest.record_checkpoint(
+                "auto_pre_push_requeue_started",
+                message=(
+                    f"Automatically requeueing eligible pre-push failure for "
+                    f"issue #{issue_number}."
+                ),
+                issue_payload=issue_payload,
+                details=details,
+            )
+            try:
+                requeue.recover(Path(run_dir_text))
+            except RalphError as error:
+                manifest_path_text = str(entry.get("manifest_path") or "")
+                child_manifest_path = (
+                    Path(manifest_path_text) if manifest_path_text != "" else None
+                )
+                guidance = (
+                    f"Automatic pre-push requeue failed for issue #{issue_number}; "
+                    "inspect the recovery command and issue metadata."
+                )
+                self.manifest.record_checkpoint(
+                    "auto_pre_push_requeue_failed",
+                    message=str(error),
+                    issue_payload=issue_payload,
+                    details=details,
+                    status="failed",
+                    recovery_guidance=guidance,
+                )
+                self.manifest.record_failure(
+                    error,
+                    recovery_guidance=guidance,
+                    child_manifest_path=child_manifest_path,
+                )
+                raise
+
+            recovered_count += 1
+            self.manifest.record_checkpoint(
+                "auto_pre_push_requeued",
+                message=f"Automatically requeued issue #{issue_number}.",
+                issue_payload=issue_payload,
+                details={**details, "new_requeue_count": requeue_count + 1},
+            )
+
+        if recovered_count > 0:
+            emit(f"Automatically requeued {recovered_count} pre-push failure(s).")
+        return recovered_count > 0
+
     def _handle_post_drain_snapshot(self, snapshot: OperatorQueueSnapshot) -> bool:
         if snapshot.running:
             self._stop_for_queue_condition(
@@ -8251,6 +8365,8 @@ class RalphOperatorRun:
             )
             return False
         if snapshot.failed:
+            if self._auto_requeue_pre_push_failures(snapshot):
+                return True
             self._stop_for_queue_condition(
                 "agent-failed issue(s) remain and need operator recovery.",
                 snapshot=snapshot,
@@ -11342,6 +11458,15 @@ def pre_push_requeue_comment_exists(
     return False
 
 
+def pre_push_requeue_comment_count(comments: list[dict[str, Any]]) -> int:
+    count = 0
+    for comment in comments:
+        body = str(comment.get("body") or "")
+        if PRE_PUSH_REQUEUE_COMMENT_TITLE in body:
+            count += 1
+    return count
+
+
 def format_requeue_label_list(labels: list[str]) -> str:
     if not labels:
         return "none"
@@ -13966,6 +14091,8 @@ def build_config(args: CliArgs, runner: CommandRunner) -> LoopConfig:
         max_issues=args.max_issues,
         max_codex_attempts=args.max_codex_attempts,
         exploratory_concurrency=args.exploratory_concurrency,
+        auto_pre_push_requeue=args.auto_pre_push_requeue,
+        auto_pre_push_requeue_limit=args.auto_pre_push_requeue_limit,
         dry_run=args.dry_run,
         allow_dirty_worktree=args.allow_dirty_worktree,
         allow_full_access_implementation=args.allow_full_access_implementation,
@@ -13993,6 +14120,8 @@ def operator_child_command(args: CliArgs, run_dir: Path) -> list[str]:
         str(args.max_codex_attempts),
         "--exploratory-concurrency",
         str(args.exploratory_concurrency),
+        "--auto-pre-push-requeue-limit",
+        str(args.auto_pre_push_requeue_limit),
         "--issue-limit",
         str(args.issue_limit),
     ]
@@ -14018,6 +14147,8 @@ def operator_child_command(args: CliArgs, run_dir: Path) -> list[str]:
         command.append("--allow-dirty-worktree")
     if args.allow_full_access_implementation:
         command.append(FULL_ACCESS_IMPLEMENTATION_FLAG)
+    if not args.auto_pre_push_requeue:
+        command.append("--no-auto-pre-push-requeue")
     return command
 
 
@@ -14476,6 +14607,26 @@ def typer_options(
             ),
         ),
     ] = DEFAULT_EXPLORATORY_CONCURRENCY,
+    auto_pre_push_requeue: Annotated[
+        bool,
+        typer.Option(
+            "--auto-pre-push-requeue/--no-auto-pre-push-requeue",
+            help=(
+                "Let checkpointed Operator runs recover eligible pre-push "
+                "agent-failed issues before Promotion."
+            ),
+        ),
+    ] = True,
+    auto_pre_push_requeue_limit: Annotated[
+        int,
+        typer.Option(
+            "--auto-pre-push-requeue-limit",
+            help=(
+                "Maximum automatic pre-push requeues per GitHub Issue, counted "
+                "from Ralph requeue evidence comments."
+            ),
+        ),
+    ] = DEFAULT_AUTO_PRE_PUSH_REQUEUE_LIMIT,
     dry_run: Annotated[
         bool,
         typer.Option(
@@ -14655,6 +14806,8 @@ def validate_cli_args(args: CliArgs) -> None:
         cli_error("--max-codex-attempts must be 1 or greater.")
     if args.exploratory_concurrency < 1:
         cli_error("--exploratory-concurrency must be 1 or greater.")
+    if args.auto_pre_push_requeue_limit < 0:
+        cli_error("--auto-pre-push-requeue-limit must be 0 or greater.")
 
 
 def main(argv: list[str] | None = None) -> int:

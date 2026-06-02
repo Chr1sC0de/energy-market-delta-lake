@@ -10,7 +10,9 @@ of the **Integration target** or a durable **Exploratory branch**. Configured
 Review package media recipes may add sibling artifacts, such as Marimo
 dashboard `.webm` recordings for changed notebook routes or Caddy root
 portfolio and dashboard-listing `.webm` recordings for changed
-portfolio/static-serving inputs.
+portfolio/static-serving inputs. Marimo media capture is Ralph-owned: Ralph
+starts the Marimo FastAPI server from the issue worktree on a free loopback
+port unless an operator supplies an explicit review base URL.
 
 ## Decision
 
@@ -54,7 +56,10 @@ inspection, but no **Integration target** or **Exploratory branch** is updated
 and no completion or handoff metadata is written. `--inspect-run`, Operator
 status, and Operator rollups surface the generator log, validation reason,
 media failures, and next safe action for these package failures before an
-operator opens raw Codex JSONL or browser media logs.
+operator opens raw Codex JSONL or browser media logs. Checkpointed Operator
+runs may automatically requeue eligible pre-push package failures under the
+configured per-issue limit, but limit exhaustion leaves the issue failed for
+operator inspection.
 During **Promotion**, package summaries and paths follow only the verified
 issue-to-commit evidence mapping. Ralph does not infer per-issue package
 ownership from unverified Promotion commits or from the full Promotion
@@ -68,7 +73,9 @@ changed-file inventory.
   - `OPERATOR.md`
   - `docs/agents/issue-tracker.md`
   - `docs/agents/ralph-loop.md`
+  - `tools/ralph-loop/pyproject.toml`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/marimo_review_package_media.py`
   - `tools/ralph-loop/src/ralph_loop/review_package_media.py`
   - `tools/ralph-loop/src/ralph_loop/state.py`
   - `tools/ralph-loop/src/ralph_loop/workflow.py`

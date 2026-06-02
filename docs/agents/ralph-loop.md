@@ -1030,10 +1030,17 @@ worktrees or local issue branch cleanup that live mode would perform. It does
 not rerun Codex, rerun QA, create a **Local integration** commit, push an
 **Integration target**, close an issue, or run **Promotion**.
 In the checkpointed **Operator workflow**, status and rollup surface this same
-classification for open `agent-failed` issues. Operators should not start a
-competing Operator run while an existing detached session can continue after
-requeue. After live requeue restores the issue to `ready-for-agent`, the normal
+classification for open `agent-failed` issues. The Operator runs
+**Automatic pre-push requeue** by default before **Promotion**: it selects the
+latest eligible pre-push run for each failed issue, even when a later failed
+retry only records a worktree-collision failure, counts existing Ralph requeue
+evidence comments, and invokes the live `--recover-run` path while the issue is
+below the configured limit. Operators can disable that behavior with
+`--no-auto-pre-push-requeue`; `--auto-pre-push-requeue-limit` defaults to `2`.
+After live requeue restores the issue to `ready-for-agent`, the normal
 oldest-first Operator queue scan can claim it without special-case scheduling.
+When the limit is reached, Ralph leaves the issue `agent-failed` and records an
+`auto_pre_push_requeue_limit_reached` Operator checkpoint for inspection.
 
 The live pre-push requeue path uses the same eligibility checks. It refuses
 runs with recorded `integration_commit`, any recorded **Integration target**
@@ -1300,11 +1307,16 @@ Ralph then runs any configured Review package media recipes. Changed curated
 Marimo notebook files under
 `backend-services/marimo/notebooks/<name>.py` map to `/marimo/<name>/` when that
 route is configured or registry-backed; Ralph records desktop and narrow `.webm`
-videos with the Marimo browser-review helper. Ralph runs that helper with an
+videos with the Marimo browser-review helper. Ralph starts a Ralph-owned
+Marimo FastAPI server from the issue worktree on a free loopback port, waits for
+`/health`, runs the browser-review helper against that dynamic base URL, and
+then stops the server. `RALPH_MARIMO_REVIEW_BASE_URL` remains an operator
+override for an already-running server. Ralph runs the media helper with an
 ephemeral Playwright dependency and installs the Chromium browser cache before
 capture, so the configured media recipe does not depend on an undeclared Marimo
-Subproject dependency. Media capture failure fails the issue before **Local
-integration**, Trunk push, or Exploratory handoff.
+Subproject dependency or a pre-existing `127.0.0.1:8000` service. Media capture
+failure fails the issue before **Local integration**, Trunk push, or
+Exploratory handoff.
 
 Changed Caddy portfolio and static-serving inputs documented by
 `backend-services/caddy/README.md` map to the root `/` route. Ralph runs
@@ -2296,6 +2308,7 @@ ordinary issue failure or retryable QA failure.
   - `tools/ralph-loop/README.md`
   - `tools/ralph-loop/pyproject.toml`
   - `tools/ralph-loop/src/ralph_loop/cli.py`
+  - `tools/ralph-loop/src/ralph_loop/marimo_review_package_media.py`
   - `tools/ralph-loop/src/ralph_loop/review_package_media.py`
   - `tools/ralph-loop/src/ralph_loop/state.py`
   - `tools/ralph-loop/src/ralph_loop/workflow.py`

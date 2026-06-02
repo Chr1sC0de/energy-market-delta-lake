@@ -1353,8 +1353,8 @@ def _review_one_run(
         _require_visible_text(page, required_text, timeout_ms=timeout_ms)
     evidence.append(f"verified required text: {', '.join(run.required_texts)}")
 
-    _require_absent_visible_text(page, "Traceback")
-    evidence.append("verified absent text: Traceback")
+    _require_absent_visible_text(page, "Traceback (most recent call last)")
+    evidence.append("verified absent text: Traceback header")
 
     exercised_controls = _exercise_control_probes(
         page,

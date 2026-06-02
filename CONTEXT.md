@@ -109,6 +109,14 @@ media capture, generation, or validation fails the issue before Ralph performs
 branch**, or marks the issue integrated, merged, or reviewing.
 _Avoid_: Pull request, deployment report, Promotion review
 
+**Automatic pre-push requeue**:
+The checkpointed **Operator workflow** recovery action that restores eligible
+failed pre-push issue runs to `ready-for-agent` before **Promotion**. It uses
+the same Ralph-owned evidence, backup-ref, and cleanup checks as manual
+pre-push requeue, applies a per-issue retry limit from existing requeue
+evidence, and leaves exhausted issues `agent-failed` for operator inspection.
+_Avoid_: Infinite retry, manual relabel, automatic Codex retry
+
 **Ready issue refresh**:
 The Ralph queue-maintenance pass that reconciles open GitHub Issues after a
 successful **Local integration** or Exploratory handoff and before the next

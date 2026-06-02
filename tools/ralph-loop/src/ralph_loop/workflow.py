@@ -121,6 +121,7 @@ DEFAULT_DRAIN_BUDGET = 10
 DEFAULT_CODEX_ATTEMPT_BUDGET = 5
 DEFAULT_EXPLORATORY_CONCURRENCY = 2
 DEFAULT_OPERATOR_MAX_CYCLES = 10
+DEFAULT_AUTO_PRE_PUSH_REQUEUE_LIMIT = 2
 DEFAULT_DEPLOY_REPAIR_CYCLE_LIMIT = 2
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
 QA_RUNTIME_MIN_FREE_BYTES = 5 * 1024 * 1024 * 1024
@@ -420,6 +421,8 @@ class CliArgs:
     max_issues: int = DEFAULT_DRAIN_BUDGET
     max_codex_attempts: int = DEFAULT_CODEX_ATTEMPT_BUDGET
     exploratory_concurrency: int = DEFAULT_EXPLORATORY_CONCURRENCY
+    auto_pre_push_requeue: bool = True
+    auto_pre_push_requeue_limit: int = DEFAULT_AUTO_PRE_PUSH_REQUEUE_LIMIT
     dry_run: bool = False
     allow_dirty_worktree: bool = False
     allow_full_access_implementation: bool = False
@@ -1415,6 +1418,8 @@ class LoopConfig:
     max_issues: int
     max_codex_attempts: int
     exploratory_concurrency: int
+    auto_pre_push_requeue: bool
+    auto_pre_push_requeue_limit: int
     dry_run: bool
     allow_dirty_worktree: bool
     allow_full_access_implementation: bool
