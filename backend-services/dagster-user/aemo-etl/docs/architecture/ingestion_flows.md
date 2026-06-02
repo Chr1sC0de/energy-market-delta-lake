@@ -404,62 +404,124 @@ sequenceDiagram
     MajorDocs->>MajorArchive: Copy landed media after metadata write, then delete from landing
 ```
 
-Trigger and output notes:
+### 1. The source-page configuration defines the document scope
 
-- The assets are registered by `src/aemo_etl/defs/raw/aemo_gas_documents.py`
-  and built by `factories/aemo_gas_documents`.
-- Daily materialization reads the checked-in media manifest from the package and
-  does not fetch AEMO source-page HTML. The manifest is expected to contain
-  direct `https://www.aemo.com.au/-/media/...` media-link observations, so the
-  default asset path can download included media without revisiting source
+`src/aemo_etl/defs/raw/aemo_gas_documents.py` registers two raw document-source
+families built by `factories/aemo_gas_documents`:
+
+- `bronze_aemo_gas_document_sources` covers configured AEMO gas source pages
+  such as GBB, STTM, DWGM, ECGS, GSH, PCT, retail gas, and related gas process
   pages.
-  The manual `aemo-refresh-gas-document-media-manifest` CLI performs source-page
-  discovery with Playwright, validates direct media URLs with the same
-  browser-compatible request headers as the daily asset, records validation
-  status, HTTP metadata, resolved URLs, and validation errors in the discovery
-  report, holds failed validation rows in the manifest with
-  `should_download=false`, and preserves existing manifest entries when a source
-  page is blocked or unreadable. The manifest-backed gas document source keeps
-  the AEMO energy-systems major publications hub as observation-only
-  `needs_human_review` metadata; `bronze_aemo_major_publications_hub_downloads`
-  is the approved live-discovery source family for landing public
-  major-publications, library, GSOO, and WA GSOO bytes under
-  `bronze/aemo_major_publications`.
-- The major-publications asset key is
-  `bronze/aemo_major_publications/bronze_aemo_major_publications_hub_downloads`
-  and its visual group is `gas_aemo_major_publications`. Its materialization
-  metadata includes target table URI, landing/archive roots, source page count,
-  included download count, failed count, and review-needed count. The configured
-  source pages include
-  `https://www.aemo.com.au/energy-systems/major-publications/`,
-  `https://www.aemo.com.au/library/major-publications`, GSOO, and WA GSOO.
-  Validate this source family with `make component-test` for the AEMO ETL
-  **Component test** lane and `make run-prek` for the AEMO ETL **Commit check**.
-- Included media links produce content-addressed objects with safe URL or
-  content-type suffixes, plus metadata rows with source URL, resolved URL,
-  source page, include decision, `content_sha256`, content type, content length,
-  target key, document family/version fields, and archive `storage_uri`.
-  Duplicate normalized source URLs share one media GET during a materialization,
-  and byte-identical responses from different source URLs share the same
-  content-addressed landing/archive key while preserving each metadata row.
-- Excluded and `needs_human_review` source-page or source-link observations,
-  plus failed direct-media validation source-link observations, are retained in
-  their metadata Delta tables without landing media bytes. Failed validation
-  rows are not requested by the manifest-backed daily asset path until a later
-  manifest refresh marks them downloadable. If a row marked
-  `should_download=true` still fails during materialization, the asset records a
-  metadata-only row with the failure reason and increments
-  `failed_download_count`. Custom live-scrape uses of the factory record failed
-  HTTP page loads as metadata-only source-page observations before continuing to
-  later configured pages.
-- This flow stops at landing/archive plus bronze metadata. It has no wiki,
-  embedding, vector-store, or document text-extraction side effects. ADR
-  [0010](../../../../../docs/adr/0010-gas-market-knowledge-base.md) and the
-  [Gas market knowledge base Subproject](../../../../../tools/gas-market-knowledge-base/README.md)
-  keep the bronze source manifest command, archive PDF cache fetcher,
-  Docling-based silver document extraction, Docling Hybrid chunks, silver chunk
-  index validation, and cited **Market context** pages outside the AEMO ETL
-  ingestion boundary.
+- `bronze_aemo_major_publications_hub_downloads` covers the approved
+  major-publications source family: the AEMO energy-systems major publications
+  hub, the library major publications page, GSOO, and WA GSOO.
+
+For the manifest-backed gas document source, read
+`DEFAULT_AEMO_GAS_DOCUMENT_SOURCE_PAGES` before changing source scope. Each
+entry declares the source page URL, `corpus_source`, include decision, audit
+reason, and whether the scraper should fetch links or discover child pages. A
+maintainer should inspect the current checked-in manifest and discovery report
+before changing that configuration so the diff can explain whether the change
+adds a source page, changes an include decision, changes an audit reason, or
+just updates the observed AEMO links.
+
+The major-publications family uses live discovery during its daily asset run.
+The manifest-backed gas document source keeps the AEMO energy-systems major
+publications hub as observation-only `needs_human_review` metadata so one source
+family owns the landing/archive bytes for those broader publication bundles.
+
+### 2. Manifest refresh converts source pages into reviewable JSON
+
+The manual `aemo-refresh-gas-document-media-manifest` CLI refreshes the
+checked-in manifest and discovery report. The local command workflow lives in
+the [Local development guide](../development/local_development.md#aemo-gas-document-manifest-refresh).
+
+During refresh, Playwright visits each configured source page, extracts public
+AEMO `/-/media/...` links, and calls `discover_manifest_payloads` to produce two
+different artifacts:
+
+- `aemo_gas_document_media_manifest.json` is the package input for daily
+  materialization. It contains source-page entries and media-link entries with
+  `include_decision`, `document_family_id`, `document_kind`, source URL fields,
+  visible document version/date fields, and `should_download`.
+- `aemo_gas_document_media_discovery_report.json` is review evidence for the
+  refresh. It records source-page refresh status, candidate media counts,
+  preserved media counts, direct-media validation status, HTTP status code,
+  content type, content length, resolved URL, and validation errors.
+
+The manifest and discovery report are not source-table CSV ingestion manifests.
+They do not declare table fields, `glob_pattern` values, `surrogate_key_sources`,
+or replay scope. They record document source-page observations and media URL
+validation evidence for the AEMO gas document source workflow.
+
+When AEMO blocks or breaks a configured source page, refresh preserves existing
+media-link entries for that page instead of replacing them with an empty result.
+When direct media validation fails, the discovery report records the failure and
+the manifest keeps the media-link row with `should_download=false`. That row
+stays metadata-only until a later refresh validates the URL and marks it
+downloadable.
+
+### 3. The daily raw asset reads the checked-in manifest
+
+`aemo_gas_document_sources_definitions_factory` creates
+`bronze_aemo_gas_document_sources_job` and a daily schedule. The default
+`bronze_aemo_gas_document_sources` asset path does not scrape source-page HTML
+during materialization. It loads the checked-in package manifest through
+`MANIFEST_FILENAME`, converts entries into pending observations, and downloads
+only rows whose manifest state says `should_download=true`.
+
+The asset uses browser-compatible request headers for direct media URLs. It
+records source-page rows, excluded rows, `needs_human_review` rows, failed
+download rows, and included media rows in the same bronze metadata table. If a
+previously downloadable URL fails during materialization, the asset writes a
+metadata-only row with the failure reason and increments `failed_download_count`.
+
+The major-publications asset key is
+`bronze/aemo_major_publications/bronze_aemo_major_publications_hub_downloads`
+and its visual group is `gas_aemo_major_publications`. Its materialization
+metadata includes target table URI, landing/archive roots, source page count,
+included download count, failed count, and review-needed count. Validate this
+source family with `make component-test` for the AEMO ETL **Component test**
+lane and `make run-prek` for the AEMO ETL **Commit check**.
+
+### 4. Included media bytes become raw document assets
+
+Included media links produce content-addressed objects under
+`LANDING_BUCKET/bronze/aemo_gas_documents` with safe URL or content-type
+suffixes. Their metadata rows include source URL, resolved URL, source page,
+include decision, `content_sha256`, content type, content length, target key,
+document family/version fields, and archive `storage_uri`.
+
+After the metadata Delta write succeeds, the asset copies landed media to
+`ARCHIVE_BUCKET/bronze/aemo_gas_documents` and deletes the landing object.
+Duplicate normalized source URLs share one media GET during a materialization.
+Byte-identical responses from different source URLs share the same
+content-addressed landing/archive key while preserving each metadata row.
+
+Excluded observations, `needs_human_review` observations, failed direct-media
+validation rows, and runtime download failures remain metadata-only. They do
+not land raw document bytes.
+
+### 5. This workflow stays separate from source-table ingestion
+
+The document source workflow stops at raw media bytes in landing/archive plus
+bronze metadata in the AEMO bucket. It has no wiki, embedding, vector-store, or
+document text-extraction side effects. ADR
+[0010](../../../../../docs/adr/0010-gas-market-knowledge-base.md) and the
+[Gas market knowledge base Subproject](../../../../../tools/gas-market-knowledge-base/README.md)
+keep the bronze source manifest command, archive PDF cache fetcher,
+Docling-based silver document extraction, Docling Hybrid chunks, silver chunk
+index validation, and cited **Market context** pages outside the AEMO ETL
+ingestion boundary.
+
+Source-table ingestion is the separate GBB, STTM, and VICGAS path described in
+the [Source-table current-state reader journey](#source-table-current-state-reader-journey).
+That path selects landing CSV/parquet objects through `glob_pattern` metadata,
+parses rows against a source-table schema, calculates `surrogate_key` and
+`source_content_hash`, archives processed source files, and writes paired
+bronze/source-silver current-state tables. The AEMO gas document source path
+does not feed that source-table sensor, unzipper, archive replay, or source
+silver workflow.
 
 ## Raw-to-silver transformation flow
 

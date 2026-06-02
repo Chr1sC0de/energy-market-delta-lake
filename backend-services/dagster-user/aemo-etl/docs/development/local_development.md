@@ -406,28 +406,67 @@ grains become new `gas_model` facts.
 ## AEMO gas document manifest refresh
 
 `bronze_aemo_gas_document_sources` uses a checked-in package manifest for its
-daily materialization path. The manifest is expected to contain direct
-`https://www.aemo.com.au/-/media/...` media-link observations, and the paired
-discovery report records validation status, HTTP status code, content type,
-content length, resolved URL, and validation errors. Failed direct-media
-validation rows stay in the manifest with `should_download=false`; the daily
-asset path records those rows without requesting the failed media URL or landing
-bytes. Manifest validation and daily direct-media downloads use
-browser-compatible request headers for AEMO media URLs. If a row marked
-`should_download=true` later still fails during daily materialization, the asset
-records a metadata-only row with the failure reason and reports it through
-`failed_download_count`. Source-page discovery is refreshed manually with a
-Playwright-backed CLI so regular Dagster runs do not depend on source-page HTML
-availability. The manifest-backed gas document source keeps the AEMO
-energy-systems major publications hub as observation-only `needs_human_review`
-metadata. `bronze_aemo_major_publications_hub_downloads` is the approved
-live-discovery source family for landing public major-publications, library,
-GSOO, and WA GSOO publication bytes under `bronze/aemo_major_publications`; its
-materialization metadata reports target table URI, landing/archive roots,
-source page count, included download count, failed count, and review-needed
-count. Duplicate normalized source URLs are downloaded once per
-materialization, and byte-identical files share one content-addressed archive
-object while preserving each metadata row. Validate that source family with
+daily materialization path. It does not scrape source-page HTML during the
+default daily run. The full reader journey lives in the
+[AEMO gas document source flow](../architecture/ingestion_flows.md#aemo-gas-document-source-flow).
+
+The manifest refresh command owns source-page discovery for the manifest-backed
+document source. It visits configured AEMO gas source pages with Playwright,
+extracts direct `https://www.aemo.com.au/-/media/...` media links, validates
+those URLs with the same browser-compatible request headers used by the daily
+asset, and writes two checked-in JSON files:
+
+- `aemo_gas_document_media_manifest.json`: package input for the daily asset,
+  including source-page entries, media-link entries, include decisions,
+  document metadata, and `should_download`.
+- `aemo_gas_document_media_discovery_report.json`: refresh review evidence,
+  including source-page status, candidate and preserved media counts, direct
+  media validation status, HTTP status code, content type, content length,
+  resolved URL, and validation errors.
+
+Before refreshing or changing document source configuration, inspect:
+
+- `DEFAULT_AEMO_GAS_DOCUMENT_SOURCE_PAGES` in
+  `src/aemo_etl/factories/aemo_gas_documents/models.py` for the intended source
+  pages, `corpus_source` values, include decisions, audit reasons,
+  `fetch_links`, and child-page discovery settings.
+- The current manifest for `source_page_count`, `media_link_count`,
+  `should_download=false` rows, source-page URLs, and document-family changes
+  that a refresh would carry into the next daily materialization.
+- The current discovery report for failed validation rows, HTTP 403 or other
+  repeated status patterns, preserved media counts, and blocked source pages.
+- The split between the manifest-backed gas document source and
+  `bronze_aemo_major_publications_hub_downloads`. Keep the AEMO
+  energy-systems major publications hub observation-only in the manifest-backed
+  source unless the source-family ownership changes in code and docs together.
+- Downstream corpus references in ADR
+  [0010](../../../../../docs/adr/0010-gas-market-knowledge-base.md) and the
+  [Gas market knowledge base Subproject](../../../../../tools/gas-market-knowledge-base/README.md)
+  when the refresh changes raw document availability for later corpus work.
+
+Failed direct-media validation rows stay in the manifest with
+`should_download=false`; the daily asset records those rows without requesting
+the failed media URL or landing bytes. If a row marked `should_download=true`
+later fails during daily materialization, the asset records a metadata-only row
+with the failure reason and reports it through `failed_download_count`. If a
+configured source page is blocked or unreadable, refresh preserves existing
+media entries for that page instead of replacing them with an empty result.
+
+This workflow is separate from source-table CSV ingestion. It does not declare
+source-table schemas, `glob_pattern` values, source silver assets, or archive
+replay scope. Included document media bytes land under
+`LANDING_BUCKET/bronze/aemo_gas_documents` and move to
+`ARCHIVE_BUCKET/bronze/aemo_gas_documents` only after the bronze metadata Delta
+write succeeds.
+
+`bronze_aemo_major_publications_hub_downloads` is the approved live-discovery
+source family for landing public major-publications, library, GSOO, and WA GSOO
+publication bytes under `bronze/aemo_major_publications`. Its materialization
+metadata reports target table URI, landing/archive roots, source page count,
+included download count, failed count, and review-needed count. Duplicate
+normalized source URLs are downloaded once per materialization, and
+byte-identical files share one content-addressed archive object while
+preserving each metadata row. Validate that source family with
 `make component-test` for the AEMO ETL **Component test** lane and
 `make run-prek` for the AEMO ETL **Commit check**.
 
@@ -520,6 +559,12 @@ across the Subproject.
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/archive_replay.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/cli/refresh_aemo_gas_document_manifest.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/raw/aemo_gas_documents.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/assets.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/definitions.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/manifest.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/models.py`
+  - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/aemo_gas_documents/scraper.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/maintenance/e2e_archive_seed.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/factories/df_from_s3_keys/definitions.py`
   - `backend-services/scripts/aemo-etl-e2e`
