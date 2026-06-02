@@ -251,6 +251,21 @@ does not submit them to the Exploratory worker pool, waits for active issue
 workers to finish before claiming them, and does not overlap the smoke issue
 with another active implementation worker.
 
+After **Promotion**, queue work has four separate boundaries. First,
+**Promotion** closes only verified open `agent-integrated` issues after `main`
+is pushed and the promoted range proves their Gitflow **Local integration**,
+manual Gitflow recovery, or accepted Exploratory evidence commit. Second,
+**Post-promotion review** is a read-only review agent pass whose report may
+contain structured follow-up drafts. Third, follow-up creation is Ralph-owned:
+Ralph, not the review agent, validates and creates those follow-up issues after
+a successful **Promotion**. Fourth, when enabled, **Ready issue refresh**
+reconciles existing open candidate issues after promoted issue closures,
+review, and follow-up creation. The checkpointed **Operator workflow** enables
+post-Promotion refresh by default; direct `--promote` runs require
+`--ready-issue-refresh`. Refresh updates queue metadata through Ralph's outer
+loop only, and it does not run deployment, archive replay, **Promotion**, or
+follow-up issue creation.
+
 After a successful drain-mode **Local integration**, Exploratory handoff, or
 successful **Promotion** verified issue closure, Ralph computes **Ready issue
 refresh** candidates from open issues within `--issue-limit`. The candidate scan

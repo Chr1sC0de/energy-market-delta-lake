@@ -1480,10 +1480,63 @@ sequenceDiagram
 Exploratory work from `origin/dev` to `origin/main` by default. Ralph fetches
 both branches, computes the changed files between the target branch and the
 fetched source-branch revision, records the full source commit inventory for
-that promoted range, and creates an isolated source worktree at that source
-revision. The commit inventory records every promoted source commit with its
-SHA and subject. After verified issues are identified, commits whose SHA matches
-a recorded Gitflow **Local integration** commit, a documented manual Gitflow
+that promoted range, and creates an isolated source worktree at that exact
+source revision. Promotion starts from either an explicit operator
+`$ralph-loop promote` after reviewing `dev`, or from the checkpointed
+**Operator workflow** when open `agent-integrated` backlog is ready and active
+Exploratory workers, implementation **Ready issue refresh** gates, and
+scheduler-owned metadata updates have settled. Promotion is not part of a
+single issue implementation attempt.
+
+Treat the Promotion and post-Promotion lifecycle as separate boundaries:
+
+1. **Promotion startup and inventory** records the source branch revision,
+   target branch, full changed-file inventory, full source commit inventory,
+   stale Promotion worktree preflight, deterministic **Post-Promotion
+   deployment classification**, and source-table archive replay recovery
+   guidance.
+2. **Promotion validation** runs the aggregate matching **Push check** from the
+   isolated source worktree. If the promoted range includes non-doc runtime
+   files under the AEMO ETL **Subproject**, Ralph also runs the Promotion AEMO
+   ETL **End-to-end test** gate before any merge, push, branch sync, issue
+   metadata update, or issue closure.
+3. **Promotion publication** merges the validated source revision into a
+   detached `origin/main` worktree, pushes `main`, fast-forwards remote `dev`
+   to the Promotion commit, and later records safe or skipped local worktree
+   fast-forwards.
+4. **Verified Gitflow closure** happens only after the `main` push. Ralph scans
+   open `agent-integrated` issues and closes only issues whose recorded Gitflow
+   **Local integration** commit, documented manual Gitflow recovery commit, or
+   accepted Exploratory commit is verified in the promoted range. Verified
+   issues receive Promotion comments, have `agent-integrated` replaced with
+   `agent-merged`, and close as completed.
+5. **Post-promotion review** is a separate read-only review agent pass after a
+   Promotion attempt when a review worktree is available. Successful Promotions
+   run it after `main` is pushed, `dev` is synced, and verified issue metadata
+   updates complete. Failed or partial attempts try it as warning-only recovery
+   review without changing the original Promotion outcome.
+6. **Post-promotion follow-up creation** is Ralph-owned metadata work after a
+   successful Promotion and completed review report, not an action by the
+   review agent. Ralph validates structured follow-up drafts, creates valid
+   drafts as `ready-for-agent`, downgrades incomplete drafts to `needs-triage`
+   with evidence, skips duplicate source markers, and records warning-only
+   recovery guidance for helper failures after `main` is pushed.
+7. **Ready issue refresh** is queue maintenance after verified Promotion
+   closures, **Post-promotion review**, and follow-up creation. It reconciles
+   existing open candidate issues against the promoted **Integration target**;
+   it is not **Promotion**, not **Post-promotion review**, and not follow-up
+   issue creation.
+8. **Post-Promotion deployment classification** is recorded during Promotion
+   from the changed-file inventory and printed as a recommendation. Direct
+   `$ralph-loop promote` does not run AWS, Pulumi, deployment, or archive replay
+   commands. The checkpointed **Operator workflow** may consume the recorded
+   classification later from Ralph's credential-owning outer loop after
+   Promotion metadata updates, **Post-promotion review**, follow-up creation,
+   and post-Promotion **Ready issue refresh** have completed.
+
+The commit inventory records every promoted source commit with its SHA and
+subject. After verified issues are identified, commits whose SHA matches a
+recorded Gitflow **Local integration** commit, a documented manual Gitflow
 recovery commit, or an accepted Exploratory commit are treated as verified issue
 evidence. If more than one issue records the same evidence commit, the
 inventory and **Post-promotion review** prompt list every issue mapping instead
