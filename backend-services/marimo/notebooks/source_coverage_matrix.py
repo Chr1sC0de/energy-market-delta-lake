@@ -71,7 +71,7 @@ def _(mo, render_dashboard_context_panel):
             from the shared gas model loader. Missing `source_table` or
             `source_tables` columns, unavailable GraphQL, empty LocalStack/AWS
             storage, and bounded AWS preview mode render as explicit coverage
-            states instead of notebook tracebacks.
+            states instead of runtime errors.
             """),
             mo.Html(render_dashboard_context_panel("source-coverage-matrix")),
         ]
@@ -335,16 +335,27 @@ def _(
 
     mo.vstack(
         [
-            mo.md("""
-            ## Source Coverage Matrix
-
-            Each row summarizes a loaded `silver.gas_model` asset and one
-            source-system/source-table pair. `source_tables` list values are
-            expanded so multi-source rows contribute to each represented source
-            table. Link columns open the table explorer or asset metadata view
-            when the catalogue overlay exposed a matching row.
-            """),
-            matrix_view,
+            mo.md("## Source Coverage Matrix"),
+            mo.accordion(
+                {
+                    "Matrix drilldown": mo.vstack(
+                        [
+                            mo.md("""
+                            Each row summarizes a loaded `silver.gas_model`
+                            asset and one source-system/source-table pair.
+                            `source_tables` list values are expanded so
+                            multi-source rows contribute to each represented
+                            source table. Link columns open the table explorer
+                            or asset metadata view when the catalogue overlay
+                            exposed a matching row.
+                            """),
+                            matrix_view,
+                        ]
+                    )
+                },
+                multiple=False,
+                lazy=True,
+            ),
         ]
     )
     return
@@ -353,12 +364,12 @@ def _(
 @app.cell
 def _(
     SOURCE_COVERAGE_STATE_GAP,
-    coverage_matrix,
+    filtered_coverage_matrix,
     mo,
     pl,
     render_source_coverage_matrix_html,
 ):
-    coverage_gaps = coverage_matrix.filter(
+    coverage_gaps = filtered_coverage_matrix.filter(
         pl.col("coverage state") == SOURCE_COVERAGE_STATE_GAP
     )
     if coverage_gaps.is_empty():
@@ -370,13 +381,23 @@ def _(
 
     mo.vstack(
         [
-            mo.md("""
-            ## Coverage Gaps
-
-            Missing `source_table` or `source_tables` columns and empty source
-            metadata values appear here as first-class dashboard rows.
-            """),
-            gap_view,
+            mo.md("## Coverage Gaps"),
+            mo.accordion(
+                {
+                    "Gap drilldown": mo.vstack(
+                        [
+                            mo.md("""
+                            Missing `source_table` or `source_tables` columns
+                            and empty source metadata values appear here as
+                            first-class dashboard rows.
+                            """),
+                            gap_view,
+                        ]
+                    )
+                },
+                multiple=False,
+                lazy=True,
+            ),
         ]
     )
     return
