@@ -416,6 +416,39 @@ class ShapeIssueGateTests(unittest.TestCase):
 
             self.assertTrue(gate.is_candidate_text_file(caddyfile))
 
+    def test_frontend_files_are_readable_context_evidence(self) -> None:
+        gate = load_script_module("shape_issue_gate_frontend_under_test", GATE_SCRIPT)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            main_tsx = Path(tmp) / "main.tsx"
+            styles = Path(tmp) / "site.css"
+            main_tsx.write_text("export function LoginPage() { return null; }\n")
+            styles.write_text(".login-form { display: grid; }\n")
+
+            self.assertTrue(gate.is_candidate_text_file(main_tsx))
+            self.assertTrue(gate.is_candidate_text_file(styles))
+
+    def test_extensionless_text_script_is_readable_context_evidence(self) -> None:
+        gate = load_script_module("shape_issue_gate_extensionless_under_test", GATE_SCRIPT)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            setup_script = Path(tmp) / "setup_secrets"
+            setup_script.write_text(
+                "#!/usr/bin/env bash\n"
+                'pulumi config set website_root_url "$WEBSITE_ROOT_URL"\n'
+            )
+
+            self.assertTrue(gate.is_candidate_text_file(setup_script))
+
+    def test_extensionless_binary_file_is_not_context_evidence(self) -> None:
+        gate = load_script_module("shape_issue_gate_binary_under_test", GATE_SCRIPT)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            binary_file = Path(tmp) / "artifact"
+            binary_file.write_bytes(b"\x80\x81\x82\x83")
+
+            self.assertFalse(gate.is_candidate_text_file(binary_file))
+
     def test_evidence_snippets_prioritize_symbol_anchors(self) -> None:
         gate = load_script_module("shape_issue_gate_snippets_under_test", GATE_SCRIPT)
         text = "\n".join(

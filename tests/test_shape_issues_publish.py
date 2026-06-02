@@ -999,6 +999,29 @@ class ShapeIssuesPublishTests(unittest.TestCase):
         dependent_body = FakeGithubClient.created[1]["body_path"].read_text(encoding="utf-8")
         self.assertIn("## Blocked by\n- #41", dependent_body)
 
+    def test_external_issue_blocker_rewrites_without_bundle_draft(self) -> None:
+        bundle_path, report_path = write_bundle_and_report(
+            self.tmp_path,
+            issues=[
+                issue_payload("dependent", "Dependent issue", blocked_by=["#346"]),
+            ],
+            actions={"dependent": "ready"},
+        )
+
+        manifest = publisher.publish(
+            publish_config(
+                self.tmp_path,
+                bundle_path,
+                report_path,
+                dry_run=False,
+            )
+        )
+
+        self.assertEqual([entry["id"] for entry in manifest["issues"]], ["dependent"])
+        self.assertEqual([call["title"] for call in FakeGithubClient.created], ["Dependent issue"])
+        dependent_body = FakeGithubClient.created[0]["body_path"].read_text(encoding="utf-8")
+        self.assertIn("## Blocked by\n- #346", dependent_body)
+
     def test_blocked_by_cycle_is_rejected(self) -> None:
         bundle_path, report_path = write_bundle_and_report(
             self.tmp_path,

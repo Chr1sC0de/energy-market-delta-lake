@@ -58,7 +58,9 @@ Use this page as the agent documentation map. The imperative policy lives in
   tracer-bullet issue drafts with context anchors, QA plans, **Issue context
   assessor** evidence, and stiffness scoring. The gate writes `report.md`,
   `report.json`, `issue-drafts.md`, and per-draft `issue-drafts/*.md` review
-  files before publication. Version 2 may publish explicitly confirmed gated
+  files before publication. The evidence corpus accepts repo text sources,
+  including frontend TypeScript/CSS files and extensionless UTF-8 helper
+  scripts. Version 2 may publish explicitly confirmed gated
   outputs as `needs-triage` issues only. Follow-up verbs after a
   `$shape-issues` plan continue issue-draft execution; direct implementation
   requires `$ralph-loop` or an explicit named GitHub Issue request.
@@ -69,8 +71,10 @@ Use this page as the agent documentation map. The imperative policy lives in
   publication can use `--publish-backend auto` to fall back to a create-only
   GitHub connector plan when local `gh` auth is unavailable. Connector plans use
   final `body_path` files for unblocked drafts and `body_template_path` plus a
-  render contract for dependent drafts, so blocker placeholders are replaced
-  with created GitHub issue references before dependents are created.
+  render contract for dependent drafts, so bundle-local blocker placeholders are
+  replaced with created GitHub issue references before dependents are created.
+  Drafts may also name existing GitHub blockers with `#123` or a GitHub Issue
+  URL; those references are preserved without requiring a draft in the bundle.
 - Use `$ralph-curate` to review open GitHub Issues against the repository state
   in this worktree and propose stale, satisfied, blocked, or mislabeled issue
   updates.

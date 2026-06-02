@@ -36,11 +36,16 @@ EXPLORATORY_REQUIRED_SECTIONS = ("Review focus",)
 TEXT_EXTENSIONS = frozenset(
     {
         ".cfg",
+        ".css",
         ".ini",
+        ".js",
+        ".jsx",
         ".json",
         ".md",
         ".py",
         ".sh",
+        ".ts",
+        ".tsx",
         ".toml",
         ".txt",
         ".yaml",
@@ -55,7 +60,7 @@ DEFAULT_CONTEXT_ASSESSOR_PROVIDER = "codex"
 SOURCE_MARKER_PREFIX = "shape-issues-source"
 DEFAULT_RG_CANDIDATE_FILES = 8
 MAX_SEARCH_TERMS = 24
-MAX_EVIDENCE_SNIPPETS_PER_FILE = 5
+MAX_EVIDENCE_SNIPPETS_PER_FILE = 8
 MAX_SNIPPET_CHARS = 900
 MAX_FILE_READ_CHARS = 640_000
 MIN_SAFE_FEEDBACK_STEP = 0.25
@@ -440,7 +445,21 @@ def slugify(value: str) -> str:
 def is_candidate_text_file(path: Path) -> bool:
     if path.name in TEXT_FILE_NAMES:
         return True
-    return path.suffix in TEXT_EXTENSIONS
+    if path.suffix in TEXT_EXTENSIONS:
+        return True
+    if path.suffix != "":
+        return False
+    try:
+        prefix = path.read_bytes()[:512]
+    except OSError:
+        return False
+    if prefix.startswith(b"#!"):
+        return True
+    try:
+        prefix.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
 
 
 def parse_anchors(body: str, repo_root: Path) -> AnchorSummary:
