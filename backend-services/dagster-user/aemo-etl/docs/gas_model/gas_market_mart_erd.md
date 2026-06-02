@@ -250,7 +250,7 @@ erDiagram
 
 ## Related docs
 
-- [Gas-model index](README.md)
+- [Gas-model maintainer contract](README.md)
 - [Shared dimensions ERD](gas_dim_erd.md)
 - [High-level architecture](../architecture/high_level_architecture.md)
 - [Ingestion sequence diagrams](../architecture/ingestion_flows.md)
@@ -259,6 +259,7 @@ erDiagram
 
 - `sync.owner`: `docs`
 - `sync.sources`:
+  - `backend-services/dagster-user/aemo-etl/docs/gas_model/README.md`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_market_price.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_schedule_run.py`
   - `backend-services/dagster-user/aemo-etl/src/aemo_etl/defs/gas_model/silver_gas_fact_scheduled_quantity.py`

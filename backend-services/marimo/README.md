@@ -1535,7 +1535,7 @@ prek run -a
 
 - [Local backend-services stack](../README.md)
 - [Authentication service](../authentication/README.md)
-- [Gas-model ERDs](../dagster-user/aemo-etl/docs/gas_model/README.md)
+- [Gas-model maintainer contract](../dagster-user/aemo-etl/docs/gas_model/README.md)
 - [Marimo dashboard standard](docs/dashboard-standard.md)
 - [Repository workflow](../../docs/repository/workflow.md)
 
@@ -1548,6 +1548,7 @@ prek run -a
   - `backend-services/marimo/pyproject.toml`
   - `backend-services/marimo/Dockerfile`
   - `backend-services/marimo/docs/dashboard-standard.md`
+  - `backend-services/dagster-user/aemo-etl/docs/gas_model/README.md`
   - `backend-services/marimo/scripts/review_promoted_dashboards.py`
   - `backend-services/marimo/scripts/sync-gbb-map-s3-to-localstack.sh`
   - `backend-services/marimo/research-workspace/AGENTS.md`

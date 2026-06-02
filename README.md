@@ -44,10 +44,10 @@ Subproject docs for detailed commands, defaults, diagrams, and behavior.
   local, operator, and agent workflow map.
 - [docs/repository/documentation-sync.md](docs/repository/documentation-sync.md):
   maintained-doc contract, sync metadata, and doc QA ratchets.
-- [docs/agents/ralph-loop.md](docs/agents/ralph-loop.md): Ralph internals,
-  **Local integration**, **Delivery mode**, **Integration target**,
-  **Issue completion review**, **Ready issue refresh**, **Exploratory
-  acceptance review**, checkpointed Operator runs, **Promotion**,
+- [docs/agents/ralph-loop.md](docs/agents/ralph-loop.md): Ralph internals, the
+  one issue attempt lifecycle, **Local integration**, **Delivery mode**,
+  **Integration target**, **Issue completion review**, **Ready issue refresh**,
+  **Exploratory acceptance review**, checkpointed Operator runs, **Promotion**,
   **Post-promotion review**, **Post-Promotion deployment classification**, and
   adaptive Ralph vocabulary, verified-only recovery, source-table archive replay
   recovery, and deploy-repair issue creation behavior.

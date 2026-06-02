@@ -25,6 +25,7 @@ archive replay recovery guidance when a Promotion changes existing source-table
 ## Table of contents
 
 - [Purpose](#purpose)
+- [One issue attempt lifecycle](#one-issue-attempt-lifecycle)
 - [Drain flow](#drain-flow)
 - [Labels](#labels)
 - [Run modes](#run-modes)
@@ -134,7 +135,131 @@ placeholders resolve before dependent issues are created.
 **Delivery mode** labels. `$ralph-loop` owns the backing script commands,
 including `$ralph-loop drain` and `$ralph-loop promote`.
 Use `$ralph-curate` before triage or drain when the open issue queue needs to
-be reconciled against current branch state.
+be reconciled against the repository state in this worktree.
+
+## One issue attempt lifecycle
+
+Read this section before the **Promotion** and recovery sections when you need
+to follow one issue attempt end to end. It explains what an operator should
+expect Ralph to do after an issue has been prepared for the queue. Use
+[issue-tracker.md](issue-tracker.md) for the GitHub Issue queue contract and
+[triage-labels.md](triage-labels.md) for label policy; this page describes how
+Ralph acts on those labels.
+
+An issue becomes claimable when triage has given it one category label, the
+`ready-for-agent` state label, at most one **Delivery mode** label, and the
+required body sections. Ralph treats `ready-for-agent` as the queue selection
+signal only. The category labels such as `bug` and `enhancement` describe the
+work, state labels such as `needs-triage` and `ready-for-human` describe queue
+readiness, runtime labels such as `agent-running` and `agent-failed` describe a
+Ralph-owned attempt, and **Delivery mode** labels choose the publication path.
+Those roles are intentionally separate.
+
+For each candidate, Ralph resolves the **Delivery mode** and **Integration
+target** before implementation. `delivery-gitflow` is the default and targets
+`dev`; `delivery-trunk` targets `main`; `delivery-exploratory` targets the
+durable **Exploratory branch** for that issue. If the issue has no delivery
+label, Ralph writes the resolved default label before implementation. If the
+labels conflict, Ralph normalizes them using the policy in
+[triage-labels.md](triage-labels.md). Gitflow candidates may also trigger a
+preclaim `main` into `dev` branch sync so the `dev` **Integration target** is
+not behind trunk.
+
+When Ralph claims the issue, it removes `ready-for-agent` and stale success or
+failure runtime labels, then adds `agent-running`. That is the point where the
+attempt starts. If an issue needs an operator-approved **Full-access
+implementation pass** and the operator did not provide the required flag, Ralph
+stops before claim. If the issue contract is malformed after claim, Ralph
+comments failure evidence, marks `agent-failed`, and does not create a
+successful publication boundary.
+
+During implementation, Ralph creates a per-issue branch and worktree, then runs
+Codex with the issue body as the primary contract. Codex is prompted not to
+commit, push, or publish issue metadata; Ralph owns the normal publication
+steps after validation. Ralph records each implementation attempt in
+`.ralph/runs/issue-N-.../codex-implementation-N.jsonl`. If QA fails and attempt
+budget remains, the next Codex prompt includes the failure evidence.
+
+Ralph selects local QA from the changed files and the issue contract, then runs
+the relevant **Test lane** commands from the owning **Subproject**. QA evidence
+is recorded in the run manifest at `.ralph/runs/issue-N-.../ralph-run.json`
+under `qa_results`, with the command, cwd, log path, status, and error when one
+exists. The command logs live beside the manifest as `qa-*` files. When a QA
+command prints `run manifest:`, Ralph copies or reconstructs durable evidence
+under the same run directory and records it as
+`qa_results[].run_manifest_evidence`. Successful completion or handoff comments
+also include the bounded QA summary, and Operator rollups copy the same QA
+surface for later review.
+
+After QA passes and the issue branch is current with its base, Ralph runs
+single-issue review gates before publication. **Issue completion review** runs
+only when its triggers apply, such as deployable paths, **Agent workflow
+changes**, **Security-sensitive changes**, **Trunk delivery**, or high-stiffness
+issue evidence. Its review evidence is recorded in `ralph-run.json` under
+`issue_completion_review`, with the review log path, review artifact path, pass
+or fail result, repair attempts, and refreshed evidence. The Markdown artifact
+starts as `issue-completion-review.md` in the run directory; repair reruns may
+write suffixed artifacts such as `issue-completion-review-2.md`, so
+`issue_completion_review.artifact_path` is the reliable pointer. Failing
+findings become Codex repair prompts until the per-issue attempt budget is
+exhausted.
+
+Ralph then records any configured Review package media and generates the
+ignored local `review-package.html` artifact in the run directory. The Review
+package receives final changed files, QA evidence, issue contract, **Delivery
+mode**, **Integration target** or **Exploratory branch**, and any **Issue
+completion review** result. Ralph validates that package before **Local
+integration**, an **Integration target** push, an **Exploratory branch** push,
+completion comments, success runtime labels, or Trunk closure. Review package
+evidence is stored in `ralph-run.json` under `review_package`; completion
+comments, Operator rollups, **Exploratory acceptance review** artifacts,
+Promotion issue comments, and **Post-promotion review** prompts carry only
+bounded package evidence such as status, HTML path, media count, and summary.
+
+Publication depends on the **Delivery mode**:
+
+- **Gitflow delivery** runs **Local integration** by squash-merging the
+  validated issue branch into a detached worktree at the latest `dev`, creating
+  one integration commit, pushing `dev`, posting `Ralph Gitflow integration
+  completed.` evidence, removing `agent-running`, adding `agent-integrated`,
+  and leaving the issue open for **Promotion**.
+- **Trunk delivery** runs **Local integration** the same way against `main`,
+  pushes `main`, posts `Ralph trunk integration completed.` evidence, removes
+  `agent-running`, adds `agent-merged`, and closes the issue immediately after
+  the metadata update.
+- **Exploratory delivery** does not run **Local integration**. Ralph pushes the
+  durable **Exploratory branch** from `origin/main`, runs any requested
+  allowlisted **Operator smoke** from the Ralph-owned outer loop, posts
+  `Ralph exploratory handoff completed.` evidence, removes `agent-running`,
+  adds `agent-reviewing`, and leaves the issue open for human review.
+
+Those completion and handoff comments are the GitHub Issue evidence surface for
+one attempt. They name the commit, **Delivery mode**, target branch, changed
+files, QA summary, run logs, **Issue completion review** result when present,
+and Review package evidence. The complete local evidence remains in the run
+directory and manifest.
+
+After a successful **Local integration** or Exploratory handoff, **Ready issue
+refresh** may run before Ralph claims the next `ready-for-agent` issue. The
+read-only analysis artifact is `ready-issue-refresh-analysis.md` under the same
+issue run directory, and `ralph-run.json` records analysis, mutation status, and
+recovery guidance. Ralph's outer loop, not the analysis subprocess, applies any
+validated issue comments, body edits, label transitions, or completed closures.
+
+Gitflow issues close later. During **Promotion**, Ralph verifies that each open
+`agent-integrated` issue has a recorded Gitflow **Local integration** commit or
+accepted Exploratory commit in the promoted `dev` to `main` range. Only verified
+issues receive Promotion evidence, have `agent-integrated` replaced with
+`agent-merged`, and close. **Post-promotion review** is a separate read-only
+review pass after the Promotion attempt when a review worktree is available; it
+may lead Ralph to create validated follow-up issues, but it is not part of the
+single issue implementation attempt.
+
+If an attempt fails before publication, Ralph comments the failure, marks
+`agent-failed`, preserves logs and worktrees, and does not update an
+**Integration target** or close the issue. If metadata fails after a push, Ralph
+requires verified reachability evidence before repairing comments, labels, or
+closure state with `--recover-run`.
 
 ## Drain flow
 
@@ -200,6 +325,10 @@ flowchart TD
 ```
 
 ## Labels
+
+This section is a quick Ralph runtime map. Use
+[triage-labels.md](triage-labels.md) for the authoritative label vocabulary and
+[issue-tracker.md](issue-tracker.md) for the ready issue queue contract.
 
 Triage state labels:
 

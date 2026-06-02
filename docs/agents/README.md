@@ -18,14 +18,15 @@ Use this page as the agent documentation map. The imperative policy lives in
 
 ## Ralph and issue work
 
-- Ralph internals, **Local integration**, **Delivery mode**, **Integration
-  target**, **Full-access implementation pass**, **Issue completion review**,
-  **Security-sensitive change**, **Ready issue refresh**, **Exploratory
-  acceptance review**, **Promotion**, and **Post-promotion review**, including
-  **Post-Promotion deployment classification**, source-table archive replay
-  recovery, deploy-repair issue creation after failed checkpointed deployment
-  evidence, adaptive Step size and Stiffness ratio vocabulary, verified-only
-  post-push metadata recovery, and checkpointed Operator runs:
+- Ralph internals, the one issue attempt lifecycle, **Local integration**,
+  **Delivery mode**, **Integration target**, **Full-access implementation
+  pass**, **Issue completion review**, **Security-sensitive change**, **Ready
+  issue refresh**, **Exploratory acceptance review**, **Promotion**, and
+  **Post-promotion review**, including **Post-Promotion deployment
+  classification**, source-table archive replay recovery, deploy-repair issue
+  creation after failed checkpointed deployment evidence, adaptive Step size and
+  Stiffness ratio vocabulary, verified-only post-push metadata recovery, and
+  checkpointed Operator runs:
   [ralph-loop.md](ralph-loop.md)
 - GitHub Issue queue rules:
   [issue-tracker.md](issue-tracker.md)
@@ -70,8 +71,9 @@ Use this page as the agent documentation map. The imperative policy lives in
   final `body_path` files for unblocked drafts and `body_template_path` plus a
   render contract for dependent drafts, so blocker placeholders are replaced
   with created GitHub issue references before dependents are created.
-- Use `$ralph-curate` to review open GitHub Issues against the current branch
-  and propose stale, satisfied, blocked, or mislabeled issue updates.
+- Use `$ralph-curate` to review open GitHub Issues against the repository state
+  in this worktree and propose stale, satisfied, blocked, or mislabeled issue
+  updates.
 - Use `$ralph-issue-refresh` to reconcile ready issues after **Local
   integration**, Exploratory handoff, or successful **Promotion** verified issue
   closure; it must not accept or reject `agent-reviewing` work.

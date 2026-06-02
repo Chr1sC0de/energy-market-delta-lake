@@ -86,6 +86,9 @@ pre-push with logs and worktrees preserved. After a successful
 **Local integration** or Exploratory handoff,
 **Ready issue refresh** reconciles the open issue queue before Ralph claims the
 next `ready-for-agent` issue.
+For the detailed path of one issue attempt from label selection through QA
+evidence, review evidence, **Local integration**, and issue state changes, read
+[docs/agents/ralph-loop.md#one-issue-attempt-lifecycle](docs/agents/ralph-loop.md#one-issue-attempt-lifecycle).
 
 For unattended queue cleanup after `dev` review, prefer the checkpointed
 Operator run path. It drains ready work through the same lane-aware scheduler as
