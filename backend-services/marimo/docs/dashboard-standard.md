@@ -163,6 +163,11 @@ For most dashboards, tables are drilldown. A table can be the first primary
 surface only when the **Dashboard intent** is Analytical and the table is the
 main tool.
 
+Coverage drilldown tables belong in collapsed lazy accordions. Keep coverage
+health, KPIs, filters, bounded-read status, degraded-state callouts, and
+diagnostics summaries visible outside those accordions so operators can judge
+the read before expanding detailed matrix rows.
+
 Every control must have a visible effect, a sensible default, and a known empty
 state. Prefer fewer controls that authors exercised during browser review over
 broad control panels that authors did not review.

@@ -501,9 +501,11 @@ catalogue filter or selected metadata row instead of the default first table.
 The dashboard summarizes each asset by `source_system` and either scalar
 `source_table` values or expanded `source_tables` list values. Assets with no
 `source_table` or `source_tables` column render explicit coverage-gap rows
-instead of disappearing from the matrix. Empty reads, unavailable Parquet
-prefixes, unavailable Dagster GraphQL metadata, and bounded AWS preview mode
-remain visible in the load diagnostics and coverage state columns.
+instead of disappearing from the matrix. Coverage Health KPIs, filters, and
+data-health status stay visible while the matrix detail table and coverage-gap
+table render as collapsed lazy accordion drilldowns. Empty reads, unavailable
+Parquet prefixes, unavailable Dagster GraphQL metadata, and bounded AWS preview
+mode remain visible in the load diagnostics and coverage state columns.
 
 ## Source table lineage explorer
 
