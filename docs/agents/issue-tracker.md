@@ -144,7 +144,10 @@ detection. `$shape-issues` does not move issues to `ready-for-agent`, and it
 must not edit, comment on, close, reopen, or relabel existing issues. Follow-up
 verbs after a `$shape-issues` plan keep creating, gating, or publishing issue
 drafts; direct implementation requires `$ralph-loop` or an explicit named
-GitHub Issue request. Fixture-gated reports can preview with `--dry-run`, but
+GitHub Issue request. The gate evidence corpus reads declared repo text
+anchors, including frontend TypeScript/CSS sources and extensionless UTF-8
+helper scripts, before the **Issue context assessor** gives a pass, weak, or
+fail verdict. Fixture-gated reports can preview with `--dry-run`, but
 non-dry-run publication requires `--allow-fixture-publish` and records fixture
 provenance in the manifest and issue body. Non-dry-run publication preflights
 `gh`, authentication, and target repository access before writing final body
@@ -159,10 +162,13 @@ must not edit, comment on, close, reopen, or relabel existing issues. Unblocked
 connector plan entries carry final `body_path` files. Blocked dependent entries
 carry `body_template_path` files and a render contract so Codex replaces
 `{{created_issue_url:<draft-id>}}` placeholders with created issue references
-before creating dependent issues. Later duplicate-search or create failures
-record their phase, exit code, stderr summary, and stdout summary in
-`publish-manifest.json`. `$ralph-triage` remains responsible for category,
-state, and **Delivery mode** labels before Ralph drain.
+before creating dependent issues. Bundle drafts may also depend on existing
+GitHub blockers with `#123` or a GitHub Issue URL; the publisher preserves
+those references and does not require a matching draft in the same bundle.
+Later duplicate-search or create failures record their phase, exit code, stderr
+summary, and stdout summary in `publish-manifest.json`. `$ralph-triage` remains
+responsible for category, state, and **Delivery mode** labels before Ralph
+drain.
 
 Deploy-repair issues created from failed deployment evidence use a separate
 `ralph-deploy-repair:...` source marker namespace for duplicate detection.

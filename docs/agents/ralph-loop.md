@@ -125,12 +125,16 @@ publication requires `--allow-fixture-publish`, preflights `gh`
 authentication and repository access, and records fixture provenance.
 Codex-owned live gates use `run_live_shape_issue_gate.py` so nested Codex
 startup and runtime directories are preflighted and recorded without requiring
-the Operator to run the assessor manually. Codex-owned publication should use
+the Operator to run the assessor manually. The gate evidence corpus includes
+repo text files, frontend TypeScript/CSS sources, and extensionless UTF-8 helper
+scripts named by anchors. Codex-owned publication should use
 `--publish-backend auto`; when `gh` auth fails, the publisher writes a
 create-only connector publish plan for Codex's GitHub connector path. Connector
 plan entries use final `body_path` files for unblocked drafts and
-`body_template_path` plus a render contract for dependent drafts so blocker
-placeholders resolve before dependent issues are created.
+`body_template_path` plus a render contract for dependent drafts so bundle-local
+blocker placeholders resolve before dependent issues are created. Existing
+GitHub blockers may be named as `#123` or GitHub Issue URLs without requiring a
+matching draft in the bundle.
 `$ralph-triage` prepares GitHub Issues for drain by setting category, state, and
 **Delivery mode** labels. `$ralph-loop` owns the backing script commands,
 including `$ralph-loop drain` and `$ralph-loop promote`.

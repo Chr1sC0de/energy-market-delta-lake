@@ -34,6 +34,9 @@ SECTION_PATTERN_TEMPLATE = (
     r"(?P<body>.*?)(?=^#{{1,6}}\s+\S|\Z)"
 )
 BLOCKER_PATTERN = re.compile(r"(?:#|/issues/)(?P<number>\d+)")
+EXTERNAL_ISSUE_BLOCKER_PATTERN = re.compile(
+    r"^(?:#(?P<short_number>\d+)|https://github\.com/[^/\s]+/[^/\s]+/issues/(?P<url_number>\d+))$"
+)
 
 
 class PublishError(Exception):
@@ -479,6 +482,18 @@ def source_marker(bundle_path: Path, issue: IssueDraft) -> str:
     return f"{SOURCE_MARKER_PREFIX}:{run_slug}:{issue_slug}"
 
 
+def external_blocker_reference(blocker_id: str) -> IssueReference | None:
+    match = EXTERNAL_ISSUE_BLOCKER_PATTERN.match(blocker_id.strip())
+    if match is None:
+        return None
+    raw_number = match.group("short_number") or match.group("url_number")
+    if raw_number is None:
+        return None
+    number = int(raw_number)
+    url = blocker_id if blocker_id.startswith("https://") else ""
+    return IssueReference(number=number, title=f"Existing issue #{number}", url=url)
+
+
 def section_body(markdown: str, heading: str) -> str | None:
     pattern = re.compile(SECTION_PATTERN_TEMPLATE.format(heading=re.escape(heading)))
     match = pattern.search(markdown)
@@ -507,11 +522,13 @@ def final_blocked_by_section(
 
     lines: list[str] = []
     for blocker_id in issue.blocked_by:
-        if blocker_id not in references:
+        reference = references.get(blocker_id)
+        if reference is None:
+            reference = external_blocker_reference(blocker_id)
+        if reference is None:
             raise PublishError(
                 f"Issue {issue.issue_id} references unpublished blocker {blocker_id}."
             )
-        reference = references[blocker_id]
         if reference.number is not None:
             lines.append(f"- #{reference.number}")
         elif reference.url != "":
@@ -527,7 +544,10 @@ def connector_plan_blocked_by_template(issue: IssueDraft) -> str:
     if len(issue.blocked_by) == 0:
         return "None - can start immediately."
     return "\n".join(
-        f"- {{{{created_issue_url:{blocker_id}}}}}" for blocker_id in issue.blocked_by
+        f"- {blocker_id}"
+        if external_blocker_reference(blocker_id) is not None
+        else f"- {{{{created_issue_url:{blocker_id}}}}}"
+        for blocker_id in issue.blocked_by
     )
 
 
@@ -619,7 +639,13 @@ def validate_final_blockers(
         raise PublishError(f"Issue {issue.issue_id} final body is missing ## Blocked by.")
     parsed_numbers = {int(match.group("number")) for match in BLOCKER_PATTERN.finditer(blocked_by)}
     for blocker_id in issue.blocked_by:
-        reference = references[blocker_id]
+        reference = references.get(blocker_id)
+        if reference is None:
+            reference = external_blocker_reference(blocker_id)
+        if reference is None:
+            raise PublishError(
+                f"Issue {issue.issue_id} references unpublished blocker {blocker_id}."
+            )
         if reference.number is not None and reference.number not in parsed_numbers:
             raise PublishError(
                 f"Issue {issue.issue_id} final blocker section does not parse #{reference.number}."
@@ -670,7 +696,12 @@ def validate_publishable(
     if missing:
         raise PublishError(f"Gate report is missing issue(s): {', '.join(missing)}.")
 
-    blocked_ids = {blocker_id for issue in issues for blocker_id in issue.blocked_by}
+    blocked_ids = {
+        blocker_id
+        for issue in issues
+        for blocker_id in issue.blocked_by
+        if external_blocker_reference(blocker_id) is None
+    }
     known_ids = {issue.issue_id for issue in issues}
     unknown_blockers = sorted(blocked_ids - known_ids)
     if unknown_blockers:
@@ -756,7 +787,8 @@ def publication_order(issues: tuple[IssueDraft, ...]) -> tuple[IssueDraft, ...]:
             raise PublishError(f"blocked_by cycle includes issue {issue_id}.")
         temporary.add(issue_id)
         for blocker_id in by_id[issue_id].blocked_by:
-            visit(blocker_id)
+            if blocker_id in by_id:
+                visit(blocker_id)
         temporary.remove(issue_id)
         permanent.add(issue_id)
         ordered.append(by_id[issue_id])
@@ -848,9 +880,15 @@ def connector_plan_render_contract(issue: IssueDraft) -> dict[str, Any]:
             ),
         }
         for blocker_id in issue.blocked_by
+        if external_blocker_reference(blocker_id) is None
+    ]
+    blocked_by_draft_ids = [
+        blocker_id
+        for blocker_id in issue.blocked_by
+        if external_blocker_reference(blocker_id) is None
     ]
     return {
-        "blocked_by_draft_ids": list(issue.blocked_by),
+        "blocked_by_draft_ids": blocked_by_draft_ids,
         "instructions": (
             "Create blocker issues first in plan order. Before creating this "
             "dependent issue, render body_template_path by replacing every "
@@ -919,9 +957,11 @@ def write_connector_publish_plan(
         }
         if len(issue.blocked_by) == 0:
             plan_issue["body_path"] = str(body_path)
-        else:
+        elif any(external_blocker_reference(blocker_id) is None for blocker_id in issue.blocked_by):
             plan_issue["body_template_path"] = str(body_path)
             plan_issue["render_contract"] = connector_plan_render_contract(issue)
+        else:
+            plan_issue["body_path"] = str(body_path)
         plan["issues"].append(plan_issue)
         reference = IssueReference(number=None, title=issue.title, url="")
         manifest["issues"].append(

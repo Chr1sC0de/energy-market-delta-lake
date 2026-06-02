@@ -28,7 +28,10 @@ Codex-owned publication, `--publish-backend auto` may write a create-only
 connector publish plan when local `gh` auth fails; created issues still enter
 with `needs-triage` only. Connector plans keep final `body_path` files for
 unblocked drafts and `body_template_path` plus a render contract for dependent
-drafts so blocker placeholders resolve to created issue references.
+drafts so bundle-local blocker placeholders resolve to created issue
+references. Drafts may also name existing blockers as `#123` or GitHub Issue
+URLs; those dependencies remain ordinary `## Blocked by` references for
+triage and Ralph candidate selection.
 
 ## Ralph runtime labels
 
