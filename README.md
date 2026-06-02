@@ -47,10 +47,11 @@ Subproject docs for detailed commands, defaults, diagrams, and behavior.
 - [docs/agents/ralph-loop.md](docs/agents/ralph-loop.md): Ralph internals, the
   one issue attempt lifecycle, **Local integration**, **Delivery mode**,
   **Integration target**, **Issue completion review**, **Ready issue refresh**,
-  **Exploratory acceptance review**, checkpointed Operator runs, **Promotion**,
-  **Post-promotion review**, **Post-Promotion deployment classification**, and
-  adaptive Ralph vocabulary, verified-only recovery, source-table archive replay
-  recovery, and deploy-repair issue creation behavior.
+  **Exploratory acceptance review**, Run manifest and recovery artifact
+  inspection, checkpointed Operator runs, **Promotion**, **Post-promotion
+  review**, **Post-Promotion deployment classification**, adaptive Ralph
+  vocabulary, verified-only recovery, source-table archive replay recovery, and
+  deploy-repair issue creation behavior.
 
 ## Sync metadata
 
