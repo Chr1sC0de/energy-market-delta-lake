@@ -50,10 +50,14 @@ make run-prek
 - `tests/unit/`: Ralph unit tests
 - `.pre-commit-config.yaml`: Subproject `prek` hook surface
 
-## Adaptive vocabulary
+## Ralph internals doc
 
-The maintained Ralph internals doc defines Step size, Stiffness ratio,
-Residual work, and adaptive events for queue-local retry and recovery behavior:
+The maintained Ralph internals doc explains the
+[one issue attempt lifecycle](../../docs/agents/ralph-loop.md#one-issue-attempt-lifecycle)
+from label selection through implementation, QA evidence, **Local integration**,
+review evidence, and issue state changes. It also defines Step size, Stiffness
+ratio, Residual work, and adaptive events for queue-local retry and recovery
+behavior:
 [docs/agents/ralph-loop.md](../../docs/agents/ralph-loop.md#adaptive-vocabulary).
 ADR
 [0011](../../docs/adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md)

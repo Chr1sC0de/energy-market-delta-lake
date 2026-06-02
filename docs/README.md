@@ -28,6 +28,9 @@ and behavior belong on the owning Subproject or repository page.
   [backend-services/marimo/docs/dashboard-standard.md](../backend-services/marimo/docs/dashboard-standard.md)
 - Find agent workflow docs:
   [agents/README.md](agents/README.md)
+- Follow one Ralph issue attempt from label selection through QA evidence,
+  **Local integration**, review evidence, and issue state changes:
+  [agents/ralph-loop.md#one-issue-attempt-lifecycle](agents/ralph-loop.md#one-issue-attempt-lifecycle)
 - Read adaptive Ralph vocabulary and verified-only recovery policy:
   [agents/ralph-loop.md#adaptive-vocabulary](agents/ralph-loop.md#adaptive-vocabulary)
   and ADR
@@ -85,6 +88,7 @@ and behavior belong on the owning Subproject or repository page.
   - `AGENTS.md`
   - `CONTEXT.md`
   - `docs/agents/README.md`
+  - `docs/agents/ralph-loop.md`
   - `docs/repository/architecture.md`
   - `docs/repository/workflow.md`
   - `docs/repository/documentation-sync.md`

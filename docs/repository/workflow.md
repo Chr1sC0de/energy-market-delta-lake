@@ -217,12 +217,13 @@ detached and inspect status only at issue boundaries.
 Agents use [AGENTS.md](../../AGENTS.md) for imperative policy and
 [docs/agents/README.md](../agents/README.md) for the agent workflow map.
 Ralph internals live in [docs/agents/ralph-loop.md](../agents/ralph-loop.md),
-including **Local integration**, **Delivery mode**, **Integration target**,
-**Issue completion review**, **Ready issue refresh**, **Exploratory acceptance
-review**, checkpointed Operator runs, **Promotion**, **Post-promotion review**,
-**Post-Promotion deployment classification**, adaptive Ralph vocabulary,
-verified-only recovery, source-table archive replay recovery guidance, and
-deploy-repair issue creation after failed checkpointed deployment evidence.
+including the one issue attempt lifecycle, **Local integration**, **Delivery
+mode**, **Integration target**, **Issue completion review**, **Ready issue
+refresh**, **Exploratory acceptance review**, checkpointed Operator runs,
+**Promotion**, **Post-promotion review**, **Post-Promotion deployment
+classification**, adaptive Ralph vocabulary, verified-only recovery,
+source-table archive replay recovery guidance, and deploy-repair issue creation
+after failed checkpointed deployment evidence.
 
 ## Where to work
 
