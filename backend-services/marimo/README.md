@@ -126,10 +126,23 @@ audit, and rollback controls.
 ## Dashboard standard
 
 Curated notebooks under [notebooks/](notebooks/) follow the
-[Marimo dashboard standard](docs/dashboard-standard.md). The standard defines
-the required **Dashboard brief**, **Dashboard intent**, first-viewport data
-health, visual-first layout, Playwright development review evidence, and the
-future shared UI primitive surface.
+[Marimo dashboard standard](docs/dashboard-standard.md). The standard is the
+authoring contract for curated dashboards:
+
+- declare a **Dashboard brief** and one **Dashboard intent** near the top of the
+  notebook
+- keep source, freshness, load status, row coverage, bounded-read policy, and
+  degraded-state warnings visible before detailed tables
+- load `silver.gas_model` rows through bounded loader helpers such as
+  `load_gas_model_tables()` or dashboard-specific cached wrappers
+- render registry context, load health, KPIs, bounded-scope copy, links, and
+  empty states through shared helpers under `src/marimoserver/`
+- summarize Playwright or browser review evidence in the handoff when local
+  browser review is available
+
+This README records service-level routing, registry behavior, and dashboard
+reference material. Per-dashboard briefs stay in the notebooks, with shared
+behavior covered by helper tests and the dashboard standard.
 
 ## Dashboard registry
 
