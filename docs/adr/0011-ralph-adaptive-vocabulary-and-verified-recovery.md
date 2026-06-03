@@ -77,6 +77,13 @@ without an explicit Operator-owned policy change.
 events, residual work, blocker notes, split notes, and candidate routing hints
 in its prompt and mutation metadata. Those fields remain evidence for bounded
 queue-local issue metadata updates; they are not a policy publication channel.
+When a refresh mutation plan is unsafe but the live queue can be made safe
+without changing code, Ralph records candidate-level warning statuses such as
+`auto_normalized_closed_blockers`, `skipped_invalid_plan`, or
+`quarantined_needs_triage` and completes refresh with warnings. This is still a
+`residual_update` style queue repair: malformed JSON, missing mutation plans,
+auth failures, network failures, and GitHub write failures remain `hard_stop`
+boundaries for implementation refresh.
 
 ## Considered options
 

@@ -24,6 +24,7 @@ READY_ISSUE_REFRESH_PROMPT_COMMENT_LIMIT = 5
 READY_ISSUE_REFRESH_ANALYSIS_ARTIFACT_NAME = "ready-issue-refresh-analysis.md"
 READY_ISSUE_REFRESH_MUTATION_PLAN_HEADING = "Candidate Issue Mutation Plan"
 READY_ISSUE_REFRESH_MUTATIONS_KEY = "ready_issue_refresh_mutations"
+READY_ISSUE_REFRESH_SECTION_UPDATE_HEADINGS = ("Blocked by", "Current context")
 DEPLOY_FAILURE_ANALYSIS_ARTIFACT_NAME = "deploy-failure-analysis.md"
 ISSUE_COMPLETION_REVIEW_ARTIFACT_NAME = "issue-completion-review.md"
 ISSUE_COMPLETION_REVIEW_FAILURE_TYPE = "issue_completion_review_failed"
@@ -970,6 +971,7 @@ class ReadyIssueRefreshMutation:
     action: str
     comment: str | None
     body: str | None
+    section_updates: tuple[tuple[str, str], ...]
     add_labels: tuple[str, ...]
     remove_labels: tuple[str, ...]
     close_as_completed: bool
@@ -2859,6 +2861,54 @@ def ready_issue_refresh_default_comment(action: str) -> str:
     return ""
 
 
+def normalize_ready_issue_refresh_section_heading(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+    aliases = {
+        "blocked_by": "Blocked by",
+        "blockers": "Blocked by",
+        "current_context": "Current context",
+        "context": "Current context",
+    }
+    if normalized not in aliases:
+        allowed = ", ".join(
+            f"`{name}`" for name in READY_ISSUE_REFRESH_SECTION_UPDATE_HEADINGS
+        )
+        raise ValueError(
+            "Ready issue refresh section_updates may only update "
+            f"{allowed}; got `{value}`."
+        )
+    return aliases[normalized]
+
+
+def ready_issue_refresh_section_updates_from_payload(
+    value: Any,
+) -> tuple[tuple[str, str], ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, dict):
+        raise ValueError(
+            "Ready issue refresh section_updates must be an object or null."
+        )
+
+    updates: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for raw_heading, raw_body in value.items():
+        heading = normalize_ready_issue_refresh_section_heading(str(raw_heading))
+        if heading in seen:
+            raise ValueError(
+                f"Ready issue refresh section_updates includes duplicate `{heading}`."
+            )
+        seen.add(heading)
+        body = ready_issue_refresh_optional_text(
+            raw_body,
+            field_name=f"section_updates.{heading}",
+        )
+        if body is None:
+            continue
+        updates.append((heading, body))
+    return tuple(updates)
+
+
 def ready_issue_refresh_mutation_from_payload(
     payload: dict[str, Any],
 ) -> ReadyIssueRefreshMutation:
@@ -2881,7 +2931,17 @@ def ready_issue_refresh_mutation_from_payload(
     )
     body_value = payload.get("body", payload.get("updated_body"))
     comment = str(comment_value).strip() if comment_value is not None else None
+    if body_value is not None and not isinstance(body_value, str):
+        raise ValueError("Ready issue refresh body must be a string or null.")
     body = str(body_value).strip() if body_value is not None else None
+    section_updates = ready_issue_refresh_section_updates_from_payload(
+        payload.get("section_updates", payload.get("section_update"))
+    )
+    if body is not None and section_updates:
+        raise ValueError(
+            "Ready issue refresh mutations must not include both body and "
+            "section_updates."
+        )
     add_labels = parse_label_values(
         payload.get("add_labels", payload.get("labels_to_add"))
     )
@@ -2925,6 +2985,7 @@ def ready_issue_refresh_mutation_from_payload(
         action=action,
         comment=comment,
         body=body,
+        section_updates=section_updates,
         add_labels=add_labels,
         remove_labels=remove_labels,
         close_as_completed=close_as_completed,
@@ -3099,6 +3160,54 @@ def labels_after_ready_issue_refresh_mutation(
     labels.difference_update(mutation.remove_labels)
     labels.update(mutation.add_labels)
     return frozenset(labels)
+
+
+def replace_markdown_section_body(markdown: str, heading: str, body: str) -> str:
+    body_text = body.strip() or "None"
+    pattern = re.compile(
+        rf"(?ims)^#{{1,6}}\s+{re.escape(heading)}\s*$\n"
+        rf"(?P<body>.*?)(?=^#{{1,6}}\s+\S|\Z)"
+    )
+    match = pattern.search(markdown)
+    if match is not None:
+        return (
+            markdown[: match.start("body")]
+            + body_text
+            + "\n\n"
+            + markdown[match.end("body") :]
+        )
+
+    stripped = markdown.rstrip()
+    separator = "\n\n" if stripped else ""
+    return f"{stripped}{separator}## {heading}\n\n{body_text}\n"
+
+
+def apply_ready_issue_refresh_section_updates(
+    body: str,
+    section_updates: tuple[tuple[str, str], ...],
+) -> str:
+    updated = body
+    for heading, section_body_text in section_updates:
+        updated = replace_markdown_section_body(
+            updated,
+            heading,
+            section_body_text,
+        )
+    return updated
+
+
+def body_after_ready_issue_refresh_mutation(
+    issue: Issue,
+    mutation: ReadyIssueRefreshMutation,
+) -> str:
+    if mutation.body is not None:
+        return mutation.body
+    if mutation.section_updates:
+        return apply_ready_issue_refresh_section_updates(
+            issue.body,
+            mutation.section_updates,
+        )
+    return issue.body
 
 
 def validate_ready_issue_refresh_ready_contract(

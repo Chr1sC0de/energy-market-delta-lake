@@ -206,7 +206,8 @@ way:
 - #68: [docs/agents/ralph-loop.md](../agents/ralph-loop.md) defines the
   **Ready issue refresh** contract, including the shared language, audit prefix,
   optional `## Current context`, stale issue handling, and completed closure
-  rules.
+  rules. The contract now distinguishes complete `body` replacements from
+  bounded `section_updates` for `Blocked by` and `Current context`.
 - #69: Ralph computes bounded **Ready issue refresh** candidates after
   drain-mode **Local integration** or Exploratory handoff using open issues from
   the existing `--issue-limit` scan, with Gitflow, trunk, and Exploratory
@@ -226,8 +227,11 @@ way:
   the read-only analysis artifact. Drain mode refreshes by default,
   `--skip-ready-issue-refresh` disables that default, and targeted `--issue`
   runs require `--ready-issue-refresh`. Mutation uses only GitHub Issue metadata
-  commands, records per-candidate manifest status, and stops the drain with
-  recovery guidance on partial post-**Local integration** metadata failures.
+  commands and records per-candidate manifest status. Candidate-level warning
+  statuses may keep the drain AFK when Ralph can normalize closed blockers,
+  skip an unsafe plan for a still-valid issue, or quarantine malformed ready
+  metadata to `needs-triage`; malformed JSON and GitHub write failures still
+  stop the drain with recovery guidance.
 - #133: Parallel drains serialize implementation **Ready issue refresh** behind
   a scheduler claim gate. New claims pause while refresh analysis or metadata
   mutation runs, active Exploratory workers are allowed to finish, and
@@ -236,7 +240,8 @@ way:
 - #283: Ralph adaptive vocabulary defines Step size, Stiffness ratio, Residual
   work, `hard_stop`, `gated_retry`, and `residual_update` without exposing the
   numerical ODE metaphor. The initial stiffness thresholds and verified-only
-  post-push metadata recovery boundary live in ADR
+  post-push metadata recovery boundary, including candidate-level
+  `completed_with_warnings` refresh salvage, live in ADR
   [0011](../adr/0011-ralph-adaptive-vocabulary-and-verified-recovery.md), with
   operator-facing behavior in
   [docs/agents/ralph-loop.md](../agents/ralph-loop.md).

@@ -25,7 +25,8 @@ open GitHub Issues with the current **Integration target** after successful
 Refresh may update:
 
 - issue comments
-- issue body context
+- issue body context with either a complete `body` replacement or bounded
+  `section_updates` for `Blocked by` and `Current context`
 - triage, state, Ralph runtime, or **Delivery mode** labels
 - completed closure for issues already satisfied or obsolete on the current
   **Integration target**
@@ -46,6 +47,10 @@ Every refresh comment must begin with this exact audit prefix:
 4. Move unclear stale issues to `needs-triage` with evidence.
 5. Close only issues clearly satisfied or obsolete on the current branch, and
    include evidence in the refresh comment.
+
+Use `section_updates.Blocked by` for stale blocker cleanup. Do not put
+instructions such as "update only this section" in `body`; `body` is reserved
+for a complete replacement issue body that preserves the ready contract.
 
 Do not close unclear work as completed. If both `delivery-gitflow` and
 `delivery-trunk` are present, keep `delivery-gitflow` unless the issue
