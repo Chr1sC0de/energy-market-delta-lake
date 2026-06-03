@@ -399,7 +399,11 @@ def _(
             table so capacity transaction, LNG transaction, and LNG shipment
             coverage stays visible.
             """),
-            source_view,
+            mo.accordion(
+                {"Transaction source coverage detail": source_view},
+                multiple=False,
+                lazy=True,
+            ),
         ]
     )
     return

@@ -9,6 +9,8 @@ import os
 from time import perf_counter
 from urllib.parse import quote
 
+from plotly.graph_objs._figure import Figure
+from plotly.graph_objs._scatter import Scatter
 import polars as pl
 
 from marimoserver.dashboard_registry import (
@@ -8464,6 +8466,194 @@ def market_price_kpi_frame(
         ],
         schema=_MARKET_PRICE_KPI_SCHEMA,
     )
+
+
+def render_kpi_cards_html(
+    kpis: pl.DataFrame,
+    *,
+    title: str = "Key metrics",
+    empty_message: str = "No KPI values are available for this view.",
+) -> str:
+    """Render escaped KPI cards from a metric/value/detail frame."""
+    rows = [
+        row
+        for row in kpis.select("metric", "value", "detail").to_dicts()
+        if _format_cell_value(row.get("metric")) != ""
+    ]
+    if len(rows) == 0:
+        cards = (
+            '<article class="dashboard-kpi-card dashboard-kpi-card--empty">'
+            f"<p>{escape(empty_message)}</p>"
+            "</article>"
+        )
+    else:
+        cards = "\n".join(_render_kpi_card(row) for row in rows)
+
+    return f"""\
+<style>
+{_dashboard_visual_primitives_css()}
+</style>
+<section class="dashboard-kpi-grid" aria-label="{escape(title, quote=True)}">
+    {cards}
+</section>"""
+
+
+def render_bounded_data_note_html(
+    *,
+    title: str,
+    detail: str,
+    status: str = "bounded",
+) -> str:
+    """Render an escaped compact note for bounded data scope."""
+    return f"""\
+<style>
+{_dashboard_visual_primitives_css()}
+</style>
+<aside class="dashboard-bounded-note" data-status="{escape(status, quote=True)}">
+    <p class="dashboard-bounded-note__label">{escape(status)}</p>
+    <h3>{escape(title)}</h3>
+    <p>{escape(detail)}</p>
+</aside>"""
+
+
+def render_visual_empty_state_html(
+    *,
+    title: str,
+    detail: str,
+    action: str | None = None,
+    compact: bool = False,
+) -> str:
+    """Render an escaped visual empty state for chart or card surfaces."""
+    action_html = "" if action is None else f"<p><strong>{escape(action)}</strong></p>"
+    compact_class = " dashboard-visual-empty--compact" if compact else ""
+    return f"""\
+<style>
+{_dashboard_visual_primitives_css()}
+</style>
+<section class="dashboard-visual-empty{compact_class}" aria-label="{escape(title, quote=True)}">
+    <div class="dashboard-visual-empty__mark" aria-hidden="true"></div>
+    <div>
+        <h3>{escape(title)}</h3>
+        <p>{escape(detail)}</p>
+        {action_html}
+    </div>
+</section>"""
+
+
+def plotly_theme_defaults(*, height: int = 360) -> dict[str, object]:
+    """Return Plotly layout defaults compatible with the repo dashboard theme."""
+    return {
+        "height": height,
+        "template": "plotly_white",
+        "paper_bgcolor": "rgba(0,0,0,0)",
+        "plot_bgcolor": "rgba(0,0,0,0)",
+        "font": {"family": "Inter, system-ui, sans-serif", "color": "#1f2a2e"},
+        "margin": {"l": 56, "r": 24, "t": 44, "b": 56},
+        "hovermode": "x unified",
+        "legend": {
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.02,
+            "xanchor": "left",
+            "x": 0,
+        },
+        "xaxis": {
+            "showgrid": False,
+            "title": None,
+            "zeroline": False,
+        },
+        "yaxis": {
+            "gridcolor": "#d8e2de",
+            "title": "Average price",
+            "zeroline": False,
+        },
+    }
+
+
+def market_price_trend_figure(
+    load: GasTableLoad | None,
+    price_type_filter: str = MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
+    source_system_filter: str = MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
+    source_table_filter: str = MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
+    gas_date_filter: str = MARKET_PRICE_GAS_DATE_FILTER_ALL,
+    *,
+    preview_rows: int = DEFAULT_MARKET_PRICE_PREVIEW_ROWS,
+    height: int = 320,
+) -> Figure:
+    """Return a light-hover Plotly trend figure for bounded market prices."""
+    trend = market_price_trend_frame(
+        load,
+        price_type_filter,
+        source_system_filter,
+        source_table_filter,
+        gas_date_filter,
+        preview_rows=preview_rows,
+    )
+    figure = Figure()
+    if trend.is_empty():
+        figure.update_layout(**plotly_theme_defaults(height=height))
+        return figure
+
+    trend = trend.sort(["gas date", "source system", "price type"], nulls_last=True)
+    for measure_column in (
+        "avg price_value_gst_ex",
+        "avg weighted_average_price_gst_ex",
+        "avg cumulative_price",
+        "avg administered_price",
+    ):
+        populated = trend.filter(pl.col(measure_column).is_not_null())
+        if populated.is_empty():
+            continue
+        for row_key, rows in populated.group_by(
+            "source system",
+            "price type",
+            maintain_order=True,
+        ):
+            source_system, price_type = row_key
+            label = _market_price_plotly_trace_label(
+                measure_column,
+                source_system,
+                price_type,
+            )
+            figure.add_trace(
+                Scatter(
+                    x=rows.get_column("gas date").to_list(),
+                    y=rows.get_column(measure_column).to_list(),
+                    mode="lines+markers",
+                    name=label,
+                    customdata=[
+                        [
+                            row["source system"],
+                            row["price type"],
+                            row["observations"],
+                            row["available price measures"],
+                        ]
+                        for row in rows.select(
+                            "source system",
+                            "price type",
+                            "observations",
+                            "available price measures",
+                        ).to_dicts()
+                    ],
+                    hovertemplate=(
+                        "%{x}<br>"
+                        "average=%{y:.4f}<br>"
+                        "source=%{customdata[0]}<br>"
+                        "price type=%{customdata[1]}<br>"
+                        "observations=%{customdata[2]}<br>"
+                        "measures=%{customdata[3]}<extra></extra>"
+                    ),
+                )
+            )
+
+    figure.update_layout(
+        **plotly_theme_defaults(height=height),
+        title={
+            "text": "Bounded loaded price trend",
+            "font": {"size": 16},
+        },
+    )
+    return figure
 
 
 def market_price_type_summary_frame(
@@ -20331,6 +20521,125 @@ def _format_market_price_measure_names(measures: Sequence[str]) -> str:
     if len(measures) == 0:
         return "none"
     return ", ".join(measures)
+
+
+def _render_kpi_card(row: Mapping[str, object]) -> str:
+    metric = escape(_format_cell_value(row.get("metric")))
+    value = escape(_format_cell_value(row.get("value")))
+    detail = escape(_format_cell_value(row.get("detail")))
+    return f"""\
+<article class="dashboard-kpi-card">
+    <p class="dashboard-kpi-card__metric">{metric}</p>
+    <strong>{value}</strong>
+    <p class="dashboard-kpi-card__detail">{detail}</p>
+</article>"""
+
+
+def _market_price_plotly_trace_label(
+    measure_column: str,
+    source_system: object,
+    price_type: object,
+) -> str:
+    measure = measure_column.removeprefix("avg ")
+    return " | ".join(
+        part
+        for part in (
+            measure,
+            _format_cell_value(source_system),
+            _format_cell_value(price_type),
+        )
+        if part != ""
+    )
+
+
+def _dashboard_visual_primitives_css() -> str:
+    return """\
+.dashboard-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 0.75rem;
+    width: 100%;
+}
+
+.dashboard-kpi-card {
+    min-height: 8.5rem;
+    padding: 0.85rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+    box-shadow: 0 1px 2px rgb(31 42 46 / 8%);
+}
+
+.dashboard-kpi-card__metric,
+.dashboard-bounded-note__label {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.dashboard-kpi-card strong {
+    display: block;
+    margin-top: 0.35rem;
+    color: var(--emdl-ink, #1f2a2e);
+    font-size: 1.8rem;
+    line-height: 1.05;
+}
+
+.dashboard-kpi-card__detail {
+    margin: 0.6rem 0 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.86rem;
+    line-height: 1.35;
+}
+
+.dashboard-kpi-card--empty {
+    min-height: 5rem;
+}
+
+.dashboard-bounded-note,
+.dashboard-visual-empty {
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-soft, #f7faf8);
+}
+
+.dashboard-bounded-note h3,
+.dashboard-visual-empty h3 {
+    margin: 0.2rem 0 0;
+    font-size: 1rem;
+}
+
+.dashboard-bounded-note p,
+.dashboard-visual-empty p {
+    margin: 0.4rem 0 0;
+    color: var(--emdl-muted, #566365);
+}
+
+.dashboard-visual-empty {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.8rem;
+    align-items: center;
+    min-height: 13rem;
+}
+
+.dashboard-visual-empty--compact {
+    min-height: 5rem;
+}
+
+.dashboard-visual-empty__mark {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 8px;
+    background:
+        linear-gradient(135deg, transparent 52%, var(--emdl-line, #cfdbd6) 52%),
+        linear-gradient(90deg, var(--emdl-flow, #2d7f75), var(--emdl-warn, #b9822c));
+}
+"""
 
 
 def _is_positive_count(value: object) -> bool:

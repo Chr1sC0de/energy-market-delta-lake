@@ -270,7 +270,11 @@ def _(
             Coverage groups notices by `source_system` and `source_table`, with
             critical and active counts for the currently loaded rows.
             """),
-            source_coverage_view,
+            mo.accordion(
+                {"System notice source coverage detail": source_coverage_view},
+                multiple=False,
+                lazy=True,
+            ),
         ]
     )
     return

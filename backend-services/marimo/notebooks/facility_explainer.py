@@ -189,7 +189,16 @@ def _(config, facility_coverage, facility_specs, mo, pl):
     mo.vstack(
         [
             mo.md("## Facility Coverage Health"),
-            mo.ui.table(facility_coverage, selection=None),
+            mo.accordion(
+                {
+                    "Facility coverage details": mo.ui.table(
+                        facility_coverage,
+                        selection=None,
+                    )
+                },
+                lazy=True,
+                multiple=False,
+            ),
             mo.accordion(
                 {"Coverage inputs": mo.ui.table(config_frame, selection=None)},
                 multiple=False,

@@ -14,6 +14,7 @@ notebooks in local compose or the deployed AWS dashboard.
 - [Always-visible data health](#always-visible-data-health)
 - [Bounded loaders](#bounded-loaders)
 - [Shared rendering primitives](#shared-rendering-primitives)
+- [First viewport visual contract](#first-viewport-visual-contract)
 - [Layout and interaction](#layout-and-interaction)
 - [Browser review evidence](#browser-review-evidence)
 - [Validation](#validation)
@@ -183,6 +184,40 @@ Helpers should use the repo theme tokens, escape user or data text before
 embedding HTML, and carry focused **Component test** coverage. Existing
 notebooks do not need retrofitting until their own dashboard issue touches that
 surface.
+
+## First viewport visual contract
+
+Curated dashboards must make the first viewport visually useful before a user
+opens drilldown tables. The first viewport is the initial scannable work
+surface that includes the title, **Dashboard brief** or clearly rendered job
+context, refresh and primary filters, data health, and the first answer-bearing
+visual summary.
+
+The first viewport visual contract requires:
+
+- Always-visible data health: load status, freshness or no-freshness statement,
+  cache and refresh state, row counts, bounded-read policy, degraded-state
+  warnings, and any bounded-data notes needed to avoid mistaking a preview for a
+  full historical scan.
+- KPI cards: escaped card-style metrics for the highest-signal counts, dates,
+  coverage values, or status measures. KPI cards replace first-viewport KPI
+  tables unless the **Dashboard intent** is Analytical and a table is the
+  primary work tool.
+- A job-matched visual: a chart, map, status strip, coverage summary, or other
+  visual that directly answers the dashboard's first job. Plotly visuals should
+  use shared theme defaults, restrained hover behavior, stable dimensions, and
+  the same bounded/cached reads and filters as the surrounding dashboard.
+- Designed empty states: unavailable, empty, filtered-empty, and bounded-preview
+  states must render as intentional visual surfaces or callouts, not blank
+  chart boxes or raw tracebacks.
+- Drilldown tables below the first viewport: detailed tables remain available
+  for inspection, but they sit below the visual summary or inside appropriate
+  accordions after the user can already judge data health and the main signal.
+
+Reusable primitives for KPI cards, bounded-data notes, visual empty states, and
+Plotly-compatible theme defaults belong under `src/marimoserver/` with focused
+**Component test** coverage. Notebook cells should compose those primitives
+with dashboard-specific frames rather than embedding one-off HTML or styling.
 
 ## Layout and interaction
 

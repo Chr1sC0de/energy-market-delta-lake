@@ -171,7 +171,11 @@ def _(config, gas_day_kpis, gas_day_specs, mo, pl):
     mo.vstack(
         [
             mo.md("## Gas Day Coverage Health"),
-            mo.ui.table(gas_day_kpis, selection=None),
+            mo.accordion(
+                {"Gas day coverage details": mo.ui.table(gas_day_kpis, selection=None)},
+                lazy=True,
+                multiple=False,
+            ),
             mo.accordion(
                 {"Coverage inputs": mo.ui.table(config_frame, selection=None)},
                 multiple=False,

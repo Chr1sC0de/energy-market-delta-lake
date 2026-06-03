@@ -208,7 +208,16 @@ def _(config, connection_point_coverage, connection_point_specs, mo, pl):
     mo.vstack(
         [
             mo.md("## Connection Point Coverage Health"),
-            mo.ui.table(connection_point_coverage, selection=None),
+            mo.accordion(
+                {
+                    "Connection point coverage details": mo.ui.table(
+                        connection_point_coverage,
+                        selection=None,
+                    )
+                },
+                lazy=True,
+                multiple=False,
+            ),
             mo.accordion(
                 {"Coverage inputs": mo.ui.table(config_frame, selection=None)},
                 multiple=False,

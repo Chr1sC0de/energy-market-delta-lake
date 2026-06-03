@@ -340,7 +340,11 @@ def _(
             zone, Gas Day, linepack quantity, adequacy fields, source file,
             source update, and ingest fields in the loaded bounded rows.
             """),
-            source_coverage_view,
+            mo.accordion(
+                {"Linepack source coverage detail": source_coverage_view},
+                multiple=False,
+                lazy=True,
+            ),
         ]
     )
     return

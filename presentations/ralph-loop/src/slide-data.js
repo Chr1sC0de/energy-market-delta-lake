@@ -36,6 +36,33 @@ const mainPath = [
   },
 ];
 
+const mentalModelLoop = [
+  {
+    label: "Start with work",
+    owner: "Operator",
+    meta: "A PRD or GitHub Issues defines the task list.",
+    tone: "operator",
+  },
+  {
+    label: "Run one task",
+    owner: "Ralph",
+    meta: "The agent picks one item and makes the change.",
+    tone: "branch",
+  },
+  {
+    label: "Check and commit",
+    owner: "Ralph",
+    meta: "Ralph runs tests and type checks, then commits the change.",
+    tone: "validation",
+  },
+  {
+    label: "Review progress",
+    owner: "Operator",
+    meta: "Progress, logs, and branch state tell you whether to repeat, stop, or promote.",
+    tone: "operator",
+  },
+];
+
 const labelGroups = [
   {
     role: "Category",
@@ -236,6 +263,30 @@ export const slides = [
       columns: 7,
     },
     notes: ["GitHub Issues", "Delivery mode", "Test lane", "Local integration"],
+  },
+  {
+    id: "control-system",
+    eyebrow: "Ralph primer",
+    title: "Ralph Turns A Task List Into Commits",
+    lede:
+      "Give Ralph scoped work. It takes one task, checks it, records progress, and repeats.",
+    layout: "loop",
+    stage: "map",
+    visual: {
+      type: "loop",
+      center: {
+        label: "One-task loop",
+        primary: "You set scope and review progress.",
+        secondary: "Ralph repeats the smallest safe unit.",
+      },
+      steps: mentalModelLoop,
+    },
+    notes: [
+      "Operator workflow",
+      "GitHub Issues",
+      "Test lane",
+      "Integration target",
+    ],
   },
   {
     id: "operator-start",

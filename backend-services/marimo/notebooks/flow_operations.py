@@ -209,7 +209,11 @@ def _(flow_context_empty_state_markdown, flow_loads, flow_sources, mo):
     mo.vstack(
         [
             mo.md("## Source System Coverage"),
-            source_view,
+            mo.accordion(
+                {"Source system coverage detail": source_view},
+                multiple=False,
+                lazy=True,
+            ),
         ]
     )
     return

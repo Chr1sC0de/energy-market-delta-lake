@@ -1191,6 +1191,8 @@ class RalphLoop:
         active_exploratory: dict[
             Future[RunManifest | None], ReadyImplementationCandidate
         ] = {}
+        refresh_gate_completed_manifests: list[RunManifest] = []
+        refresh_gate_cohort_issue_numbers: set[int] = set()
 
         with ThreadPoolExecutor(
             max_workers=self.config.exploratory_concurrency
@@ -1199,13 +1201,27 @@ class RalphLoop:
                 fatal_error = self._collect_exploratory_results(
                     active_exploratory,
                     wait_for_one=False,
+                    completed_manifests=(
+                        refresh_gate_completed_manifests
+                        if refresh_gate_cohort_issue_numbers
+                        else None
+                    ),
                 )
                 if fatal_error is not None:
                     self._raise_after_exploratory_workers_finish(
                         active_exploratory,
                         fatal_error,
                     )
-                self._wait_for_ready_issue_refresh_claim_gate(active_exploratory)
+                self._prune_refresh_gate_observation_cohort(
+                    active_exploratory,
+                    completed_manifests=refresh_gate_completed_manifests,
+                    cohort_issue_numbers=refresh_gate_cohort_issue_numbers,
+                )
+                self._wait_for_ready_issue_refresh_claim_gate(
+                    active_exploratory,
+                    completed_manifests=refresh_gate_completed_manifests,
+                    cohort_issue_numbers=refresh_gate_cohort_issue_numbers,
+                )
 
                 active_issue_numbers = {
                     candidate.issue.number for candidate in active_exploratory.values()
@@ -1351,7 +1367,11 @@ class RalphLoop:
                             active_exploratory,
                             error,
                         )
-                    self._wait_for_ready_issue_refresh_claim_gate(active_exploratory)
+                    self._wait_for_ready_issue_refresh_claim_gate(
+                        active_exploratory,
+                        completed_manifests=refresh_gate_completed_manifests,
+                        cohort_issue_numbers=refresh_gate_cohort_issue_numbers,
+                    )
                     continue
 
                 if made_progress:
@@ -1363,13 +1383,27 @@ class RalphLoop:
                     fatal_error = self._collect_exploratory_results(
                         active_exploratory,
                         wait_for_one=True,
+                        completed_manifests=(
+                            refresh_gate_completed_manifests
+                            if refresh_gate_cohort_issue_numbers
+                            else None
+                        ),
                     )
                     if fatal_error is not None:
                         self._raise_after_exploratory_workers_finish(
                             active_exploratory,
                             fatal_error,
                         )
-                    self._wait_for_ready_issue_refresh_claim_gate(active_exploratory)
+                    self._prune_refresh_gate_observation_cohort(
+                        active_exploratory,
+                        completed_manifests=refresh_gate_completed_manifests,
+                        cohort_issue_numbers=refresh_gate_cohort_issue_numbers,
+                    )
+                    self._wait_for_ready_issue_refresh_claim_gate(
+                        active_exploratory,
+                        completed_manifests=refresh_gate_completed_manifests,
+                        cohort_issue_numbers=refresh_gate_cohort_issue_numbers,
+                    )
                     continue
 
                 triage_issue = self._next_triage_issue()
@@ -1568,10 +1602,15 @@ class RalphLoop:
         active_exploratory: dict[
             Future[RunManifest | None], ReadyImplementationCandidate
         ],
+        *,
+        completed_manifests: list[RunManifest],
+        cohort_issue_numbers: set[int],
     ) -> None:
         message_emitted = False
-        completed_while_gate_active: list[RunManifest] = []
         while self._ready_issue_refresh_claim_gate.snapshot().claims_paused:
+            cohort_issue_numbers.update(
+                candidate.issue.number for candidate in active_exploratory.values()
+            )
             if not message_emitted:
                 snapshot = self._ready_issue_refresh_claim_gate.snapshot()
                 details = []
@@ -1589,24 +1628,54 @@ class RalphLoop:
             fatal_error = self._collect_exploratory_results(
                 active_exploratory,
                 wait_for_one=False,
-                completed_manifests=completed_while_gate_active,
+                completed_manifests=completed_manifests,
             )
             if fatal_error is not None:
                 self._raise_after_exploratory_workers_finish(
                     active_exploratory,
                     fatal_error,
                 )
+            self._prune_refresh_gate_observation_cohort(
+                active_exploratory,
+                completed_manifests=completed_manifests,
+                cohort_issue_numbers=cohort_issue_numbers,
+            )
             self._ready_issue_refresh_claim_gate.wait_until_open(timeout=0.05)
 
         fatal_error = self._collect_exploratory_results(
             active_exploratory,
             wait_for_one=False,
+            completed_manifests=(completed_manifests if cohort_issue_numbers else None),
         )
         if fatal_error is not None:
             self._raise_after_exploratory_workers_finish(
                 active_exploratory,
                 fatal_error,
             )
+        self._prune_refresh_gate_observation_cohort(
+            active_exploratory,
+            completed_manifests=completed_manifests,
+            cohort_issue_numbers=cohort_issue_numbers,
+        )
+
+    def _prune_refresh_gate_observation_cohort(
+        self,
+        active_exploratory: dict[
+            Future[RunManifest | None], ReadyImplementationCandidate
+        ],
+        *,
+        completed_manifests: list[RunManifest],
+        cohort_issue_numbers: set[int],
+    ) -> None:
+        if not cohort_issue_numbers:
+            completed_manifests.clear()
+            return
+        active_issue_numbers = {
+            candidate.issue.number for candidate in active_exploratory.values()
+        }
+        cohort_issue_numbers.intersection_update(active_issue_numbers)
+        if not cohort_issue_numbers:
+            completed_manifests.clear()
 
     def _handle_exploratory_candidate(
         self,

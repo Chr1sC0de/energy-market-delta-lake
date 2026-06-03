@@ -112,6 +112,54 @@ const renderPath = ({ columns, steps }) => `
   </ol>
 `;
 
+const renderLoopRing = () => `
+  <svg class="loop-ring" viewBox="0 0 1000 360" aria-hidden="true" focusable="false">
+    <defs>
+      <marker
+        id="loop-arrow"
+        markerHeight="18"
+        markerUnits="userSpaceOnUse"
+        markerWidth="18"
+        orient="auto"
+        refX="16"
+        refY="9"
+        viewBox="0 0 18 18"
+      >
+        <path d="M 0 0 L 18 9 L 0 18 z"></path>
+      </marker>
+    </defs>
+    <path class="loop-ring-path loop-ring-top" d="M 110 18 H 890"></path>
+    <path class="loop-ring-path loop-ring-right" d="M 982 82 V 278"></path>
+    <path class="loop-ring-path loop-ring-bottom" d="M 890 342 H 110"></path>
+    <path class="loop-ring-path loop-ring-left" d="M 18 278 V 82"></path>
+  </svg>
+`;
+
+const renderLoop = ({ center, steps }) => `
+  <div class="loop-visual" aria-label="Ralph one-task loop">
+    ${renderLoopRing()}
+    <div class="loop-core">
+      <strong>${escapeHtml(center.label)}</strong>
+      <span>${escapeHtml(center.primary)}</span>
+      <span>${escapeHtml(center.secondary)}</span>
+    </div>
+    <ol class="loop-steps">
+      ${steps
+        .map(
+          (step, index) => `
+            <li class="loop-step fragment ${toneClass(step.tone)}" data-fragment-index="${index + 1}">
+              <span class="loop-index">${String(index + 1).padStart(2, "0")}</span>
+              <span class="loop-owner">${escapeHtml(step.owner)}</span>
+              <strong>${escapeHtml(step.label)}</strong>
+              <small>${escapeHtml(step.meta)}</small>
+            </li>
+          `,
+        )
+        .join("")}
+    </ol>
+  </div>
+`;
+
 const renderCommandStack = ({ commands }) => `
   <div class="command-panel" aria-label="Operator commands">
     ${commands
@@ -249,6 +297,8 @@ const renderVisual = (slide) => {
       return renderLabels(visual, slide.issue);
     case "lanes":
       return renderLanes(visual);
+    case "loop":
+      return renderLoop(visual);
     case "path":
       return renderPath(visual);
     case "state":

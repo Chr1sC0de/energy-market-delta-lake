@@ -28,31 +28,35 @@ const screenshotSlides = [
     name: "cover",
   },
   {
-    index: 3,
+    index: 1,
+    name: "control-system",
+  },
+  {
+    index: 4,
     name: "delivery-mode",
   },
   {
-    index: 5,
+    index: 6,
     name: "local-qa",
   },
   {
-    index: 7,
+    index: 8,
     name: "local-integration",
   },
   {
-    index: 8,
+    index: 9,
     name: "promotion",
   },
   {
-    index: 9,
+    index: 10,
     name: "failure",
   },
   {
-    index: 10,
+    index: 11,
     name: "demo-path",
   },
   {
-    index: 11,
+    index: 12,
     name: "trust-points",
   },
 ];
@@ -197,9 +201,9 @@ async function run() {
       await page.goto(baseUrl, { waitUntil: "networkidle" });
       const slideCount = await page.locator("section.slide").count();
 
-      if (slideCount !== 12) {
+      if (slideCount !== 13) {
         failures.push(
-          `${viewport.name}: expected 12 slides, found ${slideCount}.`,
+          `${viewport.name}: expected 13 slides, found ${slideCount}.`,
         );
       }
 
