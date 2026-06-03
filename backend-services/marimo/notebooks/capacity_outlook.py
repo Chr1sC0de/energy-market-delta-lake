@@ -373,7 +373,11 @@ def _(
             range, capacity quantity, source update, and ingest fields in the
             loaded bounded rows.
             """),
-            source_coverage_view,
+            mo.accordion(
+                {"Capacity source coverage detail": source_coverage_view},
+                multiple=False,
+                lazy=True,
+            ),
         ]
     )
     return

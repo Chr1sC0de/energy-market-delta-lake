@@ -84,6 +84,37 @@ def _target_id(target: DashboardSmokeTarget) -> str:
 
 DASHBOARD_SMOKE_TARGETS = dashboard_smoke_targets()
 
+SOURCE_COVERAGE_ACCORDION_NOTEBOOKS = {
+    "flow_operations.py": (
+        "## Source System Coverage",
+        '"Source system coverage detail": source_view',
+    ),
+    "capacity_outlook.py": (
+        "## Source Coverage",
+        '"Capacity source coverage detail": source_coverage_view',
+    ),
+    "capacity_auction.py": (
+        "## Metric And Source Coverage",
+        '"Metric and source coverage detail": metric_view',
+    ),
+    "capacity_transactions.py": (
+        "## Source Coverage",
+        '"Transaction source coverage detail": source_view',
+    ),
+    "facility_flow_storage.py": (
+        "## Source Coverage",
+        '"Facility flow/storage source coverage detail": source_coverage_view',
+    ),
+    "linepack_adequacy.py": (
+        "## Source Coverage",
+        '"Linepack source coverage detail": source_coverage_view',
+    ),
+    "nomination_demand_forecast.py": (
+        "## Source Coverage",
+        '"Nomination forecast source coverage detail": source_coverage_view',
+    ),
+}
+
 
 def test_available_registry_dashboards_are_discoverable_from_notebooks_dir() -> None:
     notebook_names = set(curated_notebook_names())
@@ -98,6 +129,24 @@ def test_available_registry_dashboards_are_discoverable_from_notebooks_dir() -> 
     assert {target.notebook_name for target in DASHBOARD_SMOKE_TARGETS} == {
         entry.notebook_name for entry in available_dashboard_entries()
     }
+
+
+@pytest.mark.parametrize(
+    ("notebook_name", "expected"),
+    SOURCE_COVERAGE_ACCORDION_NOTEBOOKS.items(),
+)
+def test_source_coverage_details_render_in_lazy_accordions(
+    notebook_name: str,
+    expected: tuple[str, str],
+) -> None:
+    heading, accordion_entry = expected
+    source = (CURATED_NOTEBOOKS_DIR / notebook_name).read_text(encoding="utf-8")
+    section = source[source.index(heading) :]
+
+    assert "mo.accordion(" in section
+    assert accordion_entry in section
+    assert "multiple=False" in section
+    assert "lazy=True" in section
 
 
 @pytest.mark.parametrize(

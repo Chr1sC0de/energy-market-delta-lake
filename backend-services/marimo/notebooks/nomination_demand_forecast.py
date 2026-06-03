@@ -351,7 +351,11 @@ def _(
             type/version, Gas Day, facility, location, source file, source
             update, and ingest fields in the loaded bounded rows.
             """),
-            source_coverage_view,
+            mo.accordion(
+                {"Nomination forecast source coverage detail": source_coverage_view},
+                multiple=False,
+                lazy=True,
+            ),
         ]
     )
     return

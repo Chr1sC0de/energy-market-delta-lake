@@ -386,7 +386,11 @@ def _(
             source system, and source table so metric-specific price and
             quantity coverage stays visible.
             """),
-            metric_view,
+            mo.accordion(
+                {"Metric and source coverage detail": metric_view},
+                multiple=False,
+                lazy=True,
+            ),
         ]
     )
     return
