@@ -7,9 +7,11 @@ from html import escape
 from math import isnan
 import os
 from time import perf_counter
+from typing import cast
 from urllib.parse import quote
 
 from plotly.graph_objs._figure import Figure
+from plotly.graph_objs._bar import Bar
 from plotly.graph_objs._scatter import Scatter
 import polars as pl
 
@@ -9215,6 +9217,73 @@ def schedule_run_type_summary_frame(
     return summary.select([*list(_SCHEDULE_RUN_TYPE_SUMMARY_SCHEMA)])
 
 
+def schedule_run_status_figure(
+    load: GasTableLoad | None,
+    gas_date_filter: str = SCHEDULE_RUN_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = SCHEDULE_RUN_SOURCE_SYSTEM_FILTER_ALL,
+    schedule_type_filter: str = SCHEDULE_RUN_SCHEDULE_TYPE_FILTER_ALL,
+    *,
+    height: int = 300,
+) -> Figure:
+    """Return a first-viewport schedule run status figure."""
+    summary = schedule_run_type_summary_frame(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        schedule_type_filter,
+    )
+    figure = Figure()
+    if summary.is_empty():
+        figure.update_layout(**plotly_theme_defaults(height=height))
+        return figure
+
+    for (source_system,), rows in summary.group_by(
+        "source system",
+        maintain_order=True,
+    ):
+        figure.add_trace(
+            Bar(
+                x=rows.get_column("schedule type").to_list(),
+                y=rows.get_column("runs").to_list(),
+                name=_format_optional_value(source_system),
+                customdata=[
+                    [
+                        row["forecast demand version"],
+                        row["gas days"],
+                        row["transmissions"],
+                        row["latest gas date"],
+                    ]
+                    for row in rows.select(
+                        "forecast demand version",
+                        "gas days",
+                        "transmissions",
+                        "latest gas date",
+                    ).to_dicts()
+                ],
+                hovertemplate=(
+                    "schedule type=%{x}<br>"
+                    "runs=%{y}<br>"
+                    "forecast version=%{customdata[0]}<br>"
+                    "gas days=%{customdata[1]}<br>"
+                    "transmissions=%{customdata[2]}<br>"
+                    "latest Gas Day=%{customdata[3]}<extra></extra>"
+                ),
+            )
+        )
+
+    layout = plotly_theme_defaults(height=height)
+    layout["yaxis"] = {
+        **cast(dict[str, object], layout["yaxis"]),
+        "title": "Runs",
+    }
+    figure.update_layout(
+        **layout,
+        barmode="group",
+        title={"text": "Schedule run status by type", "font": {"size": 16}},
+    )
+    return figure
+
+
 def schedule_run_timestamp_summary_frame(
     load: GasTableLoad | None,
     gas_date_filter: str = SCHEDULE_RUN_GAS_DATE_FILTER_ALL,
@@ -9622,6 +9691,73 @@ def scheduled_quantity_type_summary_frame(
         )
     )
     return summary.select([*list(_SCHEDULED_QUANTITY_TYPE_SUMMARY_SCHEMA)])
+
+
+def scheduled_quantity_summary_figure(
+    load: GasTableLoad | None,
+    gas_date_filter: str = SCHEDULED_QUANTITY_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = SCHEDULED_QUANTITY_SOURCE_SYSTEM_FILTER_ALL,
+    schedule_type_filter: str = SCHEDULED_QUANTITY_SCHEDULE_TYPE_FILTER_ALL,
+    *,
+    height: int = 300,
+) -> Figure:
+    """Return a first-viewport scheduled quantity summary figure."""
+    summary = scheduled_quantity_type_summary_frame(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        schedule_type_filter,
+    )
+    figure = Figure()
+    if summary.is_empty():
+        figure.update_layout(**plotly_theme_defaults(height=height))
+        return figure
+
+    for (source_system,), rows in summary.group_by(
+        "source system",
+        maintain_order=True,
+    ):
+        figure.add_trace(
+            Bar(
+                x=rows.get_column("quantity type").to_list(),
+                y=rows.get_column("total quantity_gj").to_list(),
+                name=_format_optional_value(source_system),
+                customdata=[
+                    [
+                        row["schedule type"],
+                        row["rows"],
+                        row["source points"],
+                        row["latest gas date"],
+                    ]
+                    for row in rows.select(
+                        "schedule type",
+                        "rows",
+                        "source points",
+                        "latest gas date",
+                    ).to_dicts()
+                ],
+                hovertemplate=(
+                    "quantity type=%{x}<br>"
+                    "total quantity=%{y:.4f} GJ<br>"
+                    "schedule type=%{customdata[0]}<br>"
+                    "rows=%{customdata[1]}<br>"
+                    "source points=%{customdata[2]}<br>"
+                    "latest Gas Day=%{customdata[3]}<extra></extra>"
+                ),
+            )
+        )
+
+    layout = plotly_theme_defaults(height=height)
+    layout["yaxis"] = {
+        **cast(dict[str, object], layout["yaxis"]),
+        "title": "Total quantity (GJ)",
+    }
+    figure.update_layout(
+        **layout,
+        barmode="group",
+        title={"text": "Scheduled quantity by type", "font": {"size": 16}},
+    )
+    return figure
 
 
 def scheduled_quantity_source_point_frame(
@@ -12905,6 +13041,79 @@ def nomination_forecast_daily_frame(
     return daily.select([*list(_NOMINATION_FORECAST_DAILY_SCHEMA)])
 
 
+def nomination_forecast_daily_figure(
+    load: GasTableLoad | None,
+    gas_date_filter: str = NOMINATION_FORECAST_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = NOMINATION_FORECAST_SOURCE_SYSTEM_FILTER_ALL,
+    facility_filter: str = NOMINATION_FORECAST_FACILITY_FILTER_ALL,
+    location_filter: str = NOMINATION_FORECAST_LOCATION_FILTER_ALL,
+    *,
+    as_of_date: date | None = None,
+    preview_rows: int = DEFAULT_NOMINATION_FORECAST_PREVIEW_ROWS,
+    height: int = 320,
+) -> Figure:
+    """Return a first-viewport forecast measure trend for bounded rows."""
+    daily = nomination_forecast_daily_frame(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        facility_filter,
+        location_filter,
+        as_of_date=as_of_date,
+        preview_rows=preview_rows,
+    )
+    figure = Figure()
+    if daily.is_empty():
+        figure.update_layout(**plotly_theme_defaults(height=height))
+        return figure
+
+    daily = daily.sort(["gas date", "forecast horizon"], nulls_last=True)
+    measures = (
+        ("total demand forecast gj", "Demand forecast"),
+        ("total supply forecast gj", "Supply forecast"),
+        ("total transfer in forecast gj", "Transfer in forecast"),
+        ("total transfer out forecast gj", "Transfer out forecast"),
+        ("total override quantity gj", "Override quantity"),
+    )
+    for measure_column, label in measures:
+        populated = daily.filter(pl.col(measure_column).is_not_null())
+        for (forecast_horizon,), rows in populated.group_by(
+            "forecast horizon", maintain_order=True
+        ):
+            figure.add_trace(
+                Scatter(
+                    x=rows.get_column("gas date").to_list(),
+                    y=rows.get_column(measure_column).to_list(),
+                    mode="lines+markers",
+                    name=f"{label}: {_format_optional_value(forecast_horizon)}",
+                    customdata=[
+                        [row["rows"], row["forecast type/version pairs"]]
+                        for row in rows.select(
+                            "rows",
+                            "forecast type/version pairs",
+                        ).to_dicts()
+                    ],
+                    hovertemplate=(
+                        "%{x}<br>"
+                        "forecast=%{y:.4f} GJ<br>"
+                        "rows=%{customdata[0]}<br>"
+                        "type/version pairs=%{customdata[1]}<extra></extra>"
+                    ),
+                )
+            )
+
+    layout = plotly_theme_defaults(height=height)
+    layout["yaxis"] = {
+        **cast(dict[str, object], layout["yaxis"]),
+        "title": "Forecast (GJ)",
+    }
+    figure.update_layout(
+        **layout,
+        title={"text": "Bounded forecast measures by Gas Day", "font": {"size": 16}},
+    )
+    return figure
+
+
 def nomination_forecast_source_coverage_frame(
     load: GasTableLoad | None,
     gas_date_filter: str = NOMINATION_FORECAST_GAS_DATE_FILTER_ALL,
@@ -13792,6 +14001,89 @@ def forecast_actual_comparison_frame(
         for key in keys[: max(1, preview_rows)]
     ]
     return pl.DataFrame(rows, schema=_FORECAST_ACTUAL_COMPARISON_SCHEMA)
+
+
+def forecast_actual_comparison_figure(
+    loads: Sequence[GasTableLoad],
+    gas_date_filter: str = FORECAST_ACTUAL_GAS_DATE_FILTER_ALL,
+    facility_filter: str = FORECAST_ACTUAL_FACILITY_FILTER_ALL,
+    source_system_filter: str = FORECAST_ACTUAL_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    as_of_date: date | None = None,
+    preview_rows: int = DEFAULT_FORECAST_ACTUAL_PREVIEW_ROWS,
+    height: int = 320,
+) -> Figure:
+    """Return a first-viewport forecast-vs-actual demand comparison figure."""
+    comparison = forecast_actual_comparison_frame(
+        loads,
+        gas_date_filter,
+        facility_filter,
+        source_system_filter,
+        as_of_date=as_of_date,
+        preview_rows=preview_rows,
+    )
+    figure = Figure()
+    if comparison.is_empty():
+        figure.update_layout(**plotly_theme_defaults(height=height))
+        return figure
+
+    comparison = comparison.with_columns(
+        pl.concat_str(
+            [
+                pl.col("gas date").cast(pl.String).fill_null("unknown Gas Day"),
+                pl.lit(" / "),
+                pl.col("source facility id").fill_null("unknown facility"),
+            ]
+        ).alias("comparison group")
+    )
+    for measure_column, label in (
+        ("forecast demand gj", "Forecast demand"),
+        ("actual demand gj", "Actual demand"),
+    ):
+        populated = comparison.filter(pl.col(measure_column).is_not_null())
+        if populated.is_empty():
+            continue
+        figure.add_trace(
+            Bar(
+                x=populated.get_column("comparison group").to_list(),
+                y=populated.get_column(measure_column).to_list(),
+                name=label,
+                customdata=[
+                    [
+                        row["match status"],
+                        row["source location id"],
+                        row["demand delta gj"],
+                        row["demand delta pct"],
+                    ]
+                    for row in populated.select(
+                        "match status",
+                        "source location id",
+                        "demand delta gj",
+                        "demand delta pct",
+                    ).to_dicts()
+                ],
+                hovertemplate=(
+                    "%{x}<br>"
+                    "demand=%{y:.4f} GJ<br>"
+                    "status=%{customdata[0]}<br>"
+                    "location=%{customdata[1]}<br>"
+                    "delta=%{customdata[2]:.4f} GJ<br>"
+                    "delta pct=%{customdata[3]:.2f}%<extra></extra>"
+                ),
+            )
+        )
+
+    layout = plotly_theme_defaults(height=height)
+    layout["yaxis"] = {
+        **cast(dict[str, object], layout["yaxis"]),
+        "title": "Demand (GJ)",
+    }
+    figure.update_layout(
+        **layout,
+        barmode="group",
+        title={"text": "Forecast demand against actual demand", "font": {"size": 16}},
+    )
+    return figure
 
 
 def forecast_actual_storage_frame(

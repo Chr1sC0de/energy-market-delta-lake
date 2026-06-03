@@ -279,6 +279,7 @@ from marimoserver.gas_dashboard import (
     facility_relationship_frame,
     facility_table_specs,
     forecast_actual_bounded_scope_markdown,
+    forecast_actual_comparison_figure,
     forecast_actual_comparison_frame,
     forecast_actual_empty_state_markdown,
     forecast_actual_facility_options,
@@ -373,6 +374,7 @@ from marimoserver.gas_dashboard import (
     linepack_summary_frame,
     linepack_zone_options,
     nomination_forecast_daily_frame,
+    nomination_forecast_daily_figure,
     nomination_forecast_empty_state_markdown,
     nomination_forecast_facility_options,
     nomination_forecast_gas_date_options,
@@ -439,6 +441,7 @@ from marimoserver.gas_dashboard import (
     schedule_run_kpi_frame,
     schedule_run_observation_frame,
     schedule_run_schedule_type_options,
+    schedule_run_status_figure,
     schedule_run_source_coverage_frame,
     schedule_run_source_system_options,
     schedule_run_timestamp_summary_frame,
@@ -452,6 +455,7 @@ from marimoserver.gas_dashboard import (
     scheduled_quantity_source_coverage_frame,
     scheduled_quantity_source_point_frame,
     scheduled_quantity_source_system_options,
+    scheduled_quantity_summary_figure,
     scheduled_quantity_type_summary_frame,
     settlement_activity_activity_type_options,
     settlement_activity_empty_state_markdown,
@@ -1854,7 +1858,10 @@ def test_schedule_run_summaries_filters_and_context_links() -> None:
     type_summary = schedule_run_type_summary_frame(load)
     timestamp_summary = schedule_run_timestamp_summary_frame(load)
     source_coverage = schedule_run_source_coverage_frame(load)
+    status_figure = schedule_run_status_figure(load)
     context_links = render_schedule_run_context_links()
+    status_figure_data = cast(Any, status_figure.data)
+    status_figure_layout = cast(Any, status_figure.layout)
 
     assert schedule_run_gas_date_options(load) == (
         SCHEDULE_RUN_GAS_DATE_FILTER_ALL,
@@ -1872,6 +1879,9 @@ def test_schedule_run_summaries_filters_and_context_links() -> None:
         "pricing",
         "provisional",
     )
+    assert len(status_figure_data) == 2
+    assert status_figure_layout.title.text == "Schedule run status by type"
+    assert status_figure_layout.barmode == "group"
     assert kpis.to_dict(as_series=False) == {
         "metric": [
             "Loaded schedule runs",
@@ -2010,6 +2020,7 @@ def test_schedule_run_helpers_cover_missing_data_and_filter_empty_state() -> Non
 
     assert schedule_run_kpi_frame(empty_load).is_empty()
     assert schedule_run_type_summary_frame(empty_load).is_empty()
+    assert len(cast(Any, schedule_run_status_figure(empty_load).data)) == 0
     assert schedule_run_timestamp_summary_frame(empty_load).is_empty()
     assert schedule_run_source_coverage_frame(empty_load).is_empty()
     assert schedule_run_observation_frame(empty_load).is_empty()
@@ -2191,6 +2202,7 @@ def test_scheduled_quantity_summaries_filters_and_context_links() -> None:
     )
     kpis = scheduled_quantity_kpi_frame(load)
     type_summary = scheduled_quantity_type_summary_frame(load)
+    quantity_figure = scheduled_quantity_summary_figure(load)
     source_points = scheduled_quantity_source_point_frame(load)
     schedule_context = scheduled_quantity_schedule_context_frame(
         load,
@@ -2200,6 +2212,8 @@ def test_scheduled_quantity_summaries_filters_and_context_links() -> None:
     )
     source_coverage = scheduled_quantity_source_coverage_frame(load)
     context_links = render_scheduled_quantity_context_links()
+    quantity_figure_data = cast(Any, quantity_figure.data)
+    quantity_figure_layout = cast(Any, quantity_figure.layout)
 
     assert scheduled_quantity_gas_date_options(load) == (
         SCHEDULED_QUANTITY_GAS_DATE_FILTER_ALL,
@@ -2217,6 +2231,9 @@ def test_scheduled_quantity_summaries_filters_and_context_links() -> None:
         "pricing",
         "provisional",
     )
+    assert len(quantity_figure_data) == 2
+    assert quantity_figure_layout.title.text == "Scheduled quantity by type"
+    assert quantity_figure_layout.yaxis.title.text == "Total quantity (GJ)"
     assert kpis.to_dict(as_series=False) == {
         "metric": [
             "Loaded scheduled quantity rows",
@@ -2393,6 +2410,7 @@ def test_scheduled_quantity_helpers_cover_missing_data_and_filter_empty_state() 
 
     assert scheduled_quantity_kpi_frame(empty_load).is_empty()
     assert scheduled_quantity_type_summary_frame(empty_load).is_empty()
+    assert len(cast(Any, scheduled_quantity_summary_figure(empty_load).data)) == 0
     assert scheduled_quantity_source_point_frame(empty_load).is_empty()
     assert scheduled_quantity_schedule_context_frame(empty_load).is_empty()
     assert scheduled_quantity_source_coverage_frame(empty_load).is_empty()
@@ -6402,6 +6420,7 @@ def test_nomination_forecast_helpers_summarize_filters_and_horizon() -> None:
     kpis = nomination_forecast_kpi_frame(load, as_of_date=as_of_date)
     summary = nomination_forecast_summary_frame(load, as_of_date=as_of_date)
     daily = nomination_forecast_daily_frame(load, as_of_date=as_of_date)
+    daily_figure = nomination_forecast_daily_figure(load, as_of_date=as_of_date)
     source_coverage = nomination_forecast_source_coverage_frame(
         load,
         as_of_date=as_of_date,
@@ -6432,6 +6451,8 @@ def test_nomination_forecast_helpers_summarize_filters_and_horizon() -> None:
     source_kpi_values = {
         row["metric"]: row["value"] for row in source_filtered_kpis.to_dicts()
     }
+    daily_figure_data = cast(Any, daily_figure.data)
+    daily_figure_layout = cast(Any, daily_figure.layout)
 
     assert nomination_forecast_gas_date_options(load) == (
         NOMINATION_FORECAST_GAS_DATE_FILTER_ALL,
@@ -6467,6 +6488,9 @@ def test_nomination_forecast_helpers_summarize_filters_and_horizon() -> None:
     assert kpi_values["Transfer in forecast"] == "250 GJ"
     assert kpi_values["Transfer out forecast"] == "45 GJ"
     assert kpi_values["Override quantity"] == "950 GJ"
+    assert len(daily_figure_data) == 10
+    assert daily_figure_layout.title.text == "Bounded forecast measures by Gas Day"
+    assert daily_figure_layout.yaxis.title.text == "Forecast (GJ)"
     assert facility_kpi_values["Loaded forecast rows"] == "2"
     assert location_kpi_values["Loaded forecast rows"] == "1"
     assert source_kpi_values["Demand forecast"] == "900 GJ"
@@ -6671,6 +6695,7 @@ def test_nomination_forecast_helpers_cover_empty_state_behavior() -> None:
     )
     assert no_measure_values["Demand forecast"] == "unknown"
     assert no_measure_values["Override quantity"] == "unknown"
+    assert len(cast(Any, nomination_forecast_daily_figure(empty_load).data)) == 0
     assert (
         unknown_horizon_observation.row(0, named=True)["forecast horizon"]
         == "Unknown Gas Day forecast"
@@ -6838,10 +6863,16 @@ def test_forecast_actual_helpers_compare_matched_bounded_data() -> None:
         loads,
         as_of_date=date(2024, 1, 4),
     )
+    comparison_figure = forecast_actual_comparison_figure(
+        loads,
+        as_of_date=date(2024, 1, 4),
+    )
     storage = forecast_actual_storage_frame(loads, as_of_date=date(2024, 1, 4))
     kpi_values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
     comparison_row = comparison.row(0, named=True)
     storage_row = storage.row(0, named=True)
+    comparison_figure_data = cast(Any, comparison_figure.data)
+    comparison_figure_layout = cast(Any, comparison_figure.layout)
 
     assert forecast_actual_gas_date_options(loads) == (
         FORECAST_ACTUAL_GAS_DATE_FILTER_ALL,
@@ -6859,6 +6890,11 @@ def test_forecast_actual_helpers_compare_matched_bounded_data() -> None:
     assert kpi_values["Actual rows"] == "1"
     assert kpi_values["Matched facility days"] == "1"
     assert kpi_values["Comparable flow measures"] == "4"
+    assert len(comparison_figure_data) == 2
+    assert comparison_figure_layout.title.text == (
+        "Forecast demand against actual demand"
+    )
+    assert comparison_figure_layout.barmode == "group"
     assert comparison_row["match status"] == "Matched forecast and actual"
     assert comparison_row["forecast rows"] == 2
     assert comparison_row["actual rows"] == 1
@@ -6895,6 +6931,7 @@ def test_forecast_actual_helpers_degrade_with_missing_forecast_data() -> None:
     )
 
     comparison = forecast_actual_comparison_frame(loads)
+    comparison_figure = forecast_actual_comparison_figure(loads)
     storage = forecast_actual_storage_frame(loads)
     kpi_values = {
         row["metric"]: row["value"]
@@ -6904,6 +6941,7 @@ def test_forecast_actual_helpers_degrade_with_missing_forecast_data() -> None:
     assert comparison.row(0, named=True)["match status"] == "Actual only"
     assert comparison.row(0, named=True)["forecast rows"] == 0
     assert comparison.row(0, named=True)["actual demand gj"] == 2000.0
+    assert len(cast(Any, comparison_figure.data)) == 1
     assert storage.row(0, named=True)["forecast coverage"] == (
         "No matching forecast row in bounded view"
     )
@@ -6934,6 +6972,7 @@ def test_forecast_actual_helpers_degrade_with_missing_actual_data() -> None:
     )
 
     comparison = forecast_actual_comparison_frame(loads)
+    comparison_figure = forecast_actual_comparison_figure(loads)
     storage = forecast_actual_storage_frame(loads)
     kpi_values = {
         row["metric"]: row["value"]
@@ -6943,6 +6982,7 @@ def test_forecast_actual_helpers_degrade_with_missing_actual_data() -> None:
     assert comparison.row(0, named=True)["match status"] == "Forecast only"
     assert comparison.row(0, named=True)["forecast demand gj"] == 900.0
     assert comparison.row(0, named=True)["actual demand gj"] is None
+    assert len(cast(Any, comparison_figure.data)) == 1
     assert storage.is_empty()
     assert kpi_values["Actual rows"] == "0"
     assert kpi_values["Forecast-only groups"] == "1"
@@ -7002,6 +7042,7 @@ def test_forecast_actual_helpers_make_bounded_messaging_explicit() -> None:
     assert "Local mode uses the configured gas dashboard read policy" in local_markdown
     assert forecast_actual_kpi_frame(loads).is_empty()
     assert forecast_actual_comparison_frame(loads).is_empty()
+    assert len(cast(Any, forecast_actual_comparison_figure(loads).data)) == 0
     assert forecast_actual_facility_options(loads) == (
         FORECAST_ACTUAL_FACILITY_FILTER_ALL,
     )

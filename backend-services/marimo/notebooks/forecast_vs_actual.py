@@ -21,6 +21,7 @@ def _():
         cached_load_forecast_actual_tables,
         discover_dashboard_config,
         forecast_actual_bounded_scope_markdown,
+        forecast_actual_comparison_figure,
         forecast_actual_comparison_frame,
         forecast_actual_empty_state_markdown,
         forecast_actual_facility_options,
@@ -30,8 +31,11 @@ def _():
         forecast_actual_storage_frame,
         gas_table_load_status_frame,
         gas_table_load_status_message,
+        render_bounded_data_note_html,
         render_dashboard_context_panel,
         render_forecast_actual_context_links,
+        render_kpi_cards_html,
+        render_visual_empty_state_html,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
 
@@ -46,6 +50,7 @@ def _():
         date,
         discover_dashboard_config,
         forecast_actual_bounded_scope_markdown,
+        forecast_actual_comparison_figure,
         forecast_actual_comparison_frame,
         forecast_actual_empty_state_markdown,
         forecast_actual_facility_options,
@@ -58,8 +63,11 @@ def _():
         mo,
         pl,
         refresh_token_from_control,
+        render_bounded_data_note_html,
         render_dashboard_context_panel,
         render_forecast_actual_context_links,
+        render_kpi_cards_html,
+        render_visual_empty_state_html,
     )
 
 
@@ -210,11 +218,15 @@ def _(
 def _(
     facility_filter,
     forecast_actual_empty_state_markdown,
+    forecast_actual_comparison_figure,
     forecast_actual_kpi_frame,
     forecast_actual_loads,
     forecast_reference_date,
     gas_date_filter,
     mo,
+    render_bounded_data_note_html,
+    render_kpi_cards_html,
+    render_visual_empty_state_html,
     source_system_filter,
 ):
     kpis = forecast_actual_kpi_frame(
@@ -224,10 +236,49 @@ def _(
         source_system_filter.value,
         as_of_date=forecast_reference_date,
     )
-    if kpis.is_empty():
-        kpi_view = mo.md(forecast_actual_empty_state_markdown(forecast_actual_loads))
+    comparison_figure = forecast_actual_comparison_figure(
+        forecast_actual_loads,
+        gas_date_filter.value,
+        facility_filter.value,
+        source_system_filter.value,
+        as_of_date=forecast_reference_date,
+        height=320,
+    )
+    comparison_has_data = len(comparison_figure.data) > 0
+    if kpis.is_empty() and not comparison_has_data:
+        forecast_actual_health_visual = mo.Html(
+            render_visual_empty_state_html(
+                title="No forecast-vs-actual comparison",
+                detail=(
+                    "No loaded forecast or actual rows match the current read "
+                    "and filters; drilldown empty-state detail remains below."
+                ),
+                action="Refresh data or widen the current filters.",
+                compact=True,
+            )
+        )
     else:
-        kpi_view = mo.ui.table(kpis, selection=None)
+        if kpis.is_empty():
+            kpi_view = mo.md(
+                forecast_actual_empty_state_markdown(forecast_actual_loads)
+            )
+        else:
+            kpi_view = mo.Html(
+                render_kpi_cards_html(kpis, title="Forecast-vs-actual health KPIs")
+            )
+        comparison_visual_view = (
+            mo.ui.plotly(comparison_figure)
+            if comparison_has_data
+            else mo.Html(
+                render_visual_empty_state_html(
+                    title="No demand comparison chart",
+                    detail="The bounded read and filters do not contain comparable forecast or actual demand measures.",
+                    action="Refresh data or widen the current filters.",
+                    compact=True,
+                )
+            )
+        )
+        forecast_actual_health_visual = mo.vstack([kpi_view, comparison_visual_view])
 
     mo.vstack(
         [
@@ -237,7 +288,17 @@ def _(
             Matched groups share `gas_date`, `source_facility_id`, and
             `source_location_id` in the currently loaded bounded rows.
             """),
-            kpi_view,
+            forecast_actual_health_visual,
+            mo.Html(
+                render_bounded_data_note_html(
+                    title="Visuals use the loaded bounded rows",
+                    detail=(
+                        "KPI cards and the demand comparison chart respect the "
+                        "current filters, reference date, refresh state, cache "
+                        "state, and bounded read policy shown above."
+                    ),
+                )
+            ),
         ]
     )
     return

@@ -18,12 +18,16 @@ def _():
         gas_table_load_status_frame,
         gas_table_load_status_message,
         render_dashboard_context_panel,
+        render_bounded_data_note_html,
+        render_kpi_cards_html,
         render_schedule_run_context_links,
+        render_visual_empty_state_html,
         schedule_run_empty_state_markdown,
         schedule_run_gas_date_options,
         schedule_run_kpi_frame,
         schedule_run_observation_frame,
         schedule_run_schedule_type_options,
+        schedule_run_status_figure,
         schedule_run_source_coverage_frame,
         schedule_run_source_system_options,
         schedule_run_timestamp_summary_frame,
@@ -43,12 +47,16 @@ def _():
         pl,
         refresh_token_from_control,
         render_dashboard_context_panel,
+        render_bounded_data_note_html,
+        render_kpi_cards_html,
         render_schedule_run_context_links,
+        render_visual_empty_state_html,
         schedule_run_empty_state_markdown,
         schedule_run_gas_date_options,
         schedule_run_kpi_frame,
         schedule_run_observation_frame,
         schedule_run_schedule_type_options,
+        schedule_run_status_figure,
         schedule_run_source_coverage_frame,
         schedule_run_source_system_options,
         schedule_run_timestamp_summary_frame,
@@ -215,9 +223,13 @@ def _(
 def _(
     gas_date_filter,
     mo,
+    render_bounded_data_note_html,
+    render_kpi_cards_html,
+    render_visual_empty_state_html,
     schedule_run_empty_state_markdown,
     schedule_run_kpi_frame,
     schedule_run_load,
+    schedule_run_status_figure,
     schedule_type_filter,
     source_system_filter,
 ):
@@ -227,15 +239,61 @@ def _(
         source_system_filter.value,
         schedule_type_filter.value,
     )
-    if kpis.is_empty():
-        kpi_view = mo.md(schedule_run_empty_state_markdown(schedule_run_load))
+    status_figure = schedule_run_status_figure(
+        schedule_run_load,
+        gas_date_filter.value,
+        source_system_filter.value,
+        schedule_type_filter.value,
+        height=300,
+    )
+    status_has_data = len(status_figure.data) > 0
+    if kpis.is_empty() and not status_has_data:
+        schedule_health_visual = mo.Html(
+            render_visual_empty_state_html(
+                title="No schedule run status",
+                detail=(
+                    "No loaded schedule run rows match the current read and "
+                    "filters; drilldown empty-state detail remains below."
+                ),
+                action="Refresh data or widen the current filters.",
+                compact=True,
+            )
+        )
     else:
-        kpi_view = mo.ui.table(kpis, selection=None)
+        if kpis.is_empty():
+            kpi_view = mo.md(schedule_run_empty_state_markdown(schedule_run_load))
+        else:
+            kpi_view = mo.Html(
+                render_kpi_cards_html(kpis, title="Schedule run health KPIs")
+            )
+        status_view = (
+            mo.ui.plotly(status_figure)
+            if status_has_data
+            else mo.Html(
+                render_visual_empty_state_html(
+                    title="No schedule status chart",
+                    detail="The bounded read and filters do not contain schedule type summaries.",
+                    action="Refresh data or widen the current filters.",
+                    compact=True,
+                )
+            )
+        )
+        schedule_health_visual = mo.vstack([kpi_view, status_view])
 
     mo.vstack(
         [
             mo.md("## Schedule Run Health"),
-            kpi_view,
+            schedule_health_visual,
+            mo.Html(
+                render_bounded_data_note_html(
+                    title="Visuals use the loaded bounded rows",
+                    detail=(
+                        "KPI cards and the schedule status chart respect the "
+                        "current filters, refresh state, cache state, and "
+                        "bounded read policy shown above."
+                    ),
+                )
+            ),
         ]
     )
     return
