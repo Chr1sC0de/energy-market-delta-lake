@@ -20,7 +20,9 @@ def _():
         discover_dashboard_config,
         gas_table_load_status_frame,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_sttm_mos_allocation_context_links,
+        render_visual_empty_state_html,
         sttm_allocation_limit_summary_frame,
         sttm_allocation_quantity_summary_frame,
         sttm_default_allocation_notice_summary_frame,
@@ -32,6 +34,7 @@ def _():
         sttm_mos_allocation_kpi_frame,
         sttm_mos_allocation_source_coverage_frame,
         sttm_mos_allocation_source_system_options,
+        sttm_mos_allocation_summary_figure,
         sttm_mos_stack_summary_frame,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
@@ -50,7 +53,9 @@ def _():
         pl,
         refresh_token_from_control,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_sttm_mos_allocation_context_links,
+        render_visual_empty_state_html,
         sttm_allocation_limit_summary_frame,
         sttm_allocation_quantity_summary_frame,
         sttm_default_allocation_notice_summary_frame,
@@ -62,6 +67,7 @@ def _():
         sttm_mos_allocation_kpi_frame,
         sttm_mos_allocation_source_coverage_frame,
         sttm_mos_allocation_source_system_options,
+        sttm_mos_allocation_summary_figure,
         sttm_mos_stack_summary_frame,
     )
 
@@ -229,11 +235,14 @@ def _(
     gas_date_filter,
     hub_filter,
     mo,
+    render_kpi_cards_html,
+    render_visual_empty_state_html,
     source_system_filter,
     sttm_mos_allocation_empty_state_markdown,
     sttm_mos_allocation_fact_summary_frame,
     sttm_mos_allocation_kpi_frame,
     sttm_mos_allocation_loads,
+    sttm_mos_allocation_summary_figure,
 ):
     kpis = sttm_mos_allocation_kpi_frame(
         sttm_mos_allocation_loads,
@@ -253,23 +262,37 @@ def _(
         kpi_view = mo.md(
             sttm_mos_allocation_empty_state_markdown(sttm_mos_allocation_loads)
         )
-    else:
-        kpi_view = mo.ui.table(kpis, selection=None)
-    if fact_summary.is_empty():
-        fact_summary_view = mo.md(
-            sttm_mos_allocation_empty_state_markdown(sttm_mos_allocation_loads)
+        allocation_visual = mo.Html(
+            render_visual_empty_state_html(
+                title="No STTM MOS/allocation facts to chart",
+                detail=(
+                    "The current filters do not match loaded bounded STTM "
+                    "MOS/allocation rows."
+                ),
+            )
         )
     else:
-        fact_summary_view = mo.ui.table(fact_summary, selection=None)
+        kpi_view = mo.Html(
+            render_kpi_cards_html(kpis, title="STTM MOS/allocation health KPIs")
+        )
+        allocation_visual = mo.ui.plotly(
+            sttm_mos_allocation_summary_figure(
+                sttm_mos_allocation_loads,
+                gas_date_filter.value,
+                source_system_filter.value,
+                hub_filter.value,
+                facility_filter.value,
+            )
+        )
 
     mo.vstack(
         [
             mo.md("## STTM MOS And Allocation Summary"),
             kpi_view,
-            fact_summary_view,
+            allocation_visual,
         ]
     )
-    return
+    return (fact_summary,)
 
 
 @app.cell
@@ -316,6 +339,34 @@ def _(STTM_MOS_ALLOCATION_TABLE_SPECS, config, mo, pl):
         [
             mo.md("## Runtime Configuration"),
             mo.ui.table(config_frame, selection=None),
+        ]
+    )
+    return
+
+
+@app.cell
+def _(
+    fact_summary,
+    mo,
+    sttm_mos_allocation_empty_state_markdown,
+    sttm_mos_allocation_loads,
+):
+    if fact_summary.is_empty():
+        fact_summary_view = mo.md(
+            sttm_mos_allocation_empty_state_markdown(sttm_mos_allocation_loads)
+        )
+    else:
+        fact_summary_view = mo.ui.table(fact_summary, selection=None)
+
+    mo.vstack(
+        [
+            mo.md("""
+            ## MOS And Allocation Fact Summary
+
+            This bounded view keeps the loaded fact-level coverage available
+            after the first-viewport KPI and allocation visual.
+            """),
+            fact_summary_view,
         ]
     )
     return

@@ -217,6 +217,7 @@ from marimoserver.gas_dashboard import (
     cached_load_sttm_mos_allocation_tables,
     cached_load_source_coverage_tables,
     cached_load_system_notice_table,
+    customer_transfer_activity_figure,
     customer_transfer_daily_frame,
     customer_transfer_empty_state_markdown,
     customer_transfer_gas_date_options,
@@ -472,6 +473,7 @@ from marimoserver.gas_dashboard import (
     settlement_activity_source_coverage_frame,
     settlement_activity_source_system_options,
     settlement_activity_summary_frame,
+    settlement_activity_summary_figure,
     sttm_capacity_settlement_component_options,
     sttm_capacity_settlement_empty_state_markdown,
     sttm_capacity_settlement_facility_options,
@@ -482,6 +484,7 @@ from marimoserver.gas_dashboard import (
     sttm_capacity_settlement_source_coverage_frame,
     sttm_capacity_settlement_stage_options,
     sttm_capacity_settlement_summary_frame,
+    sttm_capacity_settlement_summary_figure,
     sttm_allocation_limit_summary_frame,
     sttm_allocation_quantity_summary_frame,
     sttm_default_allocation_notice_summary_frame,
@@ -493,6 +496,7 @@ from marimoserver.gas_dashboard import (
     sttm_mos_allocation_kpi_frame,
     sttm_mos_allocation_source_coverage_frame,
     sttm_mos_allocation_source_system_options,
+    sttm_mos_allocation_summary_figure,
     sttm_mos_stack_summary_frame,
     sttm_market_settlement_component_options,
     sttm_market_settlement_empty_state_markdown,
@@ -503,6 +507,7 @@ from marimoserver.gas_dashboard import (
     sttm_market_settlement_source_coverage_frame,
     sttm_market_settlement_stage_options,
     sttm_market_settlement_summary_frame,
+    sttm_market_settlement_summary_figure,
     source_coverage_empty_state_markdown,
     source_coverage_kpi_frame,
     source_coverage_matrix_frame,
@@ -2696,6 +2701,7 @@ def test_settlement_activity_summaries_filters_and_context_links() -> None:
     )
     kpis = settlement_activity_kpi_frame(load)
     summary = settlement_activity_summary_frame(load)
+    activity_figure = settlement_activity_summary_figure(load)
     source_coverage = settlement_activity_source_coverage_frame(load)
     context_links = render_settlement_activity_context_links()
 
@@ -2812,6 +2818,12 @@ def test_settlement_activity_summaries_filters_and_context_links() -> None:
         "total quantity gj": [0.0, 20.0, 0.0],
         "avg percentage": [None, 2.5, None],
     }
+    activity_traces = _figure_data(activity_figure)
+    assert len(activity_traces) == 2
+    assert activity_traces[0]["type"] == "bar"
+    assert "settlements_activity" in [
+        activity_type for trace in activity_traces for activity_type in trace["x"]
+    ]
     assert source_coverage.select(
         "source system",
         "source table",
@@ -2886,6 +2898,7 @@ def test_settlement_activity_helpers_cover_missing_data_and_filter_empty_state()
 
     assert settlement_activity_kpi_frame(empty_load).is_empty()
     assert settlement_activity_summary_frame(empty_load).is_empty()
+    assert _figure_data(settlement_activity_summary_figure(empty_load)) == []
     assert settlement_activity_source_coverage_frame(empty_load).is_empty()
     assert settlement_activity_observation_frame(empty_load).is_empty()
     assert settlement_activity_gas_date_options(empty_load) == (
@@ -3081,6 +3094,7 @@ def test_sttm_market_settlement_summaries_filters_and_context_links() -> None:
 
     kpis = sttm_market_settlement_kpi_frame(load)
     settlement_summary = sttm_market_settlement_summary_frame(load)
+    settlement_figure = sttm_market_settlement_summary_figure(load)
     source_coverage = sttm_market_settlement_source_coverage_frame(load)
     observations = sttm_market_settlement_observation_frame(
         load,
@@ -3177,6 +3191,12 @@ def test_sttm_market_settlement_summaries_filters_and_context_links() -> None:
         "value": "2",
         "detail": "Full table scan",
     }
+    settlement_traces = _figure_data(settlement_figure)
+    assert len(settlement_traces) == 3
+    assert settlement_traces[0]["type"] == "bar"
+    assert "net_market_balance" in [
+        component for trace in settlement_traces for component in trace["x"]
+    ]
     assert observations.select(
         "gas date",
         "period start",
@@ -3338,6 +3358,7 @@ def test_sttm_market_settlement_helpers_cover_missing_data_and_filter_empty_stat
 
     assert sttm_market_settlement_kpi_frame(empty_load).is_empty()
     assert sttm_market_settlement_summary_frame(empty_load).is_empty()
+    assert _figure_data(sttm_market_settlement_summary_figure(empty_load)) == []
     assert sttm_market_settlement_source_coverage_frame(empty_load).is_empty()
     assert sttm_market_settlement_observation_frame(empty_load).is_empty()
     assert sttm_market_settlement_gas_date_options(empty_load) == (
@@ -3552,6 +3573,7 @@ def test_sttm_capacity_settlement_summaries_filters_and_context_links() -> None:
 
     kpis = sttm_capacity_settlement_kpi_frame(load)
     settlement_summary = sttm_capacity_settlement_summary_frame(load)
+    settlement_figure = sttm_capacity_settlement_summary_figure(load)
     source_coverage = sttm_capacity_settlement_source_coverage_frame(load)
     observations = sttm_capacity_settlement_observation_frame(
         load,
@@ -3648,6 +3670,12 @@ def test_sttm_capacity_settlement_summaries_filters_and_context_links() -> None:
         "value": "2",
         "detail": "Full table scan",
     }
+    settlement_traces = _figure_data(settlement_figure)
+    assert len(settlement_traces) == 3
+    assert settlement_traces[0]["type"] == "bar"
+    assert "mos_allocated_qty" in [
+        component for trace in settlement_traces for component in trace["x"]
+    ]
     assert observations.select(
         "gas date",
         "settlement run",
@@ -3800,6 +3828,7 @@ def test_sttm_capacity_settlement_helpers_cover_missing_data_and_filter_empty_st
 
     assert sttm_capacity_settlement_kpi_frame(empty_load).is_empty()
     assert sttm_capacity_settlement_summary_frame(empty_load).is_empty()
+    assert _figure_data(sttm_capacity_settlement_summary_figure(empty_load)) == []
     assert sttm_capacity_settlement_source_coverage_frame(empty_load).is_empty()
     assert sttm_capacity_settlement_observation_frame(empty_load).is_empty()
     assert sttm_capacity_settlement_gas_date_options(empty_load) == (
@@ -4063,6 +4092,7 @@ def test_sttm_mos_allocation_summaries_filters_and_context_links() -> None:
 
     kpis = sttm_mos_allocation_kpi_frame(loads)
     fact_summary = sttm_mos_allocation_fact_summary_frame(loads)
+    fact_figure = sttm_mos_allocation_summary_figure(loads)
     mos_summary = sttm_mos_stack_summary_frame(loads)
     allocation_summary = sttm_allocation_quantity_summary_frame(loads)
     limit_summary = sttm_allocation_limit_summary_frame(loads)
@@ -4155,6 +4185,15 @@ def test_sttm_mos_allocation_summaries_filters_and_context_links() -> None:
         ],
         "primary value": ["25 GJ", "20 GJ", "30 to 30", "1"],
     }
+    fact_traces = _figure_data(fact_figure)
+    assert len(fact_traces) == 1
+    assert fact_traces[0]["type"] == "bar"
+    assert fact_traces[0]["x"] == [
+        "Allocation quantity",
+        "MOS stack",
+        "Allocation limit",
+        "Default allocation notice",
+    ]
     assert mos_summary.select(
         "mos stack context",
         "settlement run",
@@ -4306,6 +4345,7 @@ def test_sttm_mos_allocation_helpers_cover_missing_data_and_filter_empty_state()
 
     assert sttm_mos_allocation_kpi_frame(empty_loads).is_empty()
     assert sttm_mos_allocation_fact_summary_frame(empty_loads).is_empty()
+    assert _figure_data(sttm_mos_allocation_summary_figure(empty_loads)) == []
     assert sttm_mos_stack_summary_frame(empty_loads).is_empty()
     assert sttm_allocation_quantity_summary_frame(empty_loads).is_empty()
     assert sttm_allocation_limit_summary_frame(empty_loads).is_empty()
@@ -4474,6 +4514,7 @@ def test_customer_transfer_summaries_filters_and_context_links() -> None:
     kpis = customer_transfer_kpi_frame(load)
     summary = customer_transfer_summary_frame(load)
     daily = customer_transfer_daily_frame(load)
+    activity_figure = customer_transfer_activity_figure(load)
     source_coverage = customer_transfer_source_coverage_frame(load)
     context_links = render_customer_transfer_context_links()
 
@@ -4585,6 +4626,10 @@ def test_customer_transfer_summaries_filters_and_context_links() -> None:
         "internal transfers lodged": [0, 1, 2],
         "greenfields received": [2, 7, 4],
     }
+    activity_traces = _figure_data(activity_figure)
+    assert len(activity_traces) == 5
+    assert activity_traces[0]["type"] == "bar"
+    assert activity_traces[0]["x"] == ["VIC", "NSW"]
     assert source_coverage.select(
         "source system",
         "source table",
@@ -4652,6 +4697,7 @@ def test_customer_transfer_helpers_cover_missing_data_and_filter_empty_state() -
     assert customer_transfer_kpi_frame(empty_load).is_empty()
     assert customer_transfer_summary_frame(empty_load).is_empty()
     assert customer_transfer_daily_frame(empty_load).is_empty()
+    assert _figure_data(customer_transfer_activity_figure(empty_load)) == []
     assert customer_transfer_source_coverage_frame(empty_load).is_empty()
     assert customer_transfer_observation_frame(empty_load).is_empty()
     assert customer_transfer_gas_date_options(empty_load) == (

@@ -17,8 +17,10 @@ def _():
         discover_dashboard_config,
         gas_table_load_status_frame,
         gas_table_load_status_message,
+        render_kpi_cards_html,
         render_dashboard_context_panel,
         render_settlement_activity_context_links,
+        render_visual_empty_state_html,
         settlement_activity_activity_type_options,
         settlement_activity_empty_state_markdown,
         settlement_activity_gas_date_options,
@@ -27,6 +29,7 @@ def _():
         settlement_activity_source_coverage_frame,
         settlement_activity_source_system_options,
         settlement_activity_summary_frame,
+        settlement_activity_summary_figure,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
 
@@ -41,8 +44,10 @@ def _():
         mo,
         pl,
         refresh_token_from_control,
+        render_kpi_cards_html,
         render_dashboard_context_panel,
         render_settlement_activity_context_links,
+        render_visual_empty_state_html,
         settlement_activity_activity_type_options,
         settlement_activity_empty_state_markdown,
         settlement_activity_gas_date_options,
@@ -51,6 +56,7 @@ def _():
         settlement_activity_source_coverage_frame,
         settlement_activity_source_system_options,
         settlement_activity_summary_frame,
+        settlement_activity_summary_figure,
     )
 
 
@@ -179,9 +185,12 @@ def _(
     activity_type_filter,
     gas_date_filter,
     mo,
+    render_kpi_cards_html,
+    render_visual_empty_state_html,
     settlement_activity_empty_state_markdown,
     settlement_activity_kpi_frame,
     settlement_activity_load,
+    settlement_activity_summary_figure,
     source_system_filter,
 ):
     kpis = settlement_activity_kpi_frame(
@@ -194,13 +203,33 @@ def _(
         kpi_view = mo.md(
             settlement_activity_empty_state_markdown(settlement_activity_load)
         )
+        activity_visual = mo.Html(
+            render_visual_empty_state_html(
+                title="No settlement activity to chart",
+                detail=(
+                    "The current filters do not match loaded bounded settlement "
+                    "activity rows."
+                ),
+            )
+        )
     else:
-        kpi_view = mo.ui.table(kpis, selection=None)
+        kpi_view = mo.Html(
+            render_kpi_cards_html(kpis, title="Settlement activity health KPIs")
+        )
+        activity_visual = mo.ui.plotly(
+            settlement_activity_summary_figure(
+                settlement_activity_load,
+                gas_date_filter.value,
+                source_system_filter.value,
+                activity_type_filter.value,
+            )
+        )
 
     mo.vstack(
         [
             mo.md("## Settlement Activity Health"),
             kpi_view,
+            activity_visual,
         ]
     )
     return

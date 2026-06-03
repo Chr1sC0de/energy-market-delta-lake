@@ -10377,6 +10377,81 @@ def settlement_activity_summary_frame(
     return summary.select([*list(_SETTLEMENT_ACTIVITY_SUMMARY_SCHEMA)])
 
 
+def settlement_activity_summary_figure(
+    load: GasTableLoad | None,
+    gas_date_filter: str = SETTLEMENT_ACTIVITY_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = SETTLEMENT_ACTIVITY_SOURCE_SYSTEM_FILTER_ALL,
+    activity_type_filter: str = SETTLEMENT_ACTIVITY_ACTIVITY_TYPE_FILTER_ALL,
+    *,
+    height: int = 320,
+) -> Figure:
+    """Return a first-viewport settlement activity component chart."""
+    summary = settlement_activity_summary_frame(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        activity_type_filter,
+    )
+    figure = Figure()
+    layout = plotly_theme_defaults(height=height)
+    layout["yaxis"] = {
+        "gridcolor": "#d8e2de",
+        "title": "Rows",
+        "zeroline": False,
+    }
+    if summary.is_empty():
+        figure.update_layout(**layout)
+        return figure
+
+    chart_frame = (
+        summary.group_by("activity type", "source system")
+        .agg(
+            pl.col("rows").sum().alias("rows"),
+            pl.col("total amount gst ex").sum().alias("total amount gst ex"),
+            pl.col("total quantity gj").sum().alias("total quantity gj"),
+            pl.col("settlement version")
+            .drop_nulls()
+            .n_unique()
+            .alias("settlement versions"),
+        )
+        .sort(["rows", "activity type"], descending=[True, False])
+        .head(16)
+    )
+    for (source_system,), rows in chart_frame.group_by(
+        "source system",
+        maintain_order=True,
+    ):
+        figure.add_trace(
+            Bar(
+                x=rows.get_column("activity type").to_list(),
+                y=rows.get_column("rows").to_list(),
+                name=_format_optional_value(source_system),
+                customdata=[
+                    [
+                        row["source system"],
+                        row["total amount gst ex"],
+                        row["total quantity gj"],
+                        row["settlement versions"],
+                    ]
+                    for row in rows.to_dicts()
+                ],
+                hovertemplate=(
+                    "<b>%{x}</b><br>Rows: %{y:,}"
+                    "<br>Source system: %{customdata[0]}"
+                    "<br>Total amount GST ex: %{customdata[1]:,.4f}"
+                    "<br>Total quantity: %{customdata[2]:,.4f} GJ"
+                    "<br>Settlement versions: %{customdata[3]:,}<extra></extra>"
+                ),
+            )
+        )
+    figure.update_layout(
+        **layout,
+        barmode="group",
+        title={"text": "Settlement activity by type", "font": {"size": 16}},
+    )
+    return figure
+
+
 def settlement_activity_source_coverage_frame(
     load: GasTableLoad | None,
     gas_date_filter: str = SETTLEMENT_ACTIVITY_GAS_DATE_FILTER_ALL,
@@ -10851,6 +10926,83 @@ def sttm_market_settlement_summary_frame(
         .head(max(1, preview_rows))
     )
     return summary.select([*list(_STTM_MARKET_SETTLEMENT_SUMMARY_SCHEMA)])
+
+
+def sttm_market_settlement_summary_figure(
+    load: GasTableLoad | None,
+    gas_date_filter: str = STTM_MARKET_SETTLEMENT_GAS_DATE_FILTER_ALL,
+    period_filter: str = STTM_MARKET_SETTLEMENT_PERIOD_FILTER_ALL,
+    settlement_stage_filter: str = STTM_MARKET_SETTLEMENT_STAGE_FILTER_ALL,
+    settlement_component_filter: str = STTM_MARKET_SETTLEMENT_COMPONENT_FILTER_ALL,
+    *,
+    height: int = 320,
+) -> Figure:
+    """Return a first-viewport STTM market settlement component chart."""
+    summary = sttm_market_settlement_summary_frame(
+        load,
+        gas_date_filter,
+        period_filter,
+        settlement_stage_filter,
+        settlement_component_filter,
+    )
+    figure = Figure()
+    layout = plotly_theme_defaults(height=height)
+    layout["yaxis"] = {
+        "gridcolor": "#d8e2de",
+        "title": "Settlement amount",
+        "zeroline": False,
+    }
+    if summary.is_empty():
+        figure.update_layout(**layout)
+        return figure
+
+    chart_frame = (
+        summary.group_by("settlement stage", "component")
+        .agg(
+            pl.col("rows").sum().alias("rows"),
+            pl.col("total quantity gj").sum().alias("total quantity gj"),
+            pl.col("total amount").sum().alias("total amount"),
+            pl.col("hub").drop_nulls().n_unique().alias("hubs"),
+            pl.col("facility").drop_nulls().n_unique().alias("facilities"),
+        )
+        .sort(["total amount", "rows", "component"], descending=[True, True, False])
+        .head(16)
+    )
+    for (stage,), rows in chart_frame.group_by(
+        "settlement stage",
+        maintain_order=True,
+    ):
+        figure.add_trace(
+            Bar(
+                x=rows.get_column("component").to_list(),
+                y=rows.get_column("total amount").to_list(),
+                name=_format_optional_value(stage),
+                customdata=[
+                    [
+                        row["settlement stage"],
+                        row["rows"],
+                        row["total quantity gj"],
+                        row["hubs"],
+                        row["facilities"],
+                    ]
+                    for row in rows.to_dicts()
+                ],
+                hovertemplate=(
+                    "<b>%{x}</b><br>Total amount: %{y:,.4f}"
+                    "<br>Settlement stage: %{customdata[0]}"
+                    "<br>Rows: %{customdata[1]:,}"
+                    "<br>Total quantity: %{customdata[2]:,.4f} GJ"
+                    "<br>Hubs: %{customdata[3]:,}"
+                    "<br>Facilities: %{customdata[4]:,}<extra></extra>"
+                ),
+            )
+        )
+    figure.update_layout(
+        **layout,
+        barmode="group",
+        title={"text": "STTM market settlement by component", "font": {"size": 16}},
+    )
+    return figure
 
 
 def sttm_market_settlement_source_coverage_frame(
@@ -11332,6 +11484,85 @@ def sttm_capacity_settlement_summary_frame(
     return summary.select([*list(_STTM_CAPACITY_SETTLEMENT_SUMMARY_SCHEMA)])
 
 
+def sttm_capacity_settlement_summary_figure(
+    load: GasTableLoad | None,
+    gas_date_filter: str = STTM_CAPACITY_SETTLEMENT_GAS_DATE_FILTER_ALL,
+    settlement_stage_filter: str = STTM_CAPACITY_SETTLEMENT_STAGE_FILTER_ALL,
+    capacity_component_filter: str = STTM_CAPACITY_SETTLEMENT_COMPONENT_FILTER_ALL,
+    hub_filter: str = STTM_CAPACITY_SETTLEMENT_HUB_FILTER_ALL,
+    facility_filter: str = STTM_CAPACITY_SETTLEMENT_FACILITY_FILTER_ALL,
+    *,
+    height: int = 320,
+) -> Figure:
+    """Return a first-viewport STTM capacity settlement component chart."""
+    summary = sttm_capacity_settlement_summary_frame(
+        load,
+        gas_date_filter,
+        settlement_stage_filter,
+        capacity_component_filter,
+        hub_filter,
+        facility_filter,
+    )
+    figure = Figure()
+    layout = plotly_theme_defaults(height=height)
+    layout["yaxis"] = {
+        "gridcolor": "#d8e2de",
+        "title": "Total quantity GJ",
+        "zeroline": False,
+    }
+    if summary.is_empty():
+        figure.update_layout(**layout)
+        return figure
+
+    chart_frame = (
+        summary.group_by("settlement stage", "capacity settlement component")
+        .agg(
+            pl.col("rows").sum().alias("rows"),
+            pl.col("total quantity gj").sum().alias("total quantity gj"),
+            pl.col("hub").drop_nulls().n_unique().alias("hubs"),
+            pl.col("facility").drop_nulls().n_unique().alias("facilities"),
+        )
+        .sort(
+            ["total quantity gj", "rows", "capacity settlement component"],
+            descending=[True, True, False],
+        )
+        .head(16)
+    )
+    for (stage,), rows in chart_frame.group_by(
+        "settlement stage",
+        maintain_order=True,
+    ):
+        figure.add_trace(
+            Bar(
+                x=rows.get_column("capacity settlement component").to_list(),
+                y=rows.get_column("total quantity gj").to_list(),
+                name=_format_optional_value(stage),
+                customdata=[
+                    [
+                        row["settlement stage"],
+                        row["rows"],
+                        row["hubs"],
+                        row["facilities"],
+                    ]
+                    for row in rows.to_dicts()
+                ],
+                hovertemplate=(
+                    "<b>%{x}</b><br>Total quantity: %{y:,.4f} GJ"
+                    "<br>Settlement stage: %{customdata[0]}"
+                    "<br>Rows: %{customdata[1]:,}"
+                    "<br>Hubs: %{customdata[2]:,}"
+                    "<br>Facilities: %{customdata[3]:,}<extra></extra>"
+                ),
+            )
+        )
+    figure.update_layout(
+        **layout,
+        barmode="group",
+        title={"text": "STTM capacity settlement by component", "font": {"size": 16}},
+    )
+    return figure
+
+
 def sttm_capacity_settlement_source_coverage_frame(
     load: GasTableLoad | None,
     gas_date_filter: str = STTM_CAPACITY_SETTLEMENT_GAS_DATE_FILTER_ALL,
@@ -11791,6 +12022,71 @@ def sttm_mos_allocation_fact_summary_frame(
         populated_rows,
         schema=_STTM_MOS_ALLOCATION_FACT_SUMMARY_SCHEMA,
     )
+
+
+def sttm_mos_allocation_summary_figure(
+    loads: Sequence[GasTableLoad],
+    gas_date_filter: str = STTM_MOS_ALLOCATION_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = STTM_MOS_ALLOCATION_SOURCE_SYSTEM_FILTER_ALL,
+    hub_filter: str = STTM_MOS_ALLOCATION_HUB_FILTER_ALL,
+    facility_filter: str = STTM_MOS_ALLOCATION_FACILITY_FILTER_ALL,
+    *,
+    height: int = 320,
+) -> Figure:
+    """Return a first-viewport STTM MOS/allocation fact chart."""
+    fact_summary = sttm_mos_allocation_fact_summary_frame(
+        loads,
+        gas_date_filter,
+        source_system_filter,
+        hub_filter,
+        facility_filter,
+    )
+    figure = Figure()
+    layout = plotly_theme_defaults(height=height)
+    layout["yaxis"] = {
+        "gridcolor": "#d8e2de",
+        "title": "Rows",
+        "zeroline": False,
+    }
+    if fact_summary.is_empty():
+        figure.update_layout(**layout)
+        return figure
+
+    chart_frame = fact_summary.sort(["rows", "fact"], descending=[True, False])
+    figure.add_trace(
+        Bar(
+            x=chart_frame.get_column("fact").to_list(),
+            y=chart_frame.get_column("rows").to_list(),
+            name="Rows",
+            customdata=[
+                [
+                    row["gas days"],
+                    row["hubs"],
+                    row["facilities"],
+                    row["source reports"],
+                    row["primary measure"],
+                    row["primary value"],
+                    row["latest gas date"],
+                ]
+                for row in chart_frame.to_dicts()
+            ],
+            hovertemplate=(
+                "<b>%{x}</b><br>Rows: %{y:,}"
+                "<br>Gas Days: %{customdata[0]:,}"
+                "<br>Hubs: %{customdata[1]:,}"
+                "<br>Facilities: %{customdata[2]:,}"
+                "<br>Source reports: %{customdata[3]:,}"
+                "<br>Primary measure: %{customdata[4]}"
+                "<br>Primary value: %{customdata[5]}"
+                "<br>Latest Gas Day: %{customdata[6]}<extra></extra>"
+            ),
+        )
+    )
+    figure.update_layout(
+        **layout,
+        title={"text": "STTM MOS and allocation fact coverage", "font": {"size": 16}},
+    )
+    return figure
 
 
 def sttm_mos_stack_summary_frame(
@@ -12614,6 +12910,79 @@ def customer_transfer_daily_frame(
         .head(max(1, preview_rows))
     )
     return daily.select([*list(_CUSTOMER_TRANSFER_DAILY_SCHEMA)])
+
+
+def customer_transfer_activity_figure(
+    load: GasTableLoad | None,
+    gas_date_filter: str = CUSTOMER_TRANSFER_GAS_DATE_FILTER_ALL,
+    market_code_filter: str = CUSTOMER_TRANSFER_MARKET_CODE_FILTER_ALL,
+    source_system_filter: str = CUSTOMER_TRANSFER_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    height: int = 320,
+) -> Figure:
+    """Return a first-viewport customer transfer activity chart."""
+    daily = customer_transfer_daily_frame(
+        load,
+        gas_date_filter,
+        market_code_filter,
+        source_system_filter,
+    )
+    figure = Figure()
+    layout = plotly_theme_defaults(height=height)
+    layout["yaxis"] = {
+        "gridcolor": "#d8e2de",
+        "title": "Transfers",
+        "zeroline": False,
+    }
+    if daily.is_empty():
+        figure.update_layout(**layout)
+        return figure
+
+    chart_frame = (
+        daily.group_by("market code")
+        .agg(
+            pl.col("transfers lodged").sum().alias("transfers lodged"),
+            pl.col("transfers completed").sum().alias("transfers completed"),
+            pl.col("transfers cancelled").sum().alias("transfers cancelled"),
+            pl.col("internal transfers lodged")
+            .sum()
+            .alias("internal transfers lodged"),
+            pl.col("greenfields received").sum().alias("greenfields received"),
+            pl.col("rows").sum().alias("rows"),
+        )
+        .sort(["transfers lodged", "market code"], descending=[True, False])
+        .head(16)
+    )
+    measures = (
+        ("Transfers lodged", "transfers lodged"),
+        ("Transfers completed", "transfers completed"),
+        ("Transfers cancelled", "transfers cancelled"),
+        ("Internal transfers lodged", "internal transfers lodged"),
+        ("Greenfields received", "greenfields received"),
+    )
+    for label, column in measures:
+        figure.add_trace(
+            Bar(
+                x=chart_frame.get_column("market code").to_list(),
+                y=chart_frame.get_column(column).to_list(),
+                name=label,
+                customdata=[
+                    [row["market code"], row["rows"]]
+                    for row in chart_frame.select("market code", "rows").to_dicts()
+                ],
+                hovertemplate=(
+                    "<b>%{x}</b><br>"
+                    f"{label}: "
+                    "%{y:,}<br>Rows: %{customdata[1]:,}<extra></extra>"
+                ),
+            )
+        )
+    figure.update_layout(
+        **layout,
+        barmode="group",
+        title={"text": "Retail transfer activity by market", "font": {"size": 16}},
+    )
+    return figure
 
 
 def customer_transfer_source_coverage_frame(

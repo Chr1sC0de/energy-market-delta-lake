@@ -20,7 +20,9 @@ def _():
         gas_table_load_status_frame,
         gas_table_load_status_message,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_sttm_capacity_settlement_context_links,
+        render_visual_empty_state_html,
         sttm_capacity_settlement_component_options,
         sttm_capacity_settlement_empty_state_markdown,
         sttm_capacity_settlement_facility_options,
@@ -31,6 +33,7 @@ def _():
         sttm_capacity_settlement_source_coverage_frame,
         sttm_capacity_settlement_stage_options,
         sttm_capacity_settlement_summary_frame,
+        sttm_capacity_settlement_summary_figure,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
 
@@ -48,7 +51,9 @@ def _():
         pl,
         refresh_token_from_control,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_sttm_capacity_settlement_context_links,
+        render_visual_empty_state_html,
         sttm_capacity_settlement_component_options,
         sttm_capacity_settlement_empty_state_markdown,
         sttm_capacity_settlement_facility_options,
@@ -59,6 +64,7 @@ def _():
         sttm_capacity_settlement_source_coverage_frame,
         sttm_capacity_settlement_stage_options,
         sttm_capacity_settlement_summary_frame,
+        sttm_capacity_settlement_summary_figure,
     )
 
 
@@ -261,10 +267,13 @@ def _(
     gas_date_filter,
     hub_filter,
     mo,
+    render_kpi_cards_html,
+    render_visual_empty_state_html,
     settlement_stage_filter,
     sttm_capacity_settlement_empty_state_markdown,
     sttm_capacity_settlement_kpi_frame,
     sttm_capacity_settlement_load,
+    sttm_capacity_settlement_summary_figure,
 ):
     kpis = sttm_capacity_settlement_kpi_frame(
         sttm_capacity_settlement_load,
@@ -278,13 +287,35 @@ def _(
         kpi_view = mo.md(
             sttm_capacity_settlement_empty_state_markdown(sttm_capacity_settlement_load)
         )
+        settlement_visual = mo.Html(
+            render_visual_empty_state_html(
+                title="No STTM capacity settlement to chart",
+                detail=(
+                    "The current filters do not match loaded bounded STTM "
+                    "capacity settlement rows."
+                ),
+            )
+        )
     else:
-        kpi_view = mo.ui.table(kpis, selection=None)
+        kpi_view = mo.Html(
+            render_kpi_cards_html(kpis, title="STTM capacity settlement health KPIs")
+        )
+        settlement_visual = mo.ui.plotly(
+            sttm_capacity_settlement_summary_figure(
+                sttm_capacity_settlement_load,
+                gas_date_filter.value,
+                settlement_stage_filter.value,
+                capacity_component_filter.value,
+                hub_filter.value,
+                facility_filter.value,
+            )
+        )
 
     mo.vstack(
         [
             mo.md("## STTM Capacity Settlement Summary"),
             kpi_view,
+            settlement_visual,
         ]
     )
     return
