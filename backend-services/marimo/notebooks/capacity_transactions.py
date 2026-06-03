@@ -18,6 +18,7 @@ def _():
         CAPACITY_TRANSACTION_TABLE_NAME,
         CAPACITY_TRANSACTION_TYPE_FILTER_ALL,
         cached_load_capacity_transaction_table,
+        capacity_transaction_activity_figure,
         capacity_transaction_date_options,
         capacity_transaction_empty_state_markdown,
         capacity_transaction_facility_options,
@@ -31,6 +32,8 @@ def _():
         discover_dashboard_config,
         gas_table_load_status_frame,
         gas_table_load_status_message,
+        render_kpi_cards_html,
+        render_visual_empty_state_html,
         render_capacity_transaction_context_links,
         render_dashboard_context_panel,
     )
@@ -45,6 +48,7 @@ def _():
         CAPACITY_TRANSACTION_TABLE_NAME,
         CAPACITY_TRANSACTION_TYPE_FILTER_ALL,
         cached_load_capacity_transaction_table,
+        capacity_transaction_activity_figure,
         capacity_transaction_date_options,
         capacity_transaction_empty_state_markdown,
         capacity_transaction_facility_options,
@@ -61,6 +65,8 @@ def _():
         mo,
         pl,
         refresh_token_from_control,
+        render_kpi_cards_html,
+        render_visual_empty_state_html,
         render_capacity_transaction_context_links,
         render_dashboard_context_panel,
     )
@@ -287,11 +293,14 @@ def _(
 @app.cell
 def _(
     capacity_transaction_empty_state_markdown,
+    capacity_transaction_activity_figure,
     capacity_transaction_kpi_frame,
     capacity_transaction_load,
     facility_filter,
     location_filter,
     mo,
+    render_kpi_cards_html,
+    render_visual_empty_state_html,
     source_system_filter,
     transaction_date_filter,
     transaction_type_filter,
@@ -308,13 +317,35 @@ def _(
         kpi_view = mo.md(
             capacity_transaction_empty_state_markdown(capacity_transaction_load)
         )
+        transaction_visual = mo.Html(
+            render_visual_empty_state_html(
+                title="No transaction activity to chart",
+                detail=(
+                    "The current filters do not match loaded bounded capacity "
+                    "transaction rows."
+                ),
+            )
+        )
     else:
-        kpi_view = mo.ui.table(kpis, selection=None)
+        kpi_view = mo.Html(
+            render_kpi_cards_html(kpis, title="Capacity transaction health KPIs")
+        )
+        transaction_visual = mo.ui.plotly(
+            capacity_transaction_activity_figure(
+                capacity_transaction_load,
+                transaction_type_filter.value,
+                transaction_date_filter.value,
+                location_filter.value,
+                facility_filter.value,
+                source_system_filter.value,
+            )
+        )
 
     mo.vstack(
         [
             mo.md("## Capacity Transaction Summary"),
             kpi_view,
+            transaction_visual,
         ]
     )
     return

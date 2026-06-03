@@ -1985,6 +1985,12 @@ issue ratio evidence, a recorded adaptive event, residual work summary, blocker
 update note, split note, or routing hint. Ralph validates those fields as
 metadata and does not apply them as global policy, threshold, drain budget,
 retry budget, or maintained-doc/config changes.
+Mutation entries that update issue text use one of two body shapes. `body` is a
+complete replacement issue body and must preserve the ready issue contract when
+the issue remains `ready-for-agent`. `section_updates` is a bounded partial
+update object for `Blocked by` and `Current context` only; use it for stale
+blocker cleanup or context refresh instead of putting prose instructions in
+`body`. Ralph rejects mutations that include both `body` and `section_updates`.
 
 The read-only analysis report is saved as
 `ready-issue-refresh-analysis.md` in the current `.ralph/runs/issue-.../` or
@@ -2003,13 +2009,24 @@ run code edits, commits, pushes, fetches, merges, rebases, ref updates, or
 **Integration target** updates as part of refresh metadata application. Reruns
 are idempotent: Ralph skips already-current body text, already-applied label
 transitions, duplicate refresh comments, and already-closed completed issues.
-If analysis or metadata mutation fails after a successful **Local integration**
-or Exploratory handoff, Ralph stops the drain before scheduling further issue
-attempts. Already active Exploratory workers are allowed to finish. Ralph does
-not roll back the pushed **Integration target** commit or revert the
-already-completed issue metadata; operators inspect the manifest mutation
-results and reconcile only the failed GitHub Issue metadata before rerunning the
-drain.
+If a candidate mutation would corrupt a still-valid `ready-for-agent` issue,
+Ralph skips that candidate mutation and records `skipped_invalid_plan`. If the
+candidate has only closed blockers in `## Blocked by`, Ralph may normalize that
+section with `auto_normalized_closed_blockers`. If a live `ready-for-agent`
+issue is genuinely malformed, Ralph removes `ready-for-agent`, adds
+`needs-triage`, posts audit evidence, and records
+`quarantined_needs_triage`. These AFK salvage paths record
+`ready_issue_refresh.status: completed_with_warnings` and allow the drain to
+continue because the queue is no longer unsafe for the next claim. Auth,
+network, malformed JSON, missing mutation JSON, or GitHub write failures remain
+fatal for implementation refresh.
+If analysis or non-salvageable metadata mutation fails after a successful
+**Local integration** or Exploratory handoff, Ralph stops the drain before
+scheduling further issue attempts. Already active Exploratory workers are
+allowed to finish. Ralph does not roll back the pushed **Integration target**
+commit or revert the already-completed issue metadata; operators inspect the
+manifest mutation results and reconcile only the failed GitHub Issue metadata
+before rerunning the drain.
 In live `--drain` mode, the scheduler treats the refresh as a claim gate. New
 claims stay paused while read-only analysis, metadata mutation, or queued
 parallel refresh passes are running. A successful refresh reopens the scheduler
@@ -2020,9 +2037,9 @@ The checkpointed Operator path uses this same claim gate during its ready-work
 drain pass. It does not write `before_promotion` or start **Promotion** until
 the scheduler returns with no active Exploratory workers and no pending
 implementation refresh gate.
-Malformed or missing mutation JSON for selected candidates is a mutation failure:
-Ralph records `ready_issue_refresh.status: failed` and stops before scheduling
-further issue attempts.
+Malformed or missing mutation JSON for selected candidates is a mutation
+failure: Ralph records `ready_issue_refresh.status: failed` and stops before
+scheduling further issue attempts.
 If post-Promotion analysis or metadata mutation fails, Ralph records
 `ready_issue_refresh.status: failed_warning_only`, keeps **Promotion**
 succeeded, and continues cleanup. Operators inspect the Promotion manifest and

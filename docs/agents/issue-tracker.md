@@ -297,16 +297,21 @@ Ralph's outer loop applies validated refresh comments, body edits, label
 transitions, and completed closures with GitHub Issue metadata commands only.
 When candidates were selected, the analysis must include a parseable fenced
 `json` plan with `ready_issue_refresh_mutations`; candidates with no metadata
-update use an explicit `no_change` entry. Reports with no selected candidates
-may omit mutation JSON. The run manifest records per-candidate mutation status
-and recovery guidance for partial failures. Malformed or missing mutation JSON
-for selected implementation candidates stops the drain before scheduling further
-issue attempts. In parallel drains, the scheduler pauses new claims while
-implementation **Ready issue refresh** analysis or metadata mutation runs,
-allows already active Exploratory workers to finish, and records
-`drain_scheduler.fatal_stop` recovery evidence in child run manifests for fatal
-refresh, post-push metadata, or environment failures. Post-Promotion refresh
-failures are warning-only after successful **Promotion**.
+update use an explicit `no_change` entry. `body` mutations are complete issue
+body replacements; bounded `section_updates` may refresh only `Blocked by` and
+`Current context`. Reports with no selected candidates may omit mutation JSON.
+The run manifest records per-candidate mutation status and recovery guidance
+for partial failures. Ralph may keep draining after candidate-level AFK salvage
+statuses such as `auto_normalized_closed_blockers`, `skipped_invalid_plan`, or
+`quarantined_needs_triage` because the affected issue is no longer unsafe for a
+new claim. Malformed or missing mutation JSON, auth failures, network failures,
+or GitHub write failures for selected implementation candidates still stop the
+drain before scheduling further issue attempts. In parallel drains, the
+scheduler pauses new claims while implementation **Ready issue refresh**
+analysis or metadata mutation runs, allows already active Exploratory workers
+to finish, and records `drain_scheduler.fatal_stop` recovery evidence in child
+run manifests for fatal refresh, post-push metadata, or environment failures.
+Post-Promotion refresh failures are warning-only after successful **Promotion**.
 
 Use [ralph-loop.md](ralph-loop.md) for Ralph internals, including
 **Delivery mode**, **Local integration**, **Integration target**, **Promotion**,

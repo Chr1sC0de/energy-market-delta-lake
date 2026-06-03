@@ -17,8 +17,11 @@ def _():
         discover_dashboard_config,
         gas_table_load_status_frame,
         gas_table_load_status_message,
+        render_bounded_data_note_html,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_scheduled_quantity_context_links,
+        render_visual_empty_state_html,
         scheduled_quantity_empty_state_markdown,
         scheduled_quantity_gas_date_options,
         scheduled_quantity_kpi_frame,
@@ -28,6 +31,7 @@ def _():
         scheduled_quantity_source_coverage_frame,
         scheduled_quantity_source_point_frame,
         scheduled_quantity_source_system_options,
+        scheduled_quantity_summary_figure,
         scheduled_quantity_type_summary_frame,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
@@ -43,8 +47,11 @@ def _():
         mo,
         pl,
         refresh_token_from_control,
+        render_bounded_data_note_html,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_scheduled_quantity_context_links,
+        render_visual_empty_state_html,
         scheduled_quantity_empty_state_markdown,
         scheduled_quantity_gas_date_options,
         scheduled_quantity_kpi_frame,
@@ -54,6 +61,7 @@ def _():
         scheduled_quantity_source_coverage_frame,
         scheduled_quantity_source_point_frame,
         scheduled_quantity_source_system_options,
+        scheduled_quantity_summary_figure,
         scheduled_quantity_type_summary_frame,
     )
 
@@ -220,9 +228,13 @@ def _(
 def _(
     gas_date_filter,
     mo,
+    render_bounded_data_note_html,
+    render_kpi_cards_html,
+    render_visual_empty_state_html,
     scheduled_quantity_empty_state_markdown,
     scheduled_quantity_kpi_frame,
     scheduled_quantity_load,
+    scheduled_quantity_summary_figure,
     schedule_type_filter,
     source_system_filter,
 ):
@@ -232,17 +244,63 @@ def _(
         source_system_filter.value,
         schedule_type_filter.value,
     )
-    if kpis.is_empty():
-        kpi_view = mo.md(
-            scheduled_quantity_empty_state_markdown(scheduled_quantity_load)
+    quantity_figure = scheduled_quantity_summary_figure(
+        scheduled_quantity_load,
+        gas_date_filter.value,
+        source_system_filter.value,
+        schedule_type_filter.value,
+        height=300,
+    )
+    quantity_has_data = len(quantity_figure.data) > 0
+    if kpis.is_empty() and not quantity_has_data:
+        quantity_health_visual = mo.Html(
+            render_visual_empty_state_html(
+                title="No scheduled quantity summary",
+                detail=(
+                    "No loaded scheduled quantity rows match the current read "
+                    "and filters; drilldown empty-state detail remains below."
+                ),
+                action="Refresh data or widen the current filters.",
+                compact=True,
+            )
         )
     else:
-        kpi_view = mo.ui.table(kpis, selection=None)
+        if kpis.is_empty():
+            kpi_view = mo.md(
+                scheduled_quantity_empty_state_markdown(scheduled_quantity_load)
+            )
+        else:
+            kpi_view = mo.Html(
+                render_kpi_cards_html(kpis, title="Scheduled quantity health KPIs")
+            )
+        quantity_view = (
+            mo.ui.plotly(quantity_figure)
+            if quantity_has_data
+            else mo.Html(
+                render_visual_empty_state_html(
+                    title="No quantity chart",
+                    detail="The bounded read and filters do not contain scheduled quantity type summaries.",
+                    action="Refresh data or widen the current filters.",
+                    compact=True,
+                )
+            )
+        )
+        quantity_health_visual = mo.vstack([kpi_view, quantity_view])
 
     mo.vstack(
         [
             mo.md("## Scheduled Quantity Health"),
-            kpi_view,
+            quantity_health_visual,
+            mo.Html(
+                render_bounded_data_note_html(
+                    title="Visuals use the loaded bounded rows",
+                    detail=(
+                        "KPI cards and the quantity chart respect the current "
+                        "filters, refresh state, cache state, and bounded read "
+                        "policy shown above."
+                    ),
+                )
+            ),
         ]
     )
     return

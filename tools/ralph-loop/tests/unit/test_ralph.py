@@ -5321,6 +5321,76 @@ Build it.
         )
         self.assertNotIn("unsupported_queue_note", mutation.adaptive_metadata)
 
+    def test_ready_issue_refresh_mutation_parser_accepts_section_updates(
+        self,
+    ) -> None:
+        candidate = make_issue(
+            {"ready-for-agent"},
+            implementation_body_with_blockers(42),
+            number=43,
+        )
+        markdown = """# Ready Issue Refresh Analysis
+
+## Candidate Issue Mutation Plan
+
+```json
+{
+  "ready_issue_refresh_mutations": [
+    {
+      "issue_number": 43,
+      "action": "update",
+      "section_updates": {
+        "Blocked by": "None - previous blocker closed: #42.",
+        "Current context": "Blocker #42 was integrated."
+      }
+    }
+  ]
+}
+```
+"""
+
+        mutations = ralph.ready_issue_refresh_mutations_from_markdown(
+            markdown,
+            candidates=[candidate],
+        )
+
+        self.assertEqual(len(mutations), 1)
+        self.assertEqual(
+            mutations[0].section_updates,
+            (
+                ("Blocked by", "None - previous blocker closed: #42."),
+                ("Current context", "Blocker #42 was integrated."),
+            ),
+        )
+
+    def test_ready_issue_refresh_mutation_parser_rejects_body_with_section_updates(
+        self,
+    ) -> None:
+        candidate = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY, number=43)
+        markdown = """# Ready Issue Refresh Analysis
+
+## Candidate Issue Mutation Plan
+
+```json
+{
+  "ready_issue_refresh_mutations": [
+    {
+      "issue_number": 43,
+      "action": "update",
+      "body": "## What to build\\nBuild it.",
+      "section_updates": {"Blocked by": "None"}
+    }
+  ]
+}
+```
+"""
+
+        with self.assertRaisesRegex(ValueError, "both body and section_updates"):
+            ralph.ready_issue_refresh_mutations_from_markdown(
+                markdown,
+                candidates=[candidate],
+            )
+
     def test_ready_issue_refresh_mutation_parser_rejects_global_threshold_fields(
         self,
     ) -> None:
@@ -15871,6 +15941,95 @@ Build it.
         mutation = payload["ready_issue_refresh"]["mutation_results"][0]
         self.assertEqual(mutation["operations"]["body"], "updated")
 
+    def test_ready_issue_refresh_section_update_preserves_ready_contract(self) -> None:
+        candidate_view_command = (
+            "gh",
+            "issue",
+            "view",
+            "43",
+            "-R",
+            "example/repo",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        candidate_body = implementation_body_with_blockers(42)
+        mutation_markdown = """# Ready Issue Refresh Analysis
+
+## Candidate Issue Mutation Plan
+
+```json
+{
+  "ready_issue_refresh_mutations": [
+    {
+      "issue_number": 43,
+      "action": "update",
+      "section_updates": {
+        "Blocked by": "None - previous blocker closed: #42."
+      }
+    }
+  ]
+}
+```
+"""
+        runner = FakeRunner(
+            command_outputs={
+                candidate_view_command: [
+                    json.dumps(
+                        issue_payload(
+                            43,
+                            ["ready-for-agent"],
+                            body=candidate_body,
+                        )
+                    )
+                ]
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY),
+                delivery_plan=ralph.DeliveryPlan(
+                    mode=ralph.TRUNK_MODE,
+                    target_branch="main",
+                    label=ralph.DELIVERY_TRUNK_LABEL,
+                    add_labels=(),
+                    remove_labels=(),
+                ),
+                branch="agent/issue-42-implement-thing",
+                worktree_path=tmp_path / "worktrees" / "issue",
+                integration_path=tmp_path / "worktrees" / "integration",
+                config=loop.config,
+            )
+
+            with redirect_stdout(io.StringIO()):
+                completed_with_warnings = loop._apply_ready_issue_refresh_mutations(
+                    analysis_markdown=mutation_markdown,
+                    candidates=[
+                        make_issue(
+                            {"ready-for-agent"},
+                            candidate_body,
+                            number=43,
+                        )
+                    ],
+                    run_dir=run_dir,
+                    manifest=manifest,
+                )
+
+            body = (run_dir / "issue-43-body.md").read_text(encoding="utf-8")
+            payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        self.assertFalse(completed_with_warnings)
+        self.assertIn("## What to build", body)
+        self.assertIn("## Acceptance criteria", body)
+        self.assertIn("## Blocked by\nNone - previous blocker closed: #42.", body)
+        mutation = payload["ready_issue_refresh"]["mutation_results"][0]
+        self.assertEqual(mutation["status"], "completed")
+        self.assertEqual(mutation["operations"]["body"], "updated")
+        self.assertEqual(mutation["operations"]["section_updates"], ["Blocked by"])
+
     def test_ready_issue_refresh_mutation_rerun_is_idempotent(self) -> None:
         candidate_view_command = (
             "gh",
@@ -15951,6 +16110,213 @@ Build it.
         mutation = payload["ready_issue_refresh"]["mutation_results"][0]
         self.assertEqual(mutation["operations"]["labels"], "unchanged")
         self.assertEqual(mutation["operations"]["comment"], "already_present")
+
+    def test_ready_issue_refresh_partial_body_plan_auto_normalizes_closed_blockers(
+        self,
+    ) -> None:
+        issue_list_command = (
+            "gh",
+            "issue",
+            "list",
+            "-R",
+            "example/repo",
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        candidate_view_command = (
+            "gh",
+            "issue",
+            "view",
+            "43",
+            "-R",
+            "example/repo",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        blocker_state_command = (
+            "gh",
+            "issue",
+            "view",
+            "333",
+            "-R",
+            "example/repo",
+            "--json",
+            "state",
+        )
+        candidate_body = implementation_body_with_blockers(333)
+        partial_body_markdown = """# Ready Issue Refresh Analysis
+
+## Candidate Issue Mutation Plan
+
+```json
+{
+  "ready_issue_refresh_mutations": [
+    {
+      "issue_number": 43,
+      "action": "update",
+      "comment": "Blocker #333 is closed; keep this issue ready.",
+      "body": "Update only the `## Blocked by` section from `- #333` to `None - blocker #333 is closed.`"
+    }
+  ]
+}
+```
+"""
+        runner = FakeRunner(
+            status_outputs=[" M scripts/ralph.py\n", " M scripts/ralph.py\n"],
+            diff_outputs=["scripts/ralph.py\n", "scripts/ralph.py\n"],
+            rev_parse_outputs=[
+                "base-sha\n",
+                "base-sha\n",
+                "merge-sha\n",
+                "base-sha\n",
+                "base-sha\n",
+                "merge-sha-2\n",
+            ],
+            ready_issue_refresh_analysis_markdown=partial_body_markdown,
+            command_outputs={
+                issue_list_command: [
+                    json.dumps(
+                        [
+                            issue_payload(
+                                43,
+                                ["ready-for-agent"],
+                                body=candidate_body,
+                            )
+                        ]
+                    ),
+                    json.dumps([]),
+                ],
+                candidate_view_command: [
+                    json.dumps(
+                        issue_payload(
+                            43,
+                            ["ready-for-agent"],
+                            body=candidate_body,
+                        )
+                    )
+                ],
+                blocker_state_command: [
+                    json.dumps({"state": "CLOSED"}),
+                    json.dumps({"state": "CLOSED"}),
+                ],
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            base_loop = make_loop(tmp_path, runner, drain=True)
+            loop = TwoReadyIssueLoop(base_loop.config, runner)
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                loop.run()
+
+            manifest = load_run_manifest(tmp_path)
+            body = next(tmp_path.glob("logs/issue-42-*/issue-43-body.md")).read_text(
+                encoding="utf-8"
+            )
+
+        self.assertEqual(loop.ready_calls, 3)
+        self.assertEqual(manifest["status"], "succeeded")
+        self.assertEqual(
+            manifest["ready_issue_refresh"]["status"],
+            "completed_with_warnings",
+        )
+        mutation = manifest["ready_issue_refresh"]["mutation_results"][0]
+        self.assertEqual(mutation["status"], "auto_normalized_closed_blockers")
+        self.assertEqual(mutation["operations"]["section_updates"], ["Blocked by"])
+        self.assertIn("## What to build", body)
+        self.assertIn("## Acceptance criteria", body)
+        self.assertIn("## Blocked by\nNone - previous blocker closed: #333.", body)
+
+    def test_ready_issue_refresh_malformed_live_ready_issue_is_quarantined(
+        self,
+    ) -> None:
+        candidate_view_command = (
+            "gh",
+            "issue",
+            "view",
+            "43",
+            "-R",
+            "example/repo",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        malformed_body = "## What to build\nBuild it.\n"
+        runner = FakeRunner(
+            command_outputs={
+                candidate_view_command: [
+                    json.dumps(
+                        issue_payload(
+                            43,
+                            ["ready-for-agent"],
+                            body=malformed_body,
+                        )
+                    )
+                ]
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY),
+                delivery_plan=ralph.DeliveryPlan(
+                    mode=ralph.TRUNK_MODE,
+                    target_branch="main",
+                    label=ralph.DELIVERY_TRUNK_LABEL,
+                    add_labels=(),
+                    remove_labels=(),
+                ),
+                branch="agent/issue-42-implement-thing",
+                worktree_path=tmp_path / "worktrees" / "issue",
+                integration_path=tmp_path / "worktrees" / "integration",
+                config=loop.config,
+            )
+
+            with redirect_stdout(io.StringIO()):
+                completed_with_warnings = loop._apply_ready_issue_refresh_mutations(
+                    analysis_markdown=READY_ISSUE_REFRESH_ANALYSIS_MARKDOWN,
+                    candidates=[
+                        make_issue(
+                            {"ready-for-agent"},
+                            malformed_body,
+                            number=43,
+                        )
+                    ],
+                    run_dir=run_dir,
+                    manifest=manifest,
+                )
+
+            comment = (run_dir / "issue-43-comment.md").read_text(encoding="utf-8")
+            payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        commands = [call.args for call in runner.calls]
+        self.assertTrue(completed_with_warnings)
+        self.assertTrue(comment.startswith(ralph.AI_READY_ISSUE_REFRESH_DISCLAIMER))
+        self.assertIn("missing required section", comment)
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "43",
+                "-R",
+                "example/repo",
+                "--add-label",
+                "needs-triage",
+                "--remove-label",
+                "ready-for-agent",
+            ),
+            commands,
+        )
+        mutation = payload["ready_issue_refresh"]["mutation_results"][0]
+        self.assertEqual(mutation["status"], "quarantined_needs_triage")
+        self.assertEqual(mutation["action"], "needs_triage")
 
     def test_ready_issue_refresh_malformed_mutation_json_fails_and_stops_drain(
         self,

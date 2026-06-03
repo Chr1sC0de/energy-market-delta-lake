@@ -22,7 +22,9 @@ def _():
         operational_meter_flow_summary_frame,
         operational_meter_flow_table_specs,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_operational_meter_flow_context_links,
+        render_relationship_gap_status_html,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
 
@@ -42,7 +44,9 @@ def _():
         pl,
         refresh_token_from_control,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_operational_meter_flow_context_links,
+        render_relationship_gap_status_html,
     )
 
 
@@ -131,9 +135,12 @@ def _(
 def _(
     gas_table_load_status_frame,
     gas_table_load_status_message,
+    meter_flow_gaps,
     meter_flow_kpis,
     meter_flow_loads,
     mo,
+    render_kpi_cards_html,
+    render_relationship_gap_status_html,
 ):
     mo.vstack(
         [
@@ -144,7 +151,18 @@ def _(
                 {gas_table_load_status_message(meter_flow_loads)}
                 """
             ),
-            mo.ui.table(meter_flow_kpis, selection=None),
+            mo.Html(
+                render_kpi_cards_html(
+                    meter_flow_kpis,
+                    title="Operational Meter Flow KPIs",
+                )
+            ),
+            mo.Html(
+                render_relationship_gap_status_html(
+                    meter_flow_gaps,
+                    title="Operational Meter Flow relationship coverage",
+                )
+            ),
             mo.accordion(
                 {
                     "Operational Meter Flow read diagnostics": mo.ui.table(

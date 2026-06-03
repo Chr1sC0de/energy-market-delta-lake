@@ -22,6 +22,8 @@ def _():
         gas_table_load_status_message,
         render_dashboard_context_panel,
         render_flow_context_links,
+        render_flow_source_status_html,
+        render_kpi_cards_html,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
 
@@ -41,6 +43,8 @@ def _():
         refresh_token_from_control,
         render_dashboard_context_panel,
         render_flow_context_links,
+        render_flow_source_status_html,
+        render_kpi_cards_html,
     )
 
 
@@ -122,9 +126,12 @@ def _(
 def _(
     flow_kpis,
     flow_loads,
+    flow_sources,
     gas_table_load_status_frame,
     gas_table_load_status_message,
     mo,
+    render_flow_source_status_html,
+    render_kpi_cards_html,
 ):
     mo.vstack(
         [
@@ -135,7 +142,8 @@ def _(
                 {gas_table_load_status_message(flow_loads)}
                 """
             ),
-            mo.ui.table(flow_kpis, selection=None),
+            mo.Html(render_kpi_cards_html(flow_kpis, title="Flow operations KPIs")),
+            mo.Html(render_flow_source_status_html(flow_sources)),
             mo.accordion(
                 {
                     "Flow read diagnostics": mo.ui.table(

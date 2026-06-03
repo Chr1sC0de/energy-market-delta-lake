@@ -23,6 +23,7 @@ def _():
         gas_table_load_status_frame,
         gas_table_load_status_message,
         nomination_forecast_daily_frame,
+        nomination_forecast_daily_figure,
         nomination_forecast_empty_state_markdown,
         nomination_forecast_facility_options,
         nomination_forecast_gas_date_options,
@@ -32,8 +33,11 @@ def _():
         nomination_forecast_source_coverage_frame,
         nomination_forecast_source_system_options,
         nomination_forecast_summary_frame,
+        render_bounded_data_note_html,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_nomination_forecast_context_links,
+        render_visual_empty_state_html,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
 
@@ -51,6 +55,7 @@ def _():
         gas_table_load_status_message,
         mo,
         nomination_forecast_daily_frame,
+        nomination_forecast_daily_figure,
         nomination_forecast_empty_state_markdown,
         nomination_forecast_facility_options,
         nomination_forecast_gas_date_options,
@@ -62,8 +67,11 @@ def _():
         nomination_forecast_summary_frame,
         pl,
         refresh_token_from_control,
+        render_bounded_data_note_html,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_nomination_forecast_context_links,
+        render_visual_empty_state_html,
     )
 
 
@@ -221,9 +229,13 @@ def _(
     gas_date_filter,
     location_filter,
     mo,
+    nomination_forecast_daily_figure,
     nomination_forecast_empty_state_markdown,
     nomination_forecast_kpi_frame,
     nomination_forecast_load,
+    render_bounded_data_note_html,
+    render_kpi_cards_html,
+    render_visual_empty_state_html,
     source_system_filter,
 ):
     kpis = nomination_forecast_kpi_frame(
@@ -234,12 +246,50 @@ def _(
         location_filter.value,
         as_of_date=forecast_reference_date,
     )
-    if kpis.is_empty():
-        kpi_view = mo.md(
-            nomination_forecast_empty_state_markdown(nomination_forecast_load)
+    daily_figure = nomination_forecast_daily_figure(
+        nomination_forecast_load,
+        gas_date_filter.value,
+        source_system_filter.value,
+        facility_filter.value,
+        location_filter.value,
+        as_of_date=forecast_reference_date,
+        height=320,
+    )
+    daily_has_data = len(daily_figure.data) > 0
+    if kpis.is_empty() and not daily_has_data:
+        forecast_health_visual = mo.Html(
+            render_visual_empty_state_html(
+                title="No forecast health or daily forecast trend",
+                detail=(
+                    "No loaded nomination forecast rows match the current read "
+                    "and filters; drilldown empty-state detail remains below."
+                ),
+                action="Refresh data or widen the current filters.",
+                compact=True,
+            )
         )
     else:
-        kpi_view = mo.ui.table(kpis, selection=None)
+        if kpis.is_empty():
+            kpi_view = mo.md(
+                nomination_forecast_empty_state_markdown(nomination_forecast_load)
+            )
+        else:
+            kpi_view = mo.Html(
+                render_kpi_cards_html(kpis, title="Forecast health KPIs")
+            )
+        trend_view = (
+            mo.ui.plotly(daily_figure)
+            if daily_has_data
+            else mo.Html(
+                render_visual_empty_state_html(
+                    title="No daily forecast trend",
+                    detail="The bounded read and filters do not contain plotted forecast measures.",
+                    action="Refresh data or widen the current filters.",
+                    compact=True,
+                )
+            )
+        )
+        forecast_health_visual = mo.vstack([kpi_view, trend_view])
 
     mo.vstack(
         [
@@ -250,7 +300,17 @@ def _(
             captured when the dashboard loaded. Historical actuals are outside
             this forecast-only fact and are not mixed into these summaries.
             """),
-            kpi_view,
+            forecast_health_visual,
+            mo.Html(
+                render_bounded_data_note_html(
+                    title="Visuals use the loaded bounded rows",
+                    detail=(
+                        "KPI cards and the daily forecast trend respect the "
+                        "current filters, reference date, refresh state, cache "
+                        "state, and bounded read policy shown above."
+                    ),
+                )
+            ),
         ]
     )
     return

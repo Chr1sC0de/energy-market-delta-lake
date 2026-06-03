@@ -30,6 +30,8 @@ def _():
         gas_table_load_status_message,
         render_dashboard_context_panel,
         render_facility_flow_storage_context_links,
+        render_facility_flow_storage_status_html,
+        render_kpi_cards_html,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
 
@@ -57,6 +59,8 @@ def _():
         refresh_token_from_control,
         render_dashboard_context_panel,
         render_facility_flow_storage_context_links,
+        render_facility_flow_storage_status_html,
+        render_kpi_cards_html,
     )
 
 
@@ -192,14 +196,23 @@ def _(
 @app.cell
 def _(
     facility_filter,
+    facility_flow_storage_daily_frame,
     facility_flow_storage_empty_state_markdown,
     facility_flow_storage_kpi_frame,
     facility_flow_storage_load,
     gas_date_filter,
     mo,
+    render_facility_flow_storage_status_html,
+    render_kpi_cards_html,
     source_system_filter,
 ):
     kpis = facility_flow_storage_kpi_frame(
+        facility_flow_storage_load,
+        gas_date_filter.value,
+        facility_filter.value,
+        source_system_filter.value,
+    )
+    first_view_daily = facility_flow_storage_daily_frame(
         facility_flow_storage_load,
         gas_date_filter.value,
         facility_filter.value,
@@ -210,12 +223,25 @@ def _(
             facility_flow_storage_empty_state_markdown(facility_flow_storage_load)
         )
     else:
-        kpi_view = mo.ui.table(kpis, selection=None)
+        kpi_view = mo.Html(
+            render_kpi_cards_html(
+                kpis,
+                title="Facility Flow And Storage KPIs",
+            )
+        )
+
+    first_view_summary = mo.Html(
+        render_facility_flow_storage_status_html(
+            first_view_daily,
+            title="Facility flow and storage Gas Day totals",
+        )
+    )
 
     mo.vstack(
         [
             mo.md("## Facility Flow And Storage Health"),
             kpi_view,
+            first_view_summary,
         ]
     )
     return

@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
-from typing import Any, Self, cast
+from typing import Any, Protocol, Self, cast
 
 import polars as pl
 import pytest
@@ -230,6 +230,7 @@ from marimoserver.gas_dashboard import (
     capacity_auction_capacity_period_options,
     capacity_auction_empty_state_markdown,
     capacity_auction_kpi_frame,
+    capacity_auction_metric_figure,
     capacity_auction_metric_frame,
     capacity_auction_metric_options,
     capacity_auction_observation_frame,
@@ -237,6 +238,7 @@ from marimoserver.gas_dashboard import (
     capacity_auction_summary_frame,
     capacity_auction_zone_options,
     capacity_transaction_date_options,
+    capacity_transaction_activity_figure,
     capacity_transaction_empty_state_markdown,
     capacity_transaction_facility_options,
     capacity_transaction_kpi_frame,
@@ -256,6 +258,7 @@ from marimoserver.gas_dashboard import (
     capacity_outlook_source_coverage_frame,
     capacity_outlook_source_coverage_options,
     capacity_outlook_source_system_options,
+    capacity_outlook_summary_figure,
     capacity_outlook_summary_frame,
     connection_point_context_empty_state_markdown,
     connection_point_dimension_coverage_frame,
@@ -279,6 +282,7 @@ from marimoserver.gas_dashboard import (
     facility_relationship_frame,
     facility_table_specs,
     forecast_actual_bounded_scope_markdown,
+    forecast_actual_comparison_figure,
     forecast_actual_comparison_frame,
     forecast_actual_empty_state_markdown,
     forecast_actual_facility_options,
@@ -363,6 +367,7 @@ from marimoserver.gas_dashboard import (
     market_price_trend_frame,
     market_price_type_summary_frame,
     linepack_adequacy_flag_options,
+    linepack_adequacy_trend_figure,
     linepack_empty_state_markdown,
     linepack_facility_options,
     linepack_gas_date_options,
@@ -373,6 +378,7 @@ from marimoserver.gas_dashboard import (
     linepack_summary_frame,
     linepack_zone_options,
     nomination_forecast_daily_frame,
+    nomination_forecast_daily_figure,
     nomination_forecast_empty_state_markdown,
     nomination_forecast_facility_options,
     nomination_forecast_gas_date_options,
@@ -417,14 +423,17 @@ from marimoserver.gas_dashboard import (
     render_nomination_forecast_context_links,
     render_facility_context_links,
     render_facility_flow_storage_context_links,
+    render_facility_flow_storage_status_html,
     render_forecast_actual_context_links,
     render_flow_context_links,
+    render_flow_source_status_html,
     render_heating_value_pressure_context_links,
     render_hub_zone_context_links,
     render_linepack_context_links,
     render_operational_meter_flow_context_links,
     render_participant_context_links,
     render_pipeline_connection_operations_context_links,
+    render_relationship_gap_status_html,
     render_schedule_run_context_links,
     render_scheduled_quantity_context_links,
     render_settlement_activity_context_links,
@@ -439,6 +448,7 @@ from marimoserver.gas_dashboard import (
     schedule_run_kpi_frame,
     schedule_run_observation_frame,
     schedule_run_schedule_type_options,
+    schedule_run_status_figure,
     schedule_run_source_coverage_frame,
     schedule_run_source_system_options,
     schedule_run_timestamp_summary_frame,
@@ -452,6 +462,7 @@ from marimoserver.gas_dashboard import (
     scheduled_quantity_source_coverage_frame,
     scheduled_quantity_source_point_frame,
     scheduled_quantity_source_system_options,
+    scheduled_quantity_summary_figure,
     scheduled_quantity_type_summary_frame,
     settlement_activity_activity_type_options,
     settlement_activity_empty_state_markdown,
@@ -551,6 +562,19 @@ from marimoserver.table_explorer import (
     TableFormat,
     TablePrefix,
 )
+
+
+class _PlotlyFigure(Protocol):
+    def to_plotly_json(self) -> dict[str, Any]: ...
+
+
+def _figure_data(figure: _PlotlyFigure) -> list[dict[str, Any]]:
+    return cast(list[dict[str, Any]], figure.to_plotly_json()["data"])
+
+
+def _trace_y_total(trace: Mapping[str, Any]) -> float:
+    values = cast(list[float | int], trace.get("y", []))
+    return float(sum(values))
 
 
 def _assert_current_source_chunks(entry: DashboardRegistryEntry) -> None:
@@ -1490,6 +1514,101 @@ def test_dashboard_visual_primitives_escape_and_label_bounded_scope() -> None:
     assert theme["paper_bgcolor"] == "rgba(0,0,0,0)"
 
 
+def test_flow_and_relationship_status_visuals_escape_and_render_rows() -> None:
+    source_summary = pl.DataFrame(
+        {
+            "fact": ["Flow <fact>"],
+            "source system": ['GBB<script>alert("x")</script>'],
+            "source table": ["silver.source"],
+            "rows": [4],
+            "measure rows": [3],
+            "latest gas date": [date(2024, 1, 4)],
+            "latest source update": [datetime(2024, 1, 4, 7)],
+            "latest ingest": [datetime(2024, 1, 4, 8)],
+            "detail": ["loaded"],
+        }
+    )
+    relationship_gaps = pl.DataFrame(
+        [
+            {
+                "relationship": "Fact -> Dimension",
+                "source table": "silver.fact",
+                "source rows": 5,
+                "matched rows": 4,
+                "gap rows": 1,
+                "coverage gap": "Missing <dimension>",
+            },
+            {
+                "relationship": "Dimension -> Optional context",
+                "source table": "silver.dimension",
+                "source rows": "not loaded",
+                "matched rows": "4",
+                "gap rows": False,
+                "coverage gap": "Covered",
+            },
+        ],
+        strict=False,
+    )
+
+    source_html = render_flow_source_status_html(source_summary, title="Flow <status>")
+    gap_html = render_relationship_gap_status_html(
+        relationship_gaps,
+        title="Relationship <status>",
+    )
+    empty_source_html = render_flow_source_status_html(source_summary.clear())
+    empty_gap_html = render_relationship_gap_status_html(relationship_gaps.clear())
+
+    assert "<script>" not in source_html
+    assert "Flow &lt;fact&gt;" in source_html
+    assert "GBB&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;" in source_html
+    assert "Flow &lt;status&gt;" in source_html
+    assert "3 measure rows" in source_html
+    assert "Fact -&gt; Dimension" in gap_html
+    assert "Missing &lt;dimension&gt;" in gap_html
+    assert 'data-status="gap"' in gap_html
+    assert 'data-status="covered"' in gap_html
+    assert "1 gap rows" in gap_html
+    assert "dashboard-visual-empty--compact" in empty_source_html
+    assert "dashboard-visual-empty--compact" in empty_gap_html
+
+
+def test_facility_flow_storage_status_visual_renders_measure_bars() -> None:
+    daily_summary = pl.DataFrame(
+        {
+            "gas date": [date(2024, 1, 3)],
+            "rows": [2],
+            "facilities": [2],
+            "source systems": [1],
+            "demand rows": [1],
+            "total demand tj": [12.0],
+            "supply rows": [2],
+            "total supply tj": [14.0],
+            "transfer in rows": [1],
+            "total transfer in tj": [0.0],
+            "transfer out rows": [1],
+            "total transfer out tj": [None],
+            "held storage rows": [1],
+            "total held storage tj": [54.0],
+            "latest source update": [datetime(2024, 1, 3, 7)],
+            "latest ingest": [datetime(2024, 1, 3, 8)],
+        }
+    )
+
+    html = render_facility_flow_storage_status_html(
+        daily_summary,
+        title="Facility <summary>",
+    )
+    empty_html = render_facility_flow_storage_status_html(daily_summary.clear())
+
+    assert "Facility &lt;summary&gt;" in html
+    assert "2024-01-03" in html
+    assert "2 rows | 2 facilities" in html
+    assert "Demand" in html
+    assert "54 TJ" in html
+    assert "dashboard-measure-bar" in html
+    assert "dashboard-visual-empty--compact" in empty_html
+
+
 def test_market_price_bounded_trend_and_exception_helpers_label_scope() -> None:
     sttm_table = "silver.sttm.silver_int651_v1_ex_ante_market_price_rpt_1"
     vicgas_table = "silver.vicgas.silver_int042_v4_weighted_average_daily_prices_1"
@@ -1854,7 +1973,10 @@ def test_schedule_run_summaries_filters_and_context_links() -> None:
     type_summary = schedule_run_type_summary_frame(load)
     timestamp_summary = schedule_run_timestamp_summary_frame(load)
     source_coverage = schedule_run_source_coverage_frame(load)
+    status_figure = schedule_run_status_figure(load)
     context_links = render_schedule_run_context_links()
+    status_figure_data = cast(Any, status_figure.data)
+    status_figure_layout = cast(Any, status_figure.layout)
 
     assert schedule_run_gas_date_options(load) == (
         SCHEDULE_RUN_GAS_DATE_FILTER_ALL,
@@ -1872,6 +1994,9 @@ def test_schedule_run_summaries_filters_and_context_links() -> None:
         "pricing",
         "provisional",
     )
+    assert len(status_figure_data) == 2
+    assert status_figure_layout.title.text == "Schedule run status by type"
+    assert status_figure_layout.barmode == "group"
     assert kpis.to_dict(as_series=False) == {
         "metric": [
             "Loaded schedule runs",
@@ -2010,6 +2135,7 @@ def test_schedule_run_helpers_cover_missing_data_and_filter_empty_state() -> Non
 
     assert schedule_run_kpi_frame(empty_load).is_empty()
     assert schedule_run_type_summary_frame(empty_load).is_empty()
+    assert len(cast(Any, schedule_run_status_figure(empty_load).data)) == 0
     assert schedule_run_timestamp_summary_frame(empty_load).is_empty()
     assert schedule_run_source_coverage_frame(empty_load).is_empty()
     assert schedule_run_observation_frame(empty_load).is_empty()
@@ -2191,6 +2317,7 @@ def test_scheduled_quantity_summaries_filters_and_context_links() -> None:
     )
     kpis = scheduled_quantity_kpi_frame(load)
     type_summary = scheduled_quantity_type_summary_frame(load)
+    quantity_figure = scheduled_quantity_summary_figure(load)
     source_points = scheduled_quantity_source_point_frame(load)
     schedule_context = scheduled_quantity_schedule_context_frame(
         load,
@@ -2200,6 +2327,8 @@ def test_scheduled_quantity_summaries_filters_and_context_links() -> None:
     )
     source_coverage = scheduled_quantity_source_coverage_frame(load)
     context_links = render_scheduled_quantity_context_links()
+    quantity_figure_data = cast(Any, quantity_figure.data)
+    quantity_figure_layout = cast(Any, quantity_figure.layout)
 
     assert scheduled_quantity_gas_date_options(load) == (
         SCHEDULED_QUANTITY_GAS_DATE_FILTER_ALL,
@@ -2217,6 +2346,9 @@ def test_scheduled_quantity_summaries_filters_and_context_links() -> None:
         "pricing",
         "provisional",
     )
+    assert len(quantity_figure_data) == 2
+    assert quantity_figure_layout.title.text == "Scheduled quantity by type"
+    assert quantity_figure_layout.yaxis.title.text == "Total quantity (GJ)"
     assert kpis.to_dict(as_series=False) == {
         "metric": [
             "Loaded scheduled quantity rows",
@@ -2393,6 +2525,7 @@ def test_scheduled_quantity_helpers_cover_missing_data_and_filter_empty_state() 
 
     assert scheduled_quantity_kpi_frame(empty_load).is_empty()
     assert scheduled_quantity_type_summary_frame(empty_load).is_empty()
+    assert len(cast(Any, scheduled_quantity_summary_figure(empty_load).data)) == 0
     assert scheduled_quantity_source_point_frame(empty_load).is_empty()
     assert scheduled_quantity_schedule_context_frame(empty_load).is_empty()
     assert scheduled_quantity_source_coverage_frame(empty_load).is_empty()
@@ -5164,6 +5297,7 @@ def test_capacity_outlook_helpers_summarize_filters_and_source_coverage() -> Non
     source_coverage = capacity_outlook_source_coverage_frame(load)
     summary = capacity_outlook_summary_frame(load)
     observations = capacity_outlook_observation_frame(load, preview_rows=10)
+    figure = capacity_outlook_summary_figure(load)
     kpi_values = {
         row["metric"]: row["value"]
         for row in capacity_outlook_kpi_frame(load).to_dicts()
@@ -5197,6 +5331,9 @@ def test_capacity_outlook_helpers_summarize_filters_and_source_coverage() -> Non
         "GBB",
     )
     assert filtered_kpis.row(0, named=True)["value"] == "2"
+    figure_data = _figure_data(figure)
+    assert len(figure_data) == 3
+    assert sum(_trace_y_total(trace) for trace in figure_data) == 150.0
     assert (
         summary.select(
             "capacity source coverage",
@@ -5247,6 +5384,7 @@ def test_capacity_outlook_helpers_cover_missing_data_and_empty_states() -> None:
     kpis = capacity_outlook_kpi_frame(missing_columns_load)
     coverage = capacity_outlook_source_coverage_frame(missing_columns_load)
     observations = capacity_outlook_observation_frame(missing_columns_load)
+    empty_figure = capacity_outlook_summary_figure(empty_load)
     filtered = capacity_outlook_summary_frame(
         missing_columns_load,
         facility_filter="missing",
@@ -5260,6 +5398,7 @@ def test_capacity_outlook_helpers_cover_missing_data_and_empty_states() -> None:
     assert kpis.row(0, named=True)["value"] == "1"
     assert coverage.row(0, named=True)["capacity source coverage"] == "Nameplate rating"
     assert observations.row(0, named=True)["capacity_quantity_tj"] is None
+    assert _figure_data(empty_figure) == []
     assert filtered.is_empty()
     assert "No capacity outlook data is available" in unavailable_markdown
     assert "FileNotFoundError: no parquet files found" in unavailable_markdown
@@ -5561,6 +5700,7 @@ def test_capacity_auction_helpers_summarize_filters_and_metrics() -> None:
     )
     metric_summary = capacity_auction_metric_frame(load)
     observations = capacity_auction_observation_frame(load, preview_rows=10)
+    figure = capacity_auction_metric_figure(load)
 
     assert kpi_values["Loaded auction rows"] == "4"
     assert kpi_values["Auction IDs"] == "2"
@@ -5589,6 +5729,9 @@ def test_capacity_auction_helpers_summarize_filters_and_metrics() -> None:
         "transfer",
         "zone_reference",
     }
+    figure_data = _figure_data(figure)
+    assert len(figure_data) == 1
+    assert _trace_y_total(figure_data[0]) == 60.0
     assert (
         observations.select(
             "auction id",
@@ -5656,6 +5799,7 @@ def test_capacity_auction_helpers_cover_missing_data_and_empty_states() -> None:
     kpis = capacity_auction_kpi_frame(missing_columns_load)
     summary = capacity_auction_summary_frame(missing_columns_load)
     observations = capacity_auction_observation_frame(missing_columns_load)
+    empty_figure = capacity_auction_metric_figure(empty_load)
     filtered = capacity_auction_metric_frame(
         missing_columns_load,
         zone_filter="missing",
@@ -5675,6 +5819,7 @@ def test_capacity_auction_helpers_cover_missing_data_and_empty_states() -> None:
     assert summary.row(0, named=True)["auction metric"] == "system_capability"
     assert summary.row(0, named=True)["zone"] == "(missing Hub / Zone)"
     assert observations.row(0, named=True)["quantity_gj"] is None
+    assert _figure_data(empty_figure) == []
     assert filtered.is_empty()
     assert capacity_auction_kpi_frame(empty_load).is_empty()
     assert capacity_auction_summary_frame(empty_load).is_empty()
@@ -5867,6 +6012,7 @@ def test_capacity_transaction_helpers_summarize_filters_sources_and_measures() -
     )
     source_coverage = capacity_transaction_source_coverage_frame(load)
     observations = capacity_transaction_observation_frame(load, preview_rows=10)
+    figure = capacity_transaction_activity_figure(load)
 
     assert kpi_values["Loaded transaction rows"] == "4"
     assert kpi_values["Transaction types"] == "4"
@@ -5896,6 +6042,7 @@ def test_capacity_transaction_helpers_summarize_filters_sources_and_measures() -
         lng_shipment_table,
         swap_transaction_table,
     }
+    assert sum(_trace_y_total(trace) for trace in _figure_data(figure)) == 4
     assert (
         observations.select(
             "transaction type",
@@ -5965,6 +6112,7 @@ def test_capacity_transaction_helpers_cover_missing_data_and_empty_states() -> N
     summary = capacity_transaction_summary_frame(missing_columns_load)
     source_coverage = capacity_transaction_source_coverage_frame(missing_columns_load)
     observations = capacity_transaction_observation_frame(missing_columns_load)
+    empty_figure = capacity_transaction_activity_figure(empty_load)
     filtered = capacity_transaction_source_coverage_frame(
         missing_columns_load,
         location_filter="missing",
@@ -5988,6 +6136,7 @@ def test_capacity_transaction_helpers_cover_missing_data_and_empty_states() -> N
         "(empty source_table/source_tables value)"
     )
     assert observations.row(0, named=True)["volume_pj"] is None
+    assert _figure_data(empty_figure) == []
     assert filtered.is_empty()
     assert capacity_transaction_kpi_frame(empty_load).is_empty()
     assert capacity_transaction_summary_frame(empty_load).is_empty()
@@ -6058,6 +6207,7 @@ def test_linepack_helpers_summarize_quantities_adequacy_and_sources() -> None:
     summary = linepack_summary_frame(load)
     source_coverage = linepack_source_coverage_frame(load)
     observations = linepack_observation_frame(load)
+    figure = linepack_adequacy_trend_figure(load)
     filtered_kpis = linepack_kpi_frame(load, adequacy_flag_filter="Red")
     facility_filtered_kpis = linepack_kpi_frame(load, facility_filter="F1")
     zone_filtered_kpis = linepack_kpi_frame(load, zone_filter="zone-2")
@@ -6113,6 +6263,9 @@ def test_linepack_helpers_summarize_quantities_adequacy_and_sources() -> None:
     assert facility_filtered_kpi_values["Loaded linepack rows"] == "2"
     assert zone_filtered_kpi_values["Loaded linepack rows"] == "1"
     assert source_filtered_kpi_values["Loaded linepack rows"] == "1"
+    figure_data = _figure_data(figure)
+    assert len(figure_data) == 3
+    assert sum(_trace_y_total(trace) for trace in figure_data) == 2600.0
     assert summary.select(
         "source system",
         "source table",
@@ -6217,6 +6370,7 @@ def test_linepack_helpers_cover_missing_data_behavior() -> None:
     assert linepack_summary_frame(empty_load).is_empty()
     assert linepack_source_coverage_frame(empty_load).is_empty()
     assert linepack_observation_frame(empty_load).is_empty()
+    assert _figure_data(linepack_adequacy_trend_figure(empty_load)) == []
     assert linepack_gas_date_options(empty_load) == (LINEPACK_GAS_DATE_FILTER_ALL,)
     assert linepack_facility_options(empty_load) == (LINEPACK_FACILITY_FILTER_ALL,)
     assert linepack_zone_options(empty_load) == (LINEPACK_ZONE_FILTER_ALL,)
@@ -6402,6 +6556,7 @@ def test_nomination_forecast_helpers_summarize_filters_and_horizon() -> None:
     kpis = nomination_forecast_kpi_frame(load, as_of_date=as_of_date)
     summary = nomination_forecast_summary_frame(load, as_of_date=as_of_date)
     daily = nomination_forecast_daily_frame(load, as_of_date=as_of_date)
+    daily_figure = nomination_forecast_daily_figure(load, as_of_date=as_of_date)
     source_coverage = nomination_forecast_source_coverage_frame(
         load,
         as_of_date=as_of_date,
@@ -6432,6 +6587,8 @@ def test_nomination_forecast_helpers_summarize_filters_and_horizon() -> None:
     source_kpi_values = {
         row["metric"]: row["value"] for row in source_filtered_kpis.to_dicts()
     }
+    daily_figure_data = cast(Any, daily_figure.data)
+    daily_figure_layout = cast(Any, daily_figure.layout)
 
     assert nomination_forecast_gas_date_options(load) == (
         NOMINATION_FORECAST_GAS_DATE_FILTER_ALL,
@@ -6467,6 +6624,9 @@ def test_nomination_forecast_helpers_summarize_filters_and_horizon() -> None:
     assert kpi_values["Transfer in forecast"] == "250 GJ"
     assert kpi_values["Transfer out forecast"] == "45 GJ"
     assert kpi_values["Override quantity"] == "950 GJ"
+    assert len(daily_figure_data) == 10
+    assert daily_figure_layout.title.text == "Bounded forecast measures by Gas Day"
+    assert daily_figure_layout.yaxis.title.text == "Forecast (GJ)"
     assert facility_kpi_values["Loaded forecast rows"] == "2"
     assert location_kpi_values["Loaded forecast rows"] == "1"
     assert source_kpi_values["Demand forecast"] == "900 GJ"
@@ -6671,6 +6831,7 @@ def test_nomination_forecast_helpers_cover_empty_state_behavior() -> None:
     )
     assert no_measure_values["Demand forecast"] == "unknown"
     assert no_measure_values["Override quantity"] == "unknown"
+    assert len(cast(Any, nomination_forecast_daily_figure(empty_load).data)) == 0
     assert (
         unknown_horizon_observation.row(0, named=True)["forecast horizon"]
         == "Unknown Gas Day forecast"
@@ -6838,10 +6999,16 @@ def test_forecast_actual_helpers_compare_matched_bounded_data() -> None:
         loads,
         as_of_date=date(2024, 1, 4),
     )
+    comparison_figure = forecast_actual_comparison_figure(
+        loads,
+        as_of_date=date(2024, 1, 4),
+    )
     storage = forecast_actual_storage_frame(loads, as_of_date=date(2024, 1, 4))
     kpi_values = {row["metric"]: row["value"] for row in kpis.to_dicts()}
     comparison_row = comparison.row(0, named=True)
     storage_row = storage.row(0, named=True)
+    comparison_figure_data = cast(Any, comparison_figure.data)
+    comparison_figure_layout = cast(Any, comparison_figure.layout)
 
     assert forecast_actual_gas_date_options(loads) == (
         FORECAST_ACTUAL_GAS_DATE_FILTER_ALL,
@@ -6859,6 +7026,11 @@ def test_forecast_actual_helpers_compare_matched_bounded_data() -> None:
     assert kpi_values["Actual rows"] == "1"
     assert kpi_values["Matched facility days"] == "1"
     assert kpi_values["Comparable flow measures"] == "4"
+    assert len(comparison_figure_data) == 2
+    assert comparison_figure_layout.title.text == (
+        "Forecast demand against actual demand"
+    )
+    assert comparison_figure_layout.barmode == "group"
     assert comparison_row["match status"] == "Matched forecast and actual"
     assert comparison_row["forecast rows"] == 2
     assert comparison_row["actual rows"] == 1
@@ -6895,6 +7067,7 @@ def test_forecast_actual_helpers_degrade_with_missing_forecast_data() -> None:
     )
 
     comparison = forecast_actual_comparison_frame(loads)
+    comparison_figure = forecast_actual_comparison_figure(loads)
     storage = forecast_actual_storage_frame(loads)
     kpi_values = {
         row["metric"]: row["value"]
@@ -6904,6 +7077,7 @@ def test_forecast_actual_helpers_degrade_with_missing_forecast_data() -> None:
     assert comparison.row(0, named=True)["match status"] == "Actual only"
     assert comparison.row(0, named=True)["forecast rows"] == 0
     assert comparison.row(0, named=True)["actual demand gj"] == 2000.0
+    assert len(cast(Any, comparison_figure.data)) == 1
     assert storage.row(0, named=True)["forecast coverage"] == (
         "No matching forecast row in bounded view"
     )
@@ -6934,6 +7108,7 @@ def test_forecast_actual_helpers_degrade_with_missing_actual_data() -> None:
     )
 
     comparison = forecast_actual_comparison_frame(loads)
+    comparison_figure = forecast_actual_comparison_figure(loads)
     storage = forecast_actual_storage_frame(loads)
     kpi_values = {
         row["metric"]: row["value"]
@@ -6943,6 +7118,7 @@ def test_forecast_actual_helpers_degrade_with_missing_actual_data() -> None:
     assert comparison.row(0, named=True)["match status"] == "Forecast only"
     assert comparison.row(0, named=True)["forecast demand gj"] == 900.0
     assert comparison.row(0, named=True)["actual demand gj"] is None
+    assert len(cast(Any, comparison_figure.data)) == 1
     assert storage.is_empty()
     assert kpi_values["Actual rows"] == "0"
     assert kpi_values["Forecast-only groups"] == "1"
@@ -7002,6 +7178,7 @@ def test_forecast_actual_helpers_make_bounded_messaging_explicit() -> None:
     assert "Local mode uses the configured gas dashboard read policy" in local_markdown
     assert forecast_actual_kpi_frame(loads).is_empty()
     assert forecast_actual_comparison_frame(loads).is_empty()
+    assert len(cast(Any, forecast_actual_comparison_figure(loads).data)) == 0
     assert forecast_actual_facility_options(loads) == (
         FORECAST_ACTUAL_FACILITY_FILTER_ALL,
     )

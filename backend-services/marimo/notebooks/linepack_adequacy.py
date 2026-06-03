@@ -22,6 +22,7 @@ def _():
         gas_table_load_status_frame,
         gas_table_load_status_message,
         linepack_adequacy_flag_options,
+        linepack_adequacy_trend_figure,
         linepack_empty_state_markdown,
         linepack_facility_options,
         linepack_gas_date_options,
@@ -31,6 +32,8 @@ def _():
         linepack_source_system_options,
         linepack_summary_frame,
         linepack_zone_options,
+        render_kpi_cards_html,
+        render_visual_empty_state_html,
         render_dashboard_context_panel,
         render_linepack_context_links,
     )
@@ -49,6 +52,7 @@ def _():
         gas_table_load_status_frame,
         gas_table_load_status_message,
         linepack_adequacy_flag_options,
+        linepack_adequacy_trend_figure,
         linepack_empty_state_markdown,
         linepack_facility_options,
         linepack_gas_date_options,
@@ -61,6 +65,8 @@ def _():
         mo,
         pl,
         refresh_token_from_control,
+        render_kpi_cards_html,
+        render_visual_empty_state_html,
         render_dashboard_context_panel,
         render_linepack_context_links,
     )
@@ -219,10 +225,13 @@ def _(
     adequacy_flag_filter,
     facility_filter,
     gas_date_filter,
+    linepack_adequacy_trend_figure,
     linepack_empty_state_markdown,
     linepack_kpi_frame,
     linepack_load,
     mo,
+    render_kpi_cards_html,
+    render_visual_empty_state_html,
     source_system_filter,
     zone_filter,
 ):
@@ -236,13 +245,34 @@ def _(
     )
     if kpis.is_empty():
         kpi_view = mo.md(linepack_empty_state_markdown(linepack_load))
+        trend_view = mo.Html(
+            render_visual_empty_state_html(
+                title="No linepack trend to chart",
+                detail=(
+                    "The current filters do not match loaded bounded linepack rows."
+                ),
+            )
+        )
     else:
-        kpi_view = mo.ui.table(kpis, selection=None)
+        kpi_view = mo.Html(
+            render_kpi_cards_html(kpis, title="Linepack adequacy health KPIs")
+        )
+        trend_view = mo.ui.plotly(
+            linepack_adequacy_trend_figure(
+                linepack_load,
+                gas_date_filter.value,
+                facility_filter.value,
+                zone_filter.value,
+                adequacy_flag_filter.value,
+                source_system_filter.value,
+            )
+        )
 
     mo.vstack(
         [
             mo.md("## Linepack Adequacy Health"),
             kpi_view,
+            trend_view,
         ]
     )
     return

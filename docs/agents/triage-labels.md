@@ -59,6 +59,10 @@ loop then applies validated label transitions with GitHub Issue metadata
 commands only. Runtime labels including `agent-reviewing` block repeat
 implementation, **Ready issue refresh** candidate selection, and automated
 triage reconsideration.
+If **Ready issue refresh** finds a malformed live issue that still carries
+`ready-for-agent`, Ralph removes `ready-for-agent`, adds `needs-triage`, records
+`quarantined_needs_triage`, and continues the drain because the issue is no
+longer claimable without maintainer review.
 
 Deploy-repair targeting does not add a priority label. Valid deploy-repair
 issues still use the normal `bug`, one **Delivery mode** label, and

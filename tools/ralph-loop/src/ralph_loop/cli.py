@@ -18,7 +18,7 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -40,6 +40,13 @@ ISSUE_COMPLETION_REVIEW_CHANGED_FILE_VERBATIM_LIMIT = 200
 ISSUE_COMPLETION_REVIEW_CHANGED_FILE_SAMPLE_LIMIT = 40
 ISSUE_COMPLETION_REVIEW_CHANGED_FILE_GROUP_LIMIT = 20
 ISSUE_COMPLETION_REVIEW_CLASSIFIER_PATH_LIMIT = 80
+
+
+@dataclass(frozen=True)
+class ReadyIssueRefreshSalvage:
+    mutation: ReadyIssueRefreshMutation | None
+    status: str
+    error: str
 
 
 def discover_repo_root(runner: CommandRunner) -> Path:
@@ -1201,16 +1208,13 @@ class RalphLoop:
                 fatal_error = self._collect_exploratory_results(
                     active_exploratory,
                     wait_for_one=False,
-                    completed_manifests=(
-                        refresh_gate_completed_manifests
-                        if refresh_gate_cohort_issue_numbers
-                        else None
-                    ),
+                    completed_manifests=refresh_gate_completed_manifests,
                 )
                 if fatal_error is not None:
                     self._raise_after_exploratory_workers_finish(
                         active_exploratory,
                         fatal_error,
+                        completed_manifests=refresh_gate_completed_manifests,
                     )
                 self._prune_refresh_gate_observation_cohort(
                     active_exploratory,
@@ -1249,13 +1253,17 @@ class RalphLoop:
 
                 if attempt_budget_reached:
                     if active_exploratory and self._run_scheduler_triage_if_available(
-                        active_exploratory
+                        active_exploratory,
+                        completed_manifests=refresh_gate_completed_manifests,
                     ):
                         continue
                     emit(f"Reached --max-issues {self.config.max_issues}.")
                     if active_exploratory:
                         emit("Waiting for active Exploratory worker(s) to finish.")
-                    fatal_error = self._wait_for_exploratory_workers(active_exploratory)
+                    fatal_error = self._wait_for_exploratory_workers(
+                        active_exploratory,
+                        completed_manifests=refresh_gate_completed_manifests,
+                    )
                     if fatal_error is not None:
                         raise fatal_error
                     return
@@ -1282,7 +1290,8 @@ class RalphLoop:
                             "Exploratory worker(s) to finish before claim."
                         )
                         fatal_error = self._wait_for_exploratory_workers(
-                            active_exploratory
+                            active_exploratory,
+                            completed_manifests=refresh_gate_completed_manifests,
                         )
                         if fatal_error is not None:
                             raise fatal_error
@@ -1297,7 +1306,8 @@ class RalphLoop:
                             "active Exploratory worker(s) to finish before claim."
                         )
                         fatal_error = self._wait_for_exploratory_workers(
-                            active_exploratory
+                            active_exploratory,
+                            completed_manifests=refresh_gate_completed_manifests,
                         )
                         if fatal_error is not None:
                             raise fatal_error
@@ -1355,6 +1365,7 @@ class RalphLoop:
                         self._raise_after_exploratory_workers_finish(
                             active_exploratory,
                             error,
+                            completed_manifests=refresh_gate_completed_manifests,
                         )
                     except IssueFailure as error:
                         emit(
@@ -1366,6 +1377,7 @@ class RalphLoop:
                         self._raise_after_exploratory_workers_finish(
                             active_exploratory,
                             error,
+                            completed_manifests=refresh_gate_completed_manifests,
                         )
                     self._wait_for_ready_issue_refresh_claim_gate(
                         active_exploratory,
@@ -1378,21 +1390,21 @@ class RalphLoop:
                     continue
 
                 if active_exploratory:
-                    if self._run_scheduler_triage_if_available(active_exploratory):
+                    if self._run_scheduler_triage_if_available(
+                        active_exploratory,
+                        completed_manifests=refresh_gate_completed_manifests,
+                    ):
                         continue
                     fatal_error = self._collect_exploratory_results(
                         active_exploratory,
                         wait_for_one=True,
-                        completed_manifests=(
-                            refresh_gate_completed_manifests
-                            if refresh_gate_cohort_issue_numbers
-                            else None
-                        ),
+                        completed_manifests=refresh_gate_completed_manifests,
                     )
                     if fatal_error is not None:
                         self._raise_after_exploratory_workers_finish(
                             active_exploratory,
                             fatal_error,
+                            completed_manifests=refresh_gate_completed_manifests,
                         )
                     self._prune_refresh_gate_observation_cohort(
                         active_exploratory,
@@ -1578,6 +1590,8 @@ class RalphLoop:
         active_exploratory: dict[
             Future[RunManifest | None], ReadyImplementationCandidate
         ],
+        *,
+        completed_manifests: list[RunManifest] | None = None,
     ) -> bool:
         triage_issue = self._next_triage_issue()
         if triage_issue is None:
@@ -1589,6 +1603,7 @@ class RalphLoop:
                 self._raise_after_exploratory_workers_finish(
                     active_exploratory,
                     error,
+                    completed_manifests=completed_manifests,
                 )
             raise
         self.triaged_this_run.add(triage_issue.number)
@@ -1634,6 +1649,7 @@ class RalphLoop:
                 self._raise_after_exploratory_workers_finish(
                     active_exploratory,
                     fatal_error,
+                    completed_manifests=completed_manifests,
                 )
             self._prune_refresh_gate_observation_cohort(
                 active_exploratory,
@@ -1651,6 +1667,7 @@ class RalphLoop:
             self._raise_after_exploratory_workers_finish(
                 active_exploratory,
                 fatal_error,
+                completed_manifests=completed_manifests,
             )
         self._prune_refresh_gate_observation_cohort(
             active_exploratory,
@@ -1667,8 +1684,11 @@ class RalphLoop:
         completed_manifests: list[RunManifest],
         cohort_issue_numbers: set[int],
     ) -> None:
-        if not cohort_issue_numbers:
+        if not active_exploratory:
             completed_manifests.clear()
+            cohort_issue_numbers.clear()
+            return
+        if not cohort_issue_numbers:
             return
         active_issue_numbers = {
             candidate.issue.number for candidate in active_exploratory.values()
@@ -1758,13 +1778,15 @@ class RalphLoop:
         ],
         *,
         fatal_stop_error: RalphError | None = None,
+        completed_manifests: list[RunManifest] | None = None,
     ) -> RalphError | None:
         first_fatal_error: RalphError | None = None
         while active_exploratory:
             fatal_error = self._collect_exploratory_results(
                 active_exploratory,
                 wait_for_one=True,
-                fatal_stop_error=fatal_stop_error,
+                fatal_stop_error=first_fatal_error or fatal_stop_error,
+                completed_manifests=completed_manifests,
             )
             if first_fatal_error is None and fatal_error is not None:
                 first_fatal_error = fatal_error
@@ -1776,6 +1798,8 @@ class RalphLoop:
             Future[RunManifest | None], ReadyImplementationCandidate
         ],
         error: RalphError,
+        *,
+        completed_manifests: list[RunManifest] | None = None,
     ) -> None:
         active_issue_numbers = [
             candidate.issue.number for candidate in active_exploratory.values()
@@ -1797,11 +1821,34 @@ class RalphLoop:
         log_path = getattr(error, "log_path", None)
         if isinstance(log_path, Path):
             emit(f"Recovery evidence log: {log_path}", err=True)
+        self._record_completed_exploratory_fatal_stop_observations(
+            completed_manifests,
+            error=error,
+            active_issue_numbers=active_issue_numbers,
+        )
         self._wait_for_exploratory_workers(
             active_exploratory,
             fatal_stop_error=error,
+            completed_manifests=completed_manifests,
         )
         raise error
+
+    def _record_completed_exploratory_fatal_stop_observations(
+        self,
+        completed_manifests: list[RunManifest] | None,
+        *,
+        error: RalphError,
+        active_issue_numbers: list[int],
+    ) -> None:
+        if not completed_manifests:
+            return
+        for manifest in completed_manifests:
+            manifest.record_drain_scheduler_fatal_stop(
+                "observed",
+                error=error,
+                active_issue_numbers=active_issue_numbers,
+            )
+        completed_manifests.clear()
 
     def _validate_clean_root_worktree_for_live_run(self) -> None:
         if self.config.dry_run:
@@ -2301,7 +2348,7 @@ class RalphLoop:
             raise failure from error
 
         try:
-            self._apply_ready_issue_refresh_mutations(
+            completed_with_warnings = self._apply_ready_issue_refresh_mutations(
                 analysis_markdown=analysis_markdown,
                 candidates=candidates,
                 run_dir=run_dir,
@@ -2335,13 +2382,89 @@ class RalphLoop:
             emit(str(failure), err=True)
             raise failure from error
 
+        status = "completed_with_warnings" if completed_with_warnings else "completed"
         manifest.record_ready_issue_refresh(
-            "completed",
+            status,
             candidates=candidates,
             log_path=log_path,
             artifact_path=artifact_path,
         )
         emit(f"Ready issue refresh analysis written to {artifact_path}")
+
+    def _salvage_ready_issue_refresh_mutation(
+        self,
+        issue: Issue,
+        mutation: ReadyIssueRefreshMutation,
+        *,
+        validation_error: ValueError,
+    ) -> ReadyIssueRefreshSalvage:
+        required_sections = (
+            required_issue_sections_for_delivery_mode(EXPLORATORY_MODE)
+            if DELIVERY_EXPLORATORY_LABEL in issue.labels
+            else REQUIRED_ISSUE_SECTIONS
+        )
+        live_missing = missing_required_sections(
+            issue.body,
+            required_sections=required_sections,
+        )
+        if live_missing:
+            formatted = ", ".join(f"## {heading}" for heading in live_missing)
+            comment = ready_issue_refresh_comment_body(
+                "Ready issue refresh found this issue was still "
+                f"`{READY_LABEL}` but missing required section(s): {formatted}. "
+                f"Ralph moved it to `{NEEDS_TRIAGE_LABEL}` before continuing "
+                "the Operator drain."
+            )
+            return ReadyIssueRefreshSalvage(
+                mutation=ReadyIssueRefreshMutation(
+                    issue_number=issue.number,
+                    action="needs_triage",
+                    comment=comment,
+                    body=None,
+                    section_updates=(),
+                    add_labels=(NEEDS_TRIAGE_LABEL,),
+                    remove_labels=(READY_LABEL,),
+                    close_as_completed=False,
+                    adaptive_metadata=mutation.adaptive_metadata,
+                ),
+                status="quarantined_needs_triage",
+                error=str(validation_error),
+            )
+
+        blockers = parse_blockers(issue.body)
+        if blockers:
+            blocker_states = {
+                blocker: self.github.issue_state(blocker) for blocker in blockers
+            }
+            open_blockers = [
+                blocker
+                for blocker, state in blocker_states.items()
+                if state != "CLOSED"
+            ]
+            if not open_blockers:
+                blocker_text = ", ".join(f"#{blocker}" for blocker in blockers)
+                normalized = (
+                    "None - previous blocker"
+                    f"{'s' if len(blockers) != 1 else ''} closed: {blocker_text}."
+                )
+                return ReadyIssueRefreshSalvage(
+                    mutation=replace(
+                        mutation,
+                        body=None,
+                        section_updates=(("Blocked by", normalized),),
+                    ),
+                    status="auto_normalized_closed_blockers",
+                    error=str(validation_error),
+                )
+
+        return ReadyIssueRefreshSalvage(
+            mutation=None,
+            status="skipped_invalid_plan",
+            error=(
+                "Skipped unsafe Ready issue refresh mutation because the live "
+                f"issue already satisfies the ready contract: {validation_error}"
+            ),
+        )
 
     def _apply_ready_issue_refresh_mutations(
         self,
@@ -2350,7 +2473,7 @@ class RalphLoop:
         candidates: list[Issue],
         run_dir: Path,
         manifest: RunManifest,
-    ) -> None:
+    ) -> bool:
         mutations = ready_issue_refresh_mutations_from_markdown(
             analysis_markdown,
             candidates=candidates,
@@ -2364,11 +2487,12 @@ class RalphLoop:
                     status="skipped_no_plan",
                     action="no_change",
                 )
-            return
+            return False
 
         emit(
             f"Applying Ready issue refresh metadata mutations: {len(mutations)} plan item(s)."
         )
+        completed_with_warnings = False
         for candidate in candidates:
             mutation = mutations_by_issue.get(candidate.number)
             if mutation is None:
@@ -2382,15 +2506,91 @@ class RalphLoop:
             if mutation.action == "no_change" and not (
                 mutation.comment
                 or mutation.body is not None
+                or mutation.section_updates
                 or mutation.add_labels
                 or mutation.remove_labels
                 or mutation.close_as_completed
             ):
-                validate_ready_issue_refresh_ready_contract(
-                    issue_number=candidate.number,
-                    labels=candidate.labels,
-                    body=candidate.body,
-                )
+                try:
+                    validate_ready_issue_refresh_ready_contract(
+                        issue_number=candidate.number,
+                        labels=candidate.labels,
+                        body=candidate.body,
+                    )
+                except ValueError as error:
+                    try:
+                        current_issue = self.github.view_issue(candidate.number)
+                        salvage = self._salvage_ready_issue_refresh_mutation(
+                            current_issue,
+                            mutation,
+                            validation_error=error,
+                        )
+                    except (
+                        CommandFailure,
+                        OSError,
+                        json.JSONDecodeError,
+                    ) as fetch_error:
+                        setattr(fetch_error, "issue_number", candidate.number)
+                        log_path = (
+                            fetch_error.log_path
+                            if isinstance(fetch_error, CommandFailure)
+                            else None
+                        )
+                        manifest.record_ready_issue_refresh_mutation(
+                            issue_number=candidate.number,
+                            issue=candidate,
+                            status="failed",
+                            action=mutation.action,
+                            error=str(fetch_error),
+                            log_path=log_path,
+                        )
+                        raise
+                    completed_with_warnings = True
+                    if salvage.mutation is None:
+                        manifest.record_ready_issue_refresh_mutation(
+                            issue_number=candidate.number,
+                            issue=current_issue,
+                            status=salvage.status,
+                            action=mutation.action,
+                            error=salvage.error,
+                        )
+                        continue
+                    try:
+                        operations = self._apply_ready_issue_refresh_mutation(
+                            current_issue,
+                            salvage.mutation,
+                            run_dir=run_dir,
+                        )
+                    except (
+                        CommandFailure,
+                        OSError,
+                        json.JSONDecodeError,
+                        ValueError,
+                    ) as error:
+                        setattr(error, "issue_number", candidate.number)
+                        log_path = (
+                            error.log_path
+                            if isinstance(error, CommandFailure)
+                            else None
+                        )
+                        manifest.record_ready_issue_refresh_mutation(
+                            issue_number=candidate.number,
+                            issue=current_issue,
+                            status="failed",
+                            action=salvage.mutation.action,
+                            error=str(error),
+                            log_path=log_path,
+                        )
+                        raise
+                    manifest.record_ready_issue_refresh_mutation(
+                        issue_number=candidate.number,
+                        issue=current_issue,
+                        status=salvage.status,
+                        action=salvage.mutation.action,
+                        operations=operations,
+                        error=salvage.error,
+                    )
+                    continue
                 manifest.record_ready_issue_refresh_mutation(
                     issue_number=candidate.number,
                     issue=candidate,
@@ -2401,9 +2601,46 @@ class RalphLoop:
 
             try:
                 current_issue = self.github.view_issue(candidate.number)
-                operations = self._apply_ready_issue_refresh_mutation(
+                final_labels = labels_after_ready_issue_refresh_mutation(
                     current_issue,
                     mutation,
+                )
+                final_body = body_after_ready_issue_refresh_mutation(
+                    current_issue,
+                    mutation,
+                )
+                try:
+                    validate_ready_issue_refresh_ready_contract(
+                        issue_number=current_issue.number,
+                        labels=final_labels,
+                        body=final_body,
+                    )
+                    mutation_to_apply = mutation
+                    status = "completed"
+                    status_error = None
+                except ValueError as validation_error:
+                    salvage = self._salvage_ready_issue_refresh_mutation(
+                        current_issue,
+                        mutation,
+                        validation_error=validation_error,
+                    )
+                    completed_with_warnings = True
+                    if salvage.mutation is None:
+                        manifest.record_ready_issue_refresh_mutation(
+                            issue_number=candidate.number,
+                            issue=current_issue,
+                            status=salvage.status,
+                            action=mutation.action,
+                            error=salvage.error,
+                        )
+                        continue
+                    mutation_to_apply = salvage.mutation
+                    status = salvage.status
+                    status_error = salvage.error
+
+                operations = self._apply_ready_issue_refresh_mutation(
+                    current_issue,
+                    mutation_to_apply,
                     run_dir=run_dir,
                 )
             except (CommandFailure, OSError, json.JSONDecodeError, ValueError) as error:
@@ -2422,10 +2659,12 @@ class RalphLoop:
             manifest.record_ready_issue_refresh_mutation(
                 issue_number=candidate.number,
                 issue=current_issue,
-                status="completed",
-                action=mutation.action,
+                status=status,
+                action=mutation_to_apply.action,
                 operations=operations,
+                error=status_error,
             )
+        return completed_with_warnings
 
     def _apply_ready_issue_refresh_mutation(
         self,
@@ -2435,7 +2674,7 @@ class RalphLoop:
         run_dir: Path,
     ) -> dict[str, Any]:
         final_labels = labels_after_ready_issue_refresh_mutation(issue, mutation)
-        final_body = mutation.body if mutation.body is not None else issue.body
+        final_body = body_after_ready_issue_refresh_mutation(issue, mutation)
         validate_ready_issue_refresh_ready_contract(
             issue_number=issue.number,
             labels=final_labels,
@@ -2448,14 +2687,16 @@ class RalphLoop:
             "comment": "skipped",
             "closure": "skipped",
         }
-        if mutation.body is not None:
-            if mutation.body.strip() != issue.body.strip():
-                self.github.edit_issue_body(
-                    issue.number, mutation.body, run_dir=run_dir
-                )
+        if mutation.body is not None or mutation.section_updates:
+            if final_body.strip() != issue.body.strip():
+                self.github.edit_issue_body(issue.number, final_body, run_dir=run_dir)
                 operations["body"] = "updated"
             else:
                 operations["body"] = "already_current"
+            if mutation.section_updates:
+                operations["section_updates"] = [
+                    heading for heading, _body in mutation.section_updates
+                ]
 
         add_labels = [
             label for label in mutation.add_labels if label not in issue.labels
@@ -4985,7 +5226,7 @@ class RalphLoop:
                 )
             artifact_path.write_text(analysis_markdown + "\n", encoding="utf-8")
 
-            self._apply_ready_issue_refresh_mutations(
+            completed_with_warnings = self._apply_ready_issue_refresh_mutations(
                 analysis_markdown=analysis_markdown,
                 candidates=candidates,
                 run_dir=run_dir,
@@ -5025,8 +5266,9 @@ class RalphLoop:
             )
             return
 
+        status = "completed_with_warnings" if completed_with_warnings else "completed"
         manifest.record_ready_issue_refresh(
-            "completed",
+            status,
             candidates=candidates,
             log_path=log_path,
             artifact_path=artifact_path,
@@ -12977,6 +13219,7 @@ def ready_issue_refresh_analysis_prompt(
               "action": "no_change",
               "comment": null,
               "body": null,
+              "section_updates": {{}},
               "add_labels": [],
               "remove_labels": [],
               "close_as_completed": false,
@@ -12997,7 +13240,12 @@ def ready_issue_refresh_analysis_prompt(
         evidence comment. Use action `completed` for already-satisfied issues
         and include an evidence comment; Ralph will remove queue/runtime labels
         and close the issue as completed. Use action `update` only for safe
-        body, label, or comment refreshes that keep the issue contract valid.
+        body, section, label, or comment refreshes that keep the issue contract
+        valid. `body` must be a complete replacement issue body or null. For
+        stale blocker cleanup, use `section_updates` with `Blocked by` instead
+        of putting prose instructions in `body`. `section_updates` may only
+        update `Blocked by` and `Current context`, and must not be combined with
+        `body`.
         Comments may omit the Ready issue refresh audit prefix because Ralph
         will add it before applying metadata.
         The adaptive fields are queue-local evidence only. Use them for blocker
@@ -13317,6 +13565,7 @@ def post_promotion_ready_issue_refresh_analysis_prompt(
               "action": "no_change",
               "comment": null,
               "body": null,
+              "section_updates": {{}},
               "add_labels": [],
               "remove_labels": [],
               "close_as_completed": false
@@ -13331,7 +13580,12 @@ def post_promotion_ready_issue_refresh_analysis_prompt(
         evidence comment. Use action `completed` for already-satisfied issues
         and include an evidence comment; Ralph will remove queue/runtime labels
         and close the issue as completed. Use action `update` only for safe
-        body, label, or comment refreshes that keep the issue contract valid.
+        body, section, label, or comment refreshes that keep the issue contract
+        valid. `body` must be a complete replacement issue body or null. For
+        stale blocker cleanup, use `section_updates` with `Blocked by` instead
+        of putting prose instructions in `body`. `section_updates` may only
+        update `Blocked by` and `Current context`, and must not be combined with
+        `body`.
         Comments may omit the Ready issue refresh audit prefix because Ralph
         will add it before applying metadata.
 
