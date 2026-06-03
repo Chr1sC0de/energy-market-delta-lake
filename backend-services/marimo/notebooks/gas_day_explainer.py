@@ -20,7 +20,9 @@ def _():
         gas_day_table_specs,
         gas_table_load_status_frame,
         gas_table_load_status_message,
+        render_dimension_coverage_diagram_html,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
 
@@ -38,7 +40,9 @@ def _():
         mo,
         pl,
         refresh_token_from_control,
+        render_dimension_coverage_diagram_html,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
     )
 
 
@@ -143,7 +147,15 @@ def _(gas_day_loads, gas_table_load_status_frame, gas_table_load_status_message,
 
 
 @app.cell
-def _(config, gas_day_kpis, gas_day_specs, mo, pl):
+def _(
+    config,
+    gas_day_kpis,
+    gas_day_specs,
+    mo,
+    pl,
+    render_dimension_coverage_diagram_html,
+    render_kpi_cards_html,
+):
     config_frame = pl.DataFrame(
         {
             "setting": [
@@ -171,6 +183,23 @@ def _(config, gas_day_kpis, gas_day_specs, mo, pl):
     mo.vstack(
         [
             mo.md("## Gas Day Coverage Health"),
+            mo.Html(
+                render_kpi_cards_html(
+                    gas_day_kpis,
+                    title="Gas Day coverage KPIs",
+                    empty_message="No Gas Day coverage metrics are available.",
+                )
+            ),
+            mo.Html(
+                render_dimension_coverage_diagram_html(
+                    gas_day_kpis,
+                    title="Gas Day field coverage",
+                    empty_message=(
+                        "No Gas Day field coverage rows are available in the "
+                        "loaded bounded reads."
+                    ),
+                )
+            ),
             mo.accordion(
                 {"Gas day coverage details": mo.ui.table(gas_day_kpis, selection=None)},
                 lazy=True,

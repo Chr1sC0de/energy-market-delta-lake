@@ -21,8 +21,11 @@ def _():
         facility_table_specs,
         gas_table_load_status_frame,
         gas_table_load_status_message,
+        render_dimension_coverage_diagram_html,
         render_dashboard_context_panel,
         render_facility_context_links,
+        render_kpi_cards_html,
+        render_relationship_diagram_html,
         table_load_by_name,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
@@ -42,8 +45,11 @@ def _():
         mo,
         pl,
         refresh_token_from_control,
+        render_dimension_coverage_diagram_html,
         render_dashboard_context_panel,
         render_facility_context_links,
+        render_kpi_cards_html,
+        render_relationship_diagram_html,
         table_load_by_name,
     )
 
@@ -161,7 +167,17 @@ def _(
 
 
 @app.cell
-def _(config, facility_coverage, facility_specs, mo, pl):
+def _(
+    config,
+    facility_coverage,
+    facility_relationships,
+    facility_specs,
+    mo,
+    pl,
+    render_dimension_coverage_diagram_html,
+    render_kpi_cards_html,
+    render_relationship_diagram_html,
+):
     config_frame = pl.DataFrame(
         {
             "setting": [
@@ -189,6 +205,33 @@ def _(config, facility_coverage, facility_specs, mo, pl):
     mo.vstack(
         [
             mo.md("## Facility Coverage Health"),
+            mo.Html(
+                render_kpi_cards_html(
+                    facility_coverage,
+                    title="Facility coverage KPIs",
+                    empty_message="No Facility coverage metrics are available.",
+                )
+            ),
+            mo.Html(
+                render_relationship_diagram_html(
+                    facility_relationships,
+                    title="Facility relationship map",
+                    empty_message=(
+                        "No Facility relationship rows are available in the "
+                        "loaded bounded reads."
+                    ),
+                )
+            ),
+            mo.Html(
+                render_dimension_coverage_diagram_html(
+                    facility_coverage,
+                    title="Facility dimension coverage",
+                    empty_message=(
+                        "No Facility dimension coverage rows are available in "
+                        "the loaded bounded reads."
+                    ),
+                )
+            ),
             mo.accordion(
                 {
                     "Facility coverage details": mo.ui.table(

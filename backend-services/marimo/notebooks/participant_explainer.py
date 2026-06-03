@@ -24,8 +24,11 @@ def _():
         participant_membership_preview_frame,
         participant_related_market_fact_frame,
         participant_table_specs,
+        render_dimension_coverage_diagram_html,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_participant_context_links,
+        render_relationship_diagram_html,
         table_load_by_name,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
@@ -48,8 +51,11 @@ def _():
         participant_table_specs,
         pl,
         refresh_token_from_control,
+        render_dimension_coverage_diagram_html,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_participant_context_links,
+        render_relationship_diagram_html,
         table_load_by_name,
     )
 
@@ -189,7 +195,17 @@ def _(
 
 
 @app.cell
-def _(config, mo, participant_coverage, participant_specs, pl):
+def _(
+    config,
+    mo,
+    participant_coverage,
+    participant_specs,
+    pl,
+    related_market_facts,
+    render_dimension_coverage_diagram_html,
+    render_kpi_cards_html,
+    render_relationship_diagram_html,
+):
     config_frame = pl.DataFrame(
         {
             "setting": [
@@ -228,6 +244,33 @@ def _(config, mo, participant_coverage, participant_specs, pl):
     mo.vstack(
         [
             mo.md("## Participant Coverage Health"),
+            mo.Html(
+                render_kpi_cards_html(
+                    participant_coverage,
+                    title="Participant coverage KPIs",
+                    empty_message="No Participant coverage metrics are available.",
+                )
+            ),
+            mo.Html(
+                render_relationship_diagram_html(
+                    related_market_facts,
+                    title="Participant relationship map",
+                    empty_message=(
+                        "No Participant relationship rows are available in the "
+                        "loaded bounded reads."
+                    ),
+                )
+            ),
+            mo.Html(
+                render_dimension_coverage_diagram_html(
+                    participant_coverage,
+                    title="Participant dimension coverage",
+                    empty_message=(
+                        "No Participant dimension coverage rows are available "
+                        "in the loaded bounded reads."
+                    ),
+                )
+            ),
             mo.accordion(
                 {
                     "Participant coverage details": mo.ui.table(

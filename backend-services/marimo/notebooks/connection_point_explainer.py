@@ -23,7 +23,10 @@ def _():
         gas_table_load_status_frame,
         gas_table_load_status_message,
         render_connection_point_context_links,
+        render_dimension_coverage_diagram_html,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
+        render_relationship_diagram_html,
         table_load_by_name,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
@@ -45,7 +48,10 @@ def _():
         pl,
         refresh_token_from_control,
         render_connection_point_context_links,
+        render_dimension_coverage_diagram_html,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
+        render_relationship_diagram_html,
         table_load_by_name,
     )
 
@@ -177,7 +183,17 @@ def _(
 
 
 @app.cell
-def _(config, connection_point_coverage, connection_point_specs, mo, pl):
+def _(
+    config,
+    connection_point_coverage,
+    connection_point_relationships,
+    connection_point_specs,
+    mo,
+    pl,
+    render_dimension_coverage_diagram_html,
+    render_kpi_cards_html,
+    render_relationship_diagram_html,
+):
     config_frame = pl.DataFrame(
         {
             "setting": [
@@ -208,6 +224,35 @@ def _(config, connection_point_coverage, connection_point_specs, mo, pl):
     mo.vstack(
         [
             mo.md("## Connection Point Coverage Health"),
+            mo.Html(
+                render_kpi_cards_html(
+                    connection_point_coverage,
+                    title="Connection Point coverage KPIs",
+                    empty_message=(
+                        "No Connection Point coverage metrics are available."
+                    ),
+                )
+            ),
+            mo.Html(
+                render_relationship_diagram_html(
+                    connection_point_relationships,
+                    title="Connection Point relationship map",
+                    empty_message=(
+                        "No Connection Point relationship rows are available "
+                        "in the loaded bounded reads."
+                    ),
+                )
+            ),
+            mo.Html(
+                render_dimension_coverage_diagram_html(
+                    connection_point_coverage,
+                    title="Connection Point dimension coverage",
+                    empty_message=(
+                        "No Connection Point dimension coverage rows are "
+                        "available in the loaded bounded reads."
+                    ),
+                )
+            ),
             mo.accordion(
                 {
                     "Connection point coverage details": mo.ui.table(

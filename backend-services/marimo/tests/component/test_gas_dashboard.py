@@ -418,6 +418,7 @@ from marimoserver.gas_dashboard import (
     render_capacity_outlook_context_links,
     render_connection_point_context_links,
     render_customer_transfer_context_links,
+    render_dimension_coverage_diagram_html,
     render_kpi_cards_html,
     render_market_price_context_links,
     render_visual_empty_state_html,
@@ -434,6 +435,7 @@ from marimoserver.gas_dashboard import (
     render_operational_meter_flow_context_links,
     render_participant_context_links,
     render_pipeline_connection_operations_context_links,
+    render_relationship_diagram_html,
     render_relationship_gap_status_html,
     render_schedule_run_context_links,
     render_scheduled_quantity_context_links,
@@ -1575,6 +1577,67 @@ def test_flow_and_relationship_status_visuals_escape_and_render_rows() -> None:
     assert "1 gap rows" in gap_html
     assert "dashboard-visual-empty--compact" in empty_source_html
     assert "dashboard-visual-empty--compact" in empty_gap_html
+
+
+def test_explainer_diagram_visuals_escape_and_render_rows() -> None:
+    coverage = pl.DataFrame(
+        {
+            "metric": ["Rows <unsafe>", "Read policy"],
+            "value": ["4", "Full table scan"],
+            "detail": ["Loaded <bounded> rows", "No row cap"],
+        }
+    )
+    relationships = pl.DataFrame(
+        [
+            {
+                "relationship": "Facility <link>",
+                "source table": "silver.fact",
+                "available rows": 5,
+                "matched facilities": 4,
+                "detail": "Facility keys <matched>",
+            },
+            {
+                "related surface": "Market membership",
+                "source table": "silver.membership",
+                "available rows": 2,
+                "matched participants": 2,
+                "detail": "Membership bridge",
+            },
+            {
+                "source table": "silver.unlabelled",
+                "available rows": 1,
+                "detail": "Unlabelled relationship fallback",
+            },
+        ],
+        strict=False,
+    )
+
+    coverage_html = render_dimension_coverage_diagram_html(
+        coverage,
+        title="Coverage <diagram>",
+    )
+    relationship_html = render_relationship_diagram_html(
+        relationships,
+        title="Relationship <diagram>",
+    )
+    empty_coverage_html = render_dimension_coverage_diagram_html(coverage.clear())
+    empty_relationship_html = render_relationship_diagram_html(relationships.clear())
+
+    assert "Coverage &lt;diagram&gt;" in coverage_html
+    assert "Rows &lt;unsafe&gt;" in coverage_html
+    assert "Loaded &lt;bounded&gt; rows" in coverage_html
+    assert "dashboard-status-row--coverage" in coverage_html
+    assert "Relationship &lt;diagram&gt;" in relationship_html
+    assert "Facility &lt;link&gt;" in relationship_html
+    assert "Facility keys &lt;matched&gt;" in relationship_html
+    assert "Market membership" in relationship_html
+    assert "Relationship" in relationship_html
+    assert "0.0 matched rows" in relationship_html
+    assert 'data-status="gap"' in relationship_html
+    assert 'data-status="covered"' in relationship_html
+    assert "dashboard-relationship-row__nodes" in relationship_html
+    assert "dashboard-visual-empty--compact" in empty_coverage_html
+    assert "dashboard-visual-empty--compact" in empty_relationship_html
 
 
 def test_facility_flow_storage_status_visual_renders_measure_bars() -> None:

@@ -8542,6 +8542,78 @@ def render_visual_empty_state_html(
 </section>"""
 
 
+def render_dimension_coverage_diagram_html(
+    coverage: pl.DataFrame,
+    *,
+    title: str = "Dimension coverage",
+    empty_message: str = "No coverage rows are available in the loaded bounded reads.",
+) -> str:
+    """Render an escaped proportional coverage diagram from metric rows."""
+    if coverage.is_empty():
+        return render_visual_empty_state_html(
+            title=title,
+            detail=empty_message,
+            compact=True,
+        )
+
+    rows = coverage.select("metric", "value", "detail").to_dicts()
+    max_value = max(
+        (_number_value(row.get("value")) for row in rows),
+        default=0.0,
+    )
+    items = "\n".join(_render_dimension_coverage_row(row, max_value) for row in rows)
+    return f"""\
+<style>
+{_dashboard_visual_primitives_css()}
+</style>
+<section class="dashboard-status-visual" aria-label="{escape(title, quote=True)}">
+    <header>
+        <p class="dashboard-status-visual__eyebrow">Coverage diagram</p>
+        <h3>{escape(title)}</h3>
+    </header>
+    <div class="dashboard-status-list dashboard-status-list--dense">
+        {items}
+    </div>
+</section>"""
+
+
+def render_relationship_diagram_html(
+    relationships: pl.DataFrame,
+    *,
+    title: str = "Relationship coverage",
+    empty_message: str = "No relationship rows are available in the loaded bounded reads.",
+) -> str:
+    """Render an escaped relationship diagram from explainer relationship rows."""
+    if relationships.is_empty():
+        return render_visual_empty_state_html(
+            title=title,
+            detail=empty_message,
+            compact=True,
+        )
+
+    rows = relationships.to_dicts()
+    max_available_rows = max(
+        (_number_value(row.get("available rows")) for row in rows),
+        default=0.0,
+    )
+    items = "\n".join(
+        _render_explainer_relationship_row(row, max_available_rows) for row in rows
+    )
+    return f"""\
+<style>
+{_dashboard_visual_primitives_css()}
+</style>
+<section class="dashboard-status-visual" aria-label="{escape(title, quote=True)}">
+    <header>
+        <p class="dashboard-status-visual__eyebrow">Relationship diagram</p>
+        <h3>{escape(title)}</h3>
+    </header>
+    <div class="dashboard-relationship-diagram">
+        {items}
+    </div>
+</section>"""
+
+
 def render_flow_source_status_html(
     source_summary: pl.DataFrame,
     *,
@@ -21643,6 +21715,77 @@ def _render_relationship_gap_status_row(row: Mapping[str, object]) -> str:
 </article>"""
 
 
+def _render_dimension_coverage_row(
+    row: Mapping[str, object],
+    max_value: float,
+) -> str:
+    metric = escape(_format_cell_value(row.get("metric")))
+    value = escape(_format_cell_value(row.get("value")))
+    detail = escape(_format_cell_value(row.get("detail")))
+    width = _status_bar_width(_number_value(row.get("value")), max_value)
+    return f"""\
+<article class="dashboard-status-row dashboard-status-row--coverage">
+    <div class="dashboard-status-row__heading">
+        <strong>{metric}</strong>
+        <span>{value}</span>
+    </div>
+    <div class="dashboard-status-row__bar" aria-hidden="true">
+        <span style="width: {width:.1f}%"></span>
+    </div>
+    <p>{detail}</p>
+</article>"""
+
+
+def _render_explainer_relationship_row(
+    row: Mapping[str, object],
+    max_available_rows: float,
+) -> str:
+    relationship = escape(_format_cell_value(_relationship_row_label(row)))
+    source_table = escape(_format_cell_value(row.get("source table")))
+    available_rows = _number_value(row.get("available rows"))
+    matched_value = _relationship_matched_value(row)
+    available_label = escape(_format_cell_value(row.get("available rows")))
+    matched_label = escape(_format_cell_value(matched_value))
+    detail = escape(_format_cell_value(row.get("detail")))
+    available_width = _status_bar_width(available_rows, max_available_rows)
+    matched_width = _status_bar_width(matched_value, available_rows, min_visible=0.0)
+    status = "gap" if matched_value < available_rows else "covered"
+    return f"""\
+<article class="dashboard-relationship-row" data-status="{status}">
+    <div class="dashboard-relationship-row__nodes">
+        <strong>{relationship}</strong>
+        <span aria-hidden="true"></span>
+        <em>{source_table}</em>
+    </div>
+    <div class="dashboard-relationship-row__bars" aria-hidden="true">
+        <div><span style="width: {available_width:.1f}%"></span></div>
+        <div><span style="width: {matched_width:.1f}%"></span></div>
+    </div>
+    <ul>
+        <li>{available_label} available rows</li>
+        <li>{matched_label} matched rows</li>
+    </ul>
+    <p>{detail}</p>
+</article>"""
+
+
+def _relationship_row_label(row: Mapping[str, object]) -> object:
+    relationship = row.get("relationship")
+    if _format_cell_value(relationship) != "":
+        return relationship
+    related_surface = row.get("related surface")
+    if _format_cell_value(related_surface) != "":
+        return related_surface
+    return "Relationship"
+
+
+def _relationship_matched_value(row: Mapping[str, object]) -> float:
+    for column_name, value in row.items():
+        if column_name.startswith("matched ") and _format_cell_value(value) != "":
+            return _number_value(value)
+    return 0.0
+
+
 def _render_facility_flow_storage_status_row(
     row: Mapping[str, object],
     measure_columns: Sequence[tuple[str, str]],
@@ -21859,6 +22002,10 @@ def _dashboard_visual_primitives_css() -> str:
     border-color: var(--emdl-warn, #b9822c);
 }
 
+.dashboard-status-row--coverage {
+    min-height: 6.75rem;
+}
+
 .dashboard-status-row__heading {
     display: flex;
     gap: 0.75rem;
@@ -21940,6 +22087,128 @@ def _dashboard_visual_primitives_css() -> str:
 .dashboard-measure-bar strong {
     color: var(--emdl-ink, #1f2a2e);
     text-align: right;
+}
+
+.dashboard-relationship-diagram {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.dashboard-relationship-row {
+    padding: 0.85rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-soft, #f7faf8);
+}
+
+.dashboard-relationship-row[data-status="gap"] {
+    border-color: var(--emdl-warn, #b9822c);
+}
+
+.dashboard-relationship-row__nodes {
+    display: grid;
+    grid-template-columns: minmax(8rem, 1fr) 2rem minmax(8rem, 1.2fr);
+    gap: 0.7rem;
+    align-items: center;
+}
+
+.dashboard-relationship-row__nodes strong,
+.dashboard-relationship-row__nodes em {
+    min-width: 0;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+    color: var(--emdl-ink, #1f2a2e);
+    font-size: 0.9rem;
+    font-style: normal;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+.dashboard-relationship-row__nodes span {
+    height: 0.14rem;
+    background: var(--emdl-flow, #2d7f75);
+}
+
+.dashboard-relationship-row__nodes span::after {
+    content: "";
+    display: block;
+    width: 0.46rem;
+    height: 0.46rem;
+    margin-top: -0.17rem;
+    margin-left: auto;
+    border-top: 0.14rem solid var(--emdl-flow, #2d7f75);
+    border-right: 0.14rem solid var(--emdl-flow, #2d7f75);
+    transform: rotate(45deg);
+}
+
+.dashboard-relationship-row__bars {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.55rem;
+    margin-top: 0.7rem;
+}
+
+.dashboard-relationship-row__bars div {
+    height: 0.5rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e6eeea;
+}
+
+.dashboard-relationship-row__bars span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+}
+
+.dashboard-relationship-row__bars div:first-child span {
+    background: var(--emdl-flow, #2d7f75);
+}
+
+.dashboard-relationship-row__bars div:last-child span {
+    background: var(--emdl-ok, #3a7d44);
+}
+
+.dashboard-relationship-row ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1rem;
+    margin: 0.65rem 0 0;
+    padding: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.82rem;
+    list-style: none;
+}
+
+.dashboard-relationship-row p {
+    margin: 0.55rem 0 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.85rem;
+    line-height: 1.35;
+}
+
+@media (max-width: 720px) {
+    .dashboard-relationship-row__nodes {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-relationship-row__nodes span {
+        width: 0.14rem;
+        height: 1.1rem;
+        justify-self: center;
+    }
+
+    .dashboard-relationship-row__nodes span::after {
+        margin-top: 0.55rem;
+        margin-left: -0.17rem;
+        transform: rotate(135deg);
+    }
+
+    .dashboard-relationship-row__bars {
+        grid-template-columns: 1fr;
+    }
 }
 """
 

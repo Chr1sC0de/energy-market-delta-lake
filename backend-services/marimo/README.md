@@ -25,6 +25,7 @@ Marimo-Codex research workspace image.
 - [Table explorer](#table-explorer)
 - [Source coverage matrix](#source-coverage-matrix)
 - [Source table lineage explorer](#source-table-lineage-explorer)
+- [Facility explainer dashboard](#facility-explainer-dashboard)
 - [Gas Day explainer dashboard](#gas-day-explainer-dashboard)
 - [Participant explainer dashboard](#participant-explainer-dashboard)
 - [Hub / Zone explainer dashboard](#hub-zone-explainer-dashboard)
@@ -584,6 +585,25 @@ columns. Missing source-system or source-table fields, empty metadata values,
 empty reads, unavailable reads, unmapped registry metadata, and absent extra
 lineage fields render as explicit gaps.
 
+## Facility explainer dashboard
+
+[notebooks/facility_explainer.py](notebooks/facility_explainer.py) is an
+analytical dashboard for the Facility concept. It renders the registry-backed
+context panel with the Market context ID and source chunk IDs copied from the
+Gas market knowledge base, then loads bounded samples from
+`silver.gas_model.silver_gas_dim_facility`,
+`silver.gas_model.silver_gas_fact_facility_flow_storage`, and
+`silver.gas_model.silver_gas_fact_capacity_outlook` through the shared gas
+model loader.
+
+The first viewport summarizes Facility coverage with KPI cards, a relationship
+diagram for Participant, Zone, Flow, Storage, and Capacity context, and a
+coverage diagram for the dimension metrics. The coverage table, relationship
+table, runtime inputs, and dimension preview remain available as drilldowns or
+lower-page inspection tables. Empty reads and unavailable Parquet prefixes
+render designed empty states with the checked assets, read policy, and refresh
+action.
+
 ## Gas Day explainer dashboard
 
 [notebooks/gas_day_explainer.py](notebooks/gas_day_explainer.py) is an
@@ -592,8 +612,10 @@ Gas Day context panel with the Market context ID and source chunk ID copied
 from the Gas market knowledge base, then loads bounded samples from current
 registry-backed `silver.gas_model` assets through the shared gas model loader.
 
-The dashboard discovers date, timestamp, date-key, and gas-date fields from
-known dashboard metadata and the columns present in the bounded reads.
+The first viewport shows Gas Day coverage KPI cards and a field coverage
+diagram before the coverage detail table. The dashboard discovers date,
+timestamp, date-key, and gas-date fields from known dashboard metadata and the
+columns present in the bounded reads.
 `gas_date`, `from_gas_date`, and `to_gas_date` are highlighted as Gas Day
 fields, while related date and timestamp fields remain visible for alignment
 context. Bounded examples prefer populated Gas Day fields and fall back to
@@ -614,15 +636,16 @@ copied from the Gas market knowledge base, then loads bounded samples from
 `silver.gas_model.silver_gas_fact_settlement_activity` through the shared gas
 model loader.
 
-The dashboard summarizes participant dimension coverage, market membership
+The first viewport summarizes participant dimension coverage with KPI cards, a
+relationship diagram for market membership, Facility, Bid / Offer, and
+Settlement context, and a dimension coverage diagram. Market membership
 coverage by source system, market code, registration type, and membership
-status, and participant-facing market facts that connect Participant to
-Facility, Bid / Offer, and Settlement dashboards. Its previews make the current
-participant identity grain and membership grain visible while preserving
-bounded-read health, cache status, load timing, row-limit policy, source chunk
-IDs, and Market context metadata. Empty reads and unavailable Parquet prefixes
-render designed empty states with the checked assets, read policy, and refresh
-action.
+status remains available below the visual summary. Its previews make the
+current participant identity grain and membership grain visible while
+preserving bounded-read health, cache status, load timing, row-limit policy,
+source chunk IDs, and Market context metadata. Empty reads and unavailable
+Parquet prefixes render designed empty states with the checked assets, read
+policy, and refresh action.
 
 ## Hub Zone explainer dashboard
 
@@ -633,13 +656,14 @@ copied from the Gas market knowledge base, then loads a bounded
 `silver.gas_model.silver_gas_dim_zone` sample through the shared gas model
 loader.
 
-The dashboard summarizes current zone dimension coverage by source system,
-source table, `zone_type`, STTM hub rows, DWGM/GBB zone rows, and lineage file
-counts. Its identifier preview makes the current source-qualified grain visible
-as `source_system + zone_type + source_zone_id`, preserving the distinction
-between STTM hubs and source-specific zones. Empty reads and unavailable
-Parquet prefixes render designed empty states with the checked asset, read
-policy, and refresh action.
+The first viewport summarizes current zone dimension coverage with KPI cards
+and a coverage diagram over source system, source table, `zone_type`, STTM hub
+rows, DWGM/GBB zone rows, and lineage file counts. Source-system coverage and
+identifier preview tables remain below the visual summary. The identifier
+preview makes the current source-qualified grain visible as `source_system +
+zone_type + source_zone_id`, preserving the distinction between STTM hubs and
+source-specific zones. Empty reads and unavailable Parquet prefixes render
+designed empty states with the checked asset, read policy, and refresh action.
 
 ## Connection Point explainer dashboard
 
@@ -655,13 +679,12 @@ copied from the Gas market knowledge base, then loads bounded samples from
 `silver.gas_model.silver_gas_fact_capacity_outlook` through the shared gas
 model loader.
 
-The dashboard summarizes current connection point dimension coverage by source
-system, source table, source connection point identifier, flow direction,
-facility link, location link, zone link, and exemption flag. Its relationship
-view keeps Facility, Location, Hub / Zone, actual flow, and capacity context
-visible where the bounded samples expose keys or source identifiers. Empty
-reads and unavailable Parquet prefixes render designed empty states with the
-checked assets, read policy, and refresh action.
+The first viewport summarizes current connection point dimension coverage with
+KPI cards, a relationship diagram for Facility, Location, Hub / Zone, flow
+direction, actual flow, and Capacity context, and a coverage diagram. Source
+system, relationship, coverage, and preview tables remain available below the
+visual summary. Empty reads and unavailable Parquet prefixes render designed
+empty states with the checked assets, read policy, and refresh action.
 
 ## Flow operations dashboard
 
