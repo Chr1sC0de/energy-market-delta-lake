@@ -198,7 +198,16 @@ def _(config, hub_zone_coverage, hub_zone_specs, mo, pl):
     mo.vstack(
         [
             mo.md("## Hub / Zone Coverage Health"),
-            mo.ui.table(hub_zone_coverage, selection=None),
+            mo.accordion(
+                {
+                    "Hub / Zone coverage details": mo.ui.table(
+                        hub_zone_coverage,
+                        selection=None,
+                    )
+                },
+                lazy=True,
+                multiple=False,
+            ),
             mo.accordion(
                 {"Coverage inputs": mo.ui.table(config_frame, selection=None)},
                 multiple=False,
@@ -224,7 +233,11 @@ def _(
     mo.vstack(
         [
             mo.md("## Source System Coverage"),
-            source_view,
+            mo.accordion(
+                {"Source system coverage details": source_view},
+                lazy=True,
+                multiple=False,
+            ),
         ]
     )
     return

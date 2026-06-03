@@ -228,7 +228,16 @@ def _(config, mo, participant_coverage, participant_specs, pl):
     mo.vstack(
         [
             mo.md("## Participant Coverage Health"),
-            mo.ui.table(participant_coverage, selection=None),
+            mo.accordion(
+                {
+                    "Participant coverage details": mo.ui.table(
+                        participant_coverage,
+                        selection=None,
+                    )
+                },
+                lazy=True,
+                multiple=False,
+            ),
             mo.accordion(
                 {"Coverage inputs": mo.ui.table(config_frame, selection=None)},
                 multiple=False,
@@ -260,7 +269,11 @@ def _(
     mo.vstack(
         [
             mo.md("## Participant Market Membership"),
-            membership_coverage_view,
+            mo.accordion(
+                {"Membership coverage details": membership_coverage_view},
+                lazy=True,
+                multiple=False,
+            ),
             mo.accordion(
                 {"Membership preview": membership_preview_view},
                 multiple=False,
