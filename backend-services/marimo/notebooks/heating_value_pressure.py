@@ -361,6 +361,7 @@ def _(
     else:
         source_coverage_view = mo.ui.table(source_coverage, selection=None)
 
+    source_coverage_label = "Heating value and pressure source coverage detail"
     mo.vstack(
         [
             mo.md("""
@@ -371,7 +372,11 @@ def _(
             coverage, Gas Day, pressure measurement, source-update, and ingest
             freshness where those fields are present.
             """),
-            source_coverage_view,
+            mo.accordion(
+                {source_coverage_label: source_coverage_view},
+                multiple=False,
+                lazy=True,
+            ),
         ]
     )
     return

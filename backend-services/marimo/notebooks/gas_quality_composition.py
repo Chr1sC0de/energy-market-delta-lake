@@ -313,7 +313,11 @@ def _(
             with quality type, unit, source point, gas-date, source-update, and
             ingest coverage for the currently loaded rows.
             """),
-            source_coverage_view,
+            mo.accordion(
+                {"Gas quality source coverage detail": source_coverage_view},
+                multiple=False,
+                lazy=True,
+            ),
         ]
     )
     return

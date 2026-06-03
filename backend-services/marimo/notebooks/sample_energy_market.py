@@ -559,21 +559,26 @@ def _(empty_state, loaded_tables, mo, source_coverage_frame):
             )
         )
     else:
-        source_coverage_view = mo.vstack(
-            [
-                mo.md(
-                    """
-                    ## Source Coverage
+        source_coverage_view = mo.ui.table(source_coverage)
 
-                    Coverage is calculated from `source_system`, `source_table`,
-                    and `source_tables` fields on the loaded gas_model outputs.
-                    """
-                ),
-                mo.ui.table(source_coverage),
-            ]
-        )
+    mo.vstack(
+        [
+            mo.md(
+                """
+                ## Source Coverage
 
-    source_coverage_view
+                Coverage is calculated from `source_system`, `source_table`,
+                and `source_tables` fields on the loaded gas_model outputs.
+                """
+            ),
+            mo.accordion(
+                {"Overview source coverage detail": source_coverage_view},
+                multiple=False,
+                lazy=True,
+            ),
+        ]
+    )
+
     return
 
 
