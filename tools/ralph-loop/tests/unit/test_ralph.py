@@ -1183,6 +1183,7 @@ def make_loop(
     drain: bool = False,
     max_issues: int = ralph.DEFAULT_DRAIN_BUDGET,
     max_codex_attempts: int = ralph.DEFAULT_CODEX_ATTEMPT_BUDGET,
+    codex_model: str = ralph.DEFAULT_CODEX_MODEL,
     exploratory_concurrency: int = ralph.DEFAULT_EXPLORATORY_CONCURRENCY,
     auto_pre_push_requeue: bool = True,
     auto_pre_push_requeue_limit: int = ralph.DEFAULT_AUTO_PRE_PUSH_REQUEUE_LIMIT,
@@ -1215,6 +1216,7 @@ def make_loop(
         drain=drain,
         max_issues=max_issues,
         max_codex_attempts=max_codex_attempts,
+        codex_model=codex_model,
         exploratory_concurrency=exploratory_concurrency,
         auto_pre_push_requeue=auto_pre_push_requeue,
         auto_pre_push_requeue_limit=auto_pre_push_requeue_limit,
@@ -1494,6 +1496,126 @@ def write_failed_pre_push_requeue_manifest(tmp_path: Path) -> Path:
         },
         "events": [
             {"stage": "committing_local_integration", "status": "running"},
+            {"stage": "failed", "status": "failed"},
+        ],
+    }
+    (run_dir / "ralph-run.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return run_dir
+
+
+def write_failed_pre_implementation_environment_manifest(tmp_path: Path) -> Path:
+    run_dir = tmp_path / "logs" / "issue-235-20260504T010203Z"
+    repo_root = tmp_path / "repo"
+    worktree_container = tmp_path / "worktrees"
+    implementation_worktree = worktree_container / "agent-issue-235"
+    integration_worktree = worktree_container / "agent-integrate-issue-235"
+    failure_log = run_dir / "codex-implementation-1.jsonl"
+    run_dir.mkdir(parents=True)
+    failure_log.write_text(
+        json.dumps({"type": "thread.started"})
+        + "\n"
+        + json.dumps(
+            {
+                "type": "error",
+                "message": json.dumps(
+                    {
+                        "type": "error",
+                        "error": {
+                            "type": "image_generation_user_error",
+                            "code": "invalid_value",
+                            "message": "The model 'gpt-image-2' does not exist.",
+                            "param": "tools",
+                        },
+                        "status": 400,
+                    },
+                    indent=2,
+                ),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    manifest = {
+        "schema_version": ralph.MANIFEST_SCHEMA_VERSION,
+        "run_kind": "implementation",
+        "status": "failed",
+        "stage": "failed",
+        "repo": "example/repo",
+        "issue": {
+            "number": 235,
+            "title": "Fix Codex environment",
+            "url": "https://github.com/example/repo/issues/235",
+        },
+        "delivery_mode": ralph.GITFLOW_MODE,
+        "integration_target": ralph.DEFAULT_GITFLOW_BRANCH,
+        "branches": {
+            "issue": "agent/issue-235-fix-codex-environment",
+            "integration_target": ralph.DEFAULT_GITFLOW_BRANCH,
+        },
+        "paths": {
+            "run_dir": str(run_dir),
+            "repo_root": str(repo_root),
+            "worktree_container": str(worktree_container),
+            "implementation_worktree": str(implementation_worktree),
+            "integration_worktree": str(integration_worktree),
+            "branch_sync_worktree": None,
+        },
+        "branch_sync": {
+            "status": "not_started",
+            "source_branch": None,
+            "target_branch": None,
+            "worktree_path": None,
+            "log_path": None,
+            "conflicted_files": [],
+            "recovery_guidance": None,
+            "failure_type": None,
+            "error": None,
+        },
+        "changed_files": [],
+        "commits": {"base": "base-sha", "latest_base": "base-sha"},
+        "qa_results": [],
+        "issue_completion_review": {
+            "enabled": True,
+            "required": False,
+            "status": "not_started",
+            "reasons": [],
+            "log_path": None,
+            "artifact_path": None,
+            "attempts": [],
+            "repair_attempts": [],
+            "failure": None,
+        },
+        "review_package": {
+            "status": "not_required",
+            "html_path": None,
+            "generator_log_path": None,
+            "summary": None,
+            "validation_status": "not_started",
+            "failure_reason": None,
+        },
+        "integration_commit": None,
+        "pushes": {},
+        "github_metadata": {
+            "status": "failure_commented",
+            "add_labels": [ralph.AGENT_FAILED_LABEL],
+            "remove_labels": [ralph.AGENT_RUNNING_LABEL, ralph.READY_LABEL],
+        },
+        "failure": {
+            "message": "Command failed: codex exec",
+            "log_path": str(failure_log),
+        },
+        "codex_attempts": [
+            {
+                "attempt": 1,
+                "status": "failed",
+                "log_path": str(failure_log),
+                "error": "Command failed: codex exec",
+            }
+        ],
+        "events": [
             {"stage": "failed", "status": "failed"},
         ],
     }
@@ -5908,12 +6030,45 @@ Build it.
         )
         self.assertTrue(ralph.looks_like_environment_failure(error))
 
+    def test_environment_failure_detection_matches_codex_tool_config_errors(
+        self,
+    ) -> None:
+        error = ralph.CommandFailure(
+            ["codex", "exec"],
+            Path("/repo"),
+            1,
+            json.dumps(
+                {
+                    "type": "error",
+                    "message": json.dumps(
+                        {
+                            "type": "error",
+                            "error": {
+                                "type": "image_generation_user_error",
+                                "message": ("The model 'gpt-image-2' does not exist."),
+                            },
+                        }
+                    ),
+                }
+            ),
+            "",
+            None,
+        )
+
+        self.assertTrue(ralph.looks_like_environment_failure(error))
+
     def test_codex_exec_command_uses_supported_unattended_flags(self) -> None:
         self.assertEqual(
             ralph.codex_exec_command(Path("/repo")),
             [
                 "codex",
                 "exec",
+                "--ignore-user-config",
+                "--ephemeral",
+                "--disable",
+                "hooks",
+                "--model",
+                ralph.DEFAULT_CODEX_MODEL,
                 "--cd",
                 "/repo",
                 "--sandbox",
@@ -5933,12 +6088,22 @@ Build it.
         )
         self.assertNotIn("--full-auto", ralph.codex_exec_command(Path("/repo")))
 
+    def test_codex_exec_command_accepts_custom_model(self) -> None:
+        command = ralph.codex_exec_command(Path("/repo"), codex_model="gpt-custom")
+
+        self.assertEqual(command[command.index("--model") + 1], "gpt-custom")
+
     def test_codex_exec_command_can_use_full_access_bypass(self) -> None:
         command = ralph.codex_exec_command(
             Path("/repo"),
             sandbox_mode=ralph.FULL_ACCESS_CODEX_SANDBOX,
         )
 
+        self.assertIn("--ignore-user-config", command)
+        self.assertIn("--ephemeral", command)
+        self.assertEqual(
+            command[command.index("--model") + 1], ralph.DEFAULT_CODEX_MODEL
+        )
         self.assertIn("--dangerously-bypass-approvals-and-sandbox", command)
         self.assertNotIn("--sandbox", command)
         self.assertNotIn("--full-auto", command)
@@ -6471,6 +6636,7 @@ Build it.
             config.max_codex_attempts,
             ralph.DEFAULT_CODEX_ATTEMPT_BUDGET,
         )
+        self.assertEqual(config.codex_model, ralph.DEFAULT_CODEX_MODEL)
 
     def test_parse_args_help_describes_default_drain_budget(self) -> None:
         output = io.StringIO()
@@ -6491,6 +6657,8 @@ Build it.
         self.assertIn("--allow-full-access-implementation", help_text)
         self.assertIn("--max-codex-attempts", help_text)
         self.assertIn("Defaults to 5", help_text)
+        self.assertIn("--codex-model", help_text)
+        self.assertIn(ralph.DEFAULT_CODEX_MODEL, help_text)
         self.assertIn("--exploratory-concurrency", help_text)
         self.assertIn("Defaults to 2", help_text)
         self.assertIn("--doctor", help_text)
@@ -6562,6 +6730,23 @@ Build it.
 
         self.assertEqual(config.max_codex_attempts, 7)
 
+    def test_build_config_records_codex_model(self) -> None:
+        runner = FakeRunner(
+            command_outputs={
+                ("git", "rev-parse", "--show-toplevel"): ["/work/repo\n"],
+                ("git", "config", "--get", "remote.origin.url"): [
+                    "git@github.com:example/repo.git\n"
+                ],
+            }
+        )
+
+        config = ralph.build_config(
+            ralph.parse_args(["--codex-model", "gpt-custom"]),
+            runner,
+        )
+
+        self.assertEqual(config.codex_model, "gpt-custom")
+
     def test_run_manifests_record_configuration(self) -> None:
         runner = FakeRunner()
         with tempfile.TemporaryDirectory() as tmp:
@@ -6610,6 +6795,10 @@ Build it.
         for payload in payloads:
             self.assertEqual(payload["configuration"]["exploratory_concurrency"], 5)
             self.assertEqual(payload["configuration"]["max_codex_attempts"], 7)
+            self.assertEqual(
+                payload["configuration"]["codex_model"],
+                ralph.DEFAULT_CODEX_MODEL,
+            )
             self.assertTrue(payload["configuration"]["auto_pre_push_requeue"])
             self.assertEqual(
                 payload["configuration"]["auto_pre_push_requeue_limit"],
@@ -6860,12 +7049,23 @@ Build it.
 
         self.assertEqual(result["status"], "passed")
         self.assertIn(
+            "Codex subprocess smoke",
+            [check["name"] for check in result["checks"]],
+        )
+        self.assertIn(
             ("git", "push", "--dry-run", "origin", "HEAD:dev"),
             [call.args for call in runner.calls],
         )
         self.assertIn(
             ("git", "push", "--dry-run", "origin", "HEAD:main"),
             [call.args for call in runner.calls],
+        )
+        codex_call = next(
+            call for call in runner.calls if call.args[:2] == ("codex", "exec")
+        )
+        self.assertEqual(
+            codex_call.args[codex_call.args.index("--model") + 1],
+            ralph.DEFAULT_CODEX_MODEL,
         )
 
     def test_shape_issues_doctor_requires_live_runner_provenance(self) -> None:
@@ -8226,6 +8426,7 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
         integration_worktree: Path,
         issue_branch: str,
         backup_ref: str,
+        issue_number: int = 234,
         labels: list[str] | None = None,
         comments: list[dict[str, Any]] | None = None,
         implementation_head: str = "impl-sha",
@@ -8233,10 +8434,10 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
     ) -> dict[tuple[str, ...], list[str]]:
         repo_root = run_dir.parents[1] / "repo"
         return {
-            issue_view_command(234): [
+            issue_view_command(issue_number): [
                 json.dumps(
                     issue_payload(
-                        234,
+                        issue_number,
                         labels
                         or [
                             ralph.AGENT_FAILED_LABEL,
@@ -8246,7 +8447,9 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
                     )
                 )
             ],
-            issue_comments_command(234): [json.dumps({"comments": comments or []})],
+            issue_comments_command(issue_number): [
+                json.dumps({"comments": comments or []})
+            ],
             ("git", "worktree", "list", "--porcelain"): [
                 self._requeue_worktree_list(
                     repo_root=repo_root,
@@ -8394,6 +8597,37 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
         )
         self.assertNotIn("--recover-run is not applicable", text)
 
+    def test_inspect_run_reports_requeue_eligible_environment_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_implementation_environment_manifest(tmp_path)
+            manifest = json.loads(
+                (run_dir / ralph.MANIFEST_NAME).read_text(encoding="utf-8")
+            )
+            output = io.StringIO()
+
+            eligibility, reasons = ralph_state.requeue_eligibility_for_manifest_data(
+                manifest
+            )
+            with redirect_stdout(output):
+                ralph.inspect_run(run_dir)
+
+        text = output.getvalue()
+        self.assertEqual(eligibility, "eligible")
+        self.assertIn(
+            "Codex subprocess environment failure happened before implementation changes",
+            reasons,
+        )
+        self.assertIn("Issue: #235 Fix Codex environment", text)
+        self.assertIn("QA status: not_started", text)
+        self.assertIn("changed files none", text)
+        self.assertIn("Requeue eligibility: eligible", text)
+        self.assertIn("no changed files were recorded", text)
+        self.assertIn(
+            f"python3 scripts/ralph.py --recover-run {run_dir} --dry-run",
+            text,
+        )
+
     def test_inspect_run_reports_review_package_failure_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -8498,6 +8732,55 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
         self.assertFalse(
             any(command[:3] == ("gh", "issue", "edit") for command in commands)
         )
+        self.assertFalse(
+            any(
+                command[:3] == ("git", "update-ref", backup_ref) for command in commands
+            )
+        )
+
+    def test_recover_run_dry_run_reports_environment_requeue_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_implementation_environment_manifest(tmp_path)
+            implementation_worktree, integration_worktree, issue_branch, backup_ref = (
+                self._requeue_manifest_paths(run_dir)
+            )
+            implementation_worktree.mkdir(parents=True)
+            integration_worktree.mkdir(parents=True)
+            runner = FakeRunner(
+                status_outputs=["", ""],
+                command_outputs=self._requeue_command_outputs(
+                    run_dir=run_dir,
+                    implementation_worktree=implementation_worktree,
+                    integration_worktree=integration_worktree,
+                    issue_branch=issue_branch,
+                    backup_ref=backup_ref,
+                    issue_number=235,
+                    implementation_head="base-sha",
+                    integration_head="base-sha",
+                ),
+            )
+            loop = make_loop(
+                tmp_path,
+                runner,
+                delivery_mode=ralph.GITFLOW_MODE,
+                dry_run=True,
+            )
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
+
+        text = output.getvalue()
+        commands = [call.args for call in runner.calls]
+        self.assertIn("Ralph environment requeue recovery", text)
+        self.assertIn("Issue: #235 Issue 235", text)
+        self.assertIn(
+            "Backup ref: not needed for pre-implementation environment failure",
+            text,
+        )
+        self.assertIn(ralph.ENVIRONMENT_REQUEUE_COMMENT_TITLE, text)
+        self.assertNotIn("would create", text)
         self.assertFalse(
             any(
                 command[:3] == ("git", "update-ref", backup_ref) for command in commands
@@ -8649,6 +8932,106 @@ class RalphRunInspectionRecoveryTests(unittest.TestCase):
         self.assertFalse(
             any(command[:3] == ("gh", "issue", "close") for command in commands)
         )
+
+    def test_recover_run_requeues_environment_failure_without_backup_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_implementation_environment_manifest(tmp_path)
+            implementation_worktree, integration_worktree, issue_branch, backup_ref = (
+                self._requeue_manifest_paths(run_dir)
+            )
+            implementation_worktree.mkdir(parents=True)
+            integration_worktree.mkdir(parents=True)
+            runner = FakeRunner(
+                status_outputs=["", ""],
+                command_outputs=self._requeue_command_outputs(
+                    run_dir=run_dir,
+                    implementation_worktree=implementation_worktree,
+                    integration_worktree=integration_worktree,
+                    issue_branch=issue_branch,
+                    backup_ref=backup_ref,
+                    issue_number=235,
+                    implementation_head="base-sha",
+                    integration_head="base-sha",
+                ),
+            )
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+
+            with redirect_stdout(io.StringIO()):
+                ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
+
+            comment = (run_dir / "issue-235-comment.md").read_text(encoding="utf-8")
+            manifest = json.loads(
+                (run_dir / "ralph-run.json").read_text(encoding="utf-8")
+            )
+
+        commands = [call.args for call in runner.calls]
+        self.assertNotIn(("git", "update-ref", backup_ref, "base-sha"), commands)
+        self.assertIn(
+            ("git", "worktree", "remove", str(implementation_worktree)),
+            commands,
+        )
+        self.assertIn(
+            ("git", "worktree", "remove", str(integration_worktree)),
+            commands,
+        )
+        self.assertIn(("git", "branch", "-D", issue_branch), commands)
+        self.assertIn(ralph.ENVIRONMENT_REQUEUE_COMMENT_TITLE, comment)
+        self.assertIn("Codex failed before changes were accepted", comment)
+        self.assertEqual(manifest["github_metadata"]["status"], "pre_push_requeued")
+        self.assertEqual(manifest["github_metadata"]["requeue_kind"], "environment")
+
+    def test_recover_run_environment_failure_ignores_stale_backup_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_dir = write_failed_pre_implementation_environment_manifest(tmp_path)
+            implementation_worktree, integration_worktree, issue_branch, backup_ref = (
+                self._requeue_manifest_paths(run_dir)
+            )
+            implementation_worktree.mkdir(parents=True)
+            integration_worktree.mkdir(parents=True)
+            command_outputs = self._requeue_command_outputs(
+                run_dir=run_dir,
+                implementation_worktree=implementation_worktree,
+                integration_worktree=integration_worktree,
+                issue_branch=issue_branch,
+                backup_ref=backup_ref,
+                issue_number=235,
+                implementation_head="base-sha",
+                integration_head="base-sha",
+            )
+            command_outputs[
+                (
+                    "git",
+                    "for-each-ref",
+                    "--format=%(objectname)",
+                    "--count=1",
+                    backup_ref,
+                )
+            ] = ["stale-backup-sha\n"]
+            runner = FakeRunner(
+                status_outputs=["", ""],
+                command_outputs=command_outputs,
+            )
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+
+            with redirect_stdout(io.StringIO()):
+                ralph.RalphRunRecovery(loop.config, runner).recover(run_dir)
+
+            comment = (run_dir / "issue-235-comment.md").read_text(encoding="utf-8")
+            manifest = json.loads(
+                (run_dir / "ralph-run.json").read_text(encoding="utf-8")
+            )
+
+        commands = [call.args for call in runner.calls]
+        self.assertNotIn(
+            ("git", "merge-base", "--is-ancestor", "stale-backup-sha", "origin/dev"),
+            commands,
+        )
+        self.assertIn(ralph.ENVIRONMENT_REQUEUE_COMMENT_TITLE, comment)
+        self.assertNotIn("stale-backup-sha", comment)
+        self.assertEqual(manifest["github_metadata"]["backup_commit"], None)
+        self.assertEqual(manifest["github_metadata"]["requeue_kind"], "environment")
 
     def test_recover_run_requeue_is_idempotent_after_partial_cleanup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -11868,6 +12251,8 @@ class RalphOperatorRunTests(unittest.TestCase):
                     "3",
                     "--max-codex-attempts",
                     "7",
+                    "--codex-model",
+                    "gpt-custom",
                     "--exploratory-concurrency",
                     "4",
                     "--skip-post-promotion-followups",
@@ -11897,6 +12282,8 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertIn("3", child_command)
         self.assertIn("--max-codex-attempts", child_command)
         self.assertIn("7", child_command)
+        self.assertIn("--codex-model", child_command)
+        self.assertIn("gpt-custom", child_command)
         self.assertIn("--exploratory-concurrency", child_command)
         self.assertIn("4", child_command)
         self.assertIn("--skip-post-promotion-followups", child_command)
@@ -11904,6 +12291,7 @@ class RalphOperatorRunTests(unittest.TestCase):
         self.assertEqual(manifest["last_checkpoint"]["checkpoint"], "detached_launched")
         self.assertEqual(manifest["detached"]["pid"], 321)
         self.assertEqual(manifest["configuration"]["max_codex_attempts"], 7)
+        self.assertEqual(manifest["configuration"]["codex_model"], "gpt-custom")
         self.assertEqual(manifest["configuration"]["exploratory_concurrency"], 4)
 
     def test_operator_docs_include_codex_safe_command_strings(self) -> None:
@@ -14378,6 +14766,68 @@ Build it.
             ["failed", "failed", "completed"],
         )
         self.assertEqual(manifest_payload["qa_results"][0]["status"], "passed")
+
+    def test_codex_tool_config_failure_stops_without_retrying_attempt_budget(
+        self,
+    ) -> None:
+        runner = FakeRunner(status_outputs=[" M scripts/ralph.py\n"])
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, max_codex_attempts=5)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            worktree_path, run_dir, manifest, access_plan = (
+                implementation_attempt_context(tmp_path, loop, issue)
+            )
+            codex_command = tuple(ralph.codex_exec_command(worktree_path))
+            runner.fail_command_attempts[codex_command] = [
+                (
+                    1,
+                    json.dumps(
+                        {
+                            "type": "error",
+                            "message": json.dumps(
+                                {
+                                    "type": "error",
+                                    "error": {
+                                        "type": "image_generation_user_error",
+                                        "message": (
+                                            "The model 'gpt-image-2' does not exist."
+                                        ),
+                                    },
+                                }
+                            ),
+                        }
+                    ),
+                )
+            ]
+
+            with (
+                redirect_stdout(io.StringIO()),
+                self.assertRaises(ralph.EnvironmentFailure),
+            ):
+                loop._implement_with_retry(
+                    issue,
+                    worktree_path,
+                    run_dir,
+                    manifest,
+                    access_plan=access_plan,
+                )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        codex_calls = [
+            call for call in runner.calls if call.args[:2] == ("codex", "exec")
+        ]
+
+        self.assertEqual(len(codex_calls), 1)
+        self.assertEqual(
+            [attempt["status"] for attempt in manifest_payload["codex_attempts"]],
+            ["failed"],
+        )
+        self.assertEqual(
+            manifest_payload["codex_attempts"][0]["log_path"],
+            str(run_dir / "codex-implementation-1.jsonl"),
+        )
 
     def test_qa_failures_consume_codex_attempt_budget_and_retry_until_success(
         self,

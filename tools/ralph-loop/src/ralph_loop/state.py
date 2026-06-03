@@ -45,6 +45,7 @@ def path_text(path: Path | None) -> str | None:
 def run_configuration_payload(config: LoopConfig) -> dict[str, Any]:
     return {
         "max_codex_attempts": config.max_codex_attempts,
+        "codex_model": config.codex_model,
         "exploratory_concurrency": config.exploratory_concurrency,
         "auto_pre_push_requeue": config.auto_pre_push_requeue,
         "auto_pre_push_requeue_limit": config.auto_pre_push_requeue_limit,
@@ -3710,6 +3711,19 @@ def requeue_eligibility_for_manifest_data(
         if branch_sync_status in {"failed", "running"}:
             reasons.append(f"branch sync status is {branch_sync_status}")
 
+    if not reasons and manifest_data_is_no_change_environment_failure(data):
+        return (
+            "eligible",
+            (
+                "Codex subprocess environment failure happened before implementation changes",
+                "no changed files were recorded",
+                (
+                    "no QA, Issue completion review, Review package, "
+                    "Local integration, or Push started"
+                ),
+            ),
+        )
+
     if not manifest_data_qa_passed_for_requeue(data):
         reasons.append("implementation QA did not fully pass")
     if not manifest_data_issue_completion_review_passed_for_requeue(data):
@@ -3776,6 +3790,139 @@ def manifest_data_issue_completion_review_passed_for_requeue(
         return False
     status = str(review.get("status") or "not_started")
     return status in {"passed", "skipped_not_required"}
+
+
+def manifest_data_is_no_change_environment_failure(data: dict[str, Any]) -> bool:
+    if str(data.get("run_kind") or "") != "implementation":
+        return False
+    if str(data.get("status") or "") != "failed":
+        return False
+    if normalized_commit_payload(data.get("integration_commit")) is not None:
+        return False
+    if manifest_data_push_status_value(data) != "not_started":
+        return False
+    if manifest_data_changed_files(data):
+        return False
+    if manifest_data_qa_results(data):
+        return False
+    if not manifest_data_issue_completion_review_not_started(data):
+        return False
+    if not manifest_data_review_package_not_started(data):
+        return False
+    branch_sync = data.get("branch_sync")
+    if isinstance(branch_sync, dict):
+        branch_sync_status = str(branch_sync.get("status") or "not_started")
+        if branch_sync_status in {"failed", "running"}:
+            return False
+    return manifest_data_has_codex_environment_failure_signal(data)
+
+
+def manifest_data_changed_files(data: dict[str, Any]) -> list[str]:
+    changed_files = data.get("changed_files")
+    if not isinstance(changed_files, list):
+        return []
+    return [str(path) for path in changed_files if str(path)]
+
+
+def manifest_data_qa_results(data: dict[str, Any]) -> list[dict[str, Any]]:
+    results = data.get("qa_results")
+    if not isinstance(results, list):
+        return []
+    return [item for item in results if isinstance(item, dict)]
+
+
+def manifest_data_issue_completion_review_not_started(data: dict[str, Any]) -> bool:
+    review = data.get("issue_completion_review")
+    if not isinstance(review, dict):
+        return True
+    return str(review.get("status") or "not_started") == "not_started"
+
+
+def manifest_data_review_package_not_started(data: dict[str, Any]) -> bool:
+    package = data.get("review_package")
+    if not isinstance(package, dict):
+        return True
+    status = str(package.get("status") or "not_required")
+    validation_status = str(package.get("validation_status") or "not_started")
+    return (
+        status in {"not_required", "not_started"} and validation_status == "not_started"
+    )
+
+
+def manifest_data_has_codex_environment_failure_signal(data: dict[str, Any]) -> bool:
+    for text in manifest_data_failure_texts(data):
+        lowered = text.lower()
+        if CODEX_SUBPROCESS_ENVIRONMENT_FAILURE_TYPE in lowered:
+            return True
+        if any(pattern in lowered for pattern in ENVIRONMENT_FAILURE_PATTERNS):
+            return True
+    for log_path in manifest_data_failure_log_paths(data):
+        log_text = manifest_failure_log_text(data, log_path)
+        if log_text is None:
+            continue
+        lowered = log_text.lower()
+        if any(pattern in lowered for pattern in ENVIRONMENT_FAILURE_PATTERNS):
+            return True
+    return False
+
+
+def manifest_data_failure_texts(data: dict[str, Any]) -> list[str]:
+    texts: list[str] = []
+    failure = data.get("failure")
+    if isinstance(failure, dict):
+        for key in ("type", "message", "recovery_guidance"):
+            value = failure.get(key)
+            if isinstance(value, str) and value:
+                texts.append(value)
+    attempts = data.get("codex_attempts")
+    if isinstance(attempts, list):
+        for attempt in attempts:
+            if not isinstance(attempt, dict):
+                continue
+            error = attempt.get("error")
+            if isinstance(error, str) and error:
+                texts.append(error)
+    return texts
+
+
+def manifest_data_failure_log_paths(data: dict[str, Any]) -> list[Path]:
+    paths: list[Path] = []
+    failure = data.get("failure")
+    if isinstance(failure, dict):
+        log_path = failure.get("log_path")
+        if isinstance(log_path, str) and log_path:
+            paths.append(Path(log_path))
+    attempts = data.get("codex_attempts")
+    if isinstance(attempts, list):
+        for attempt in attempts:
+            if not isinstance(attempt, dict):
+                continue
+            log_path = attempt.get("log_path")
+            if isinstance(log_path, str) and log_path:
+                paths.append(Path(log_path))
+    return paths
+
+
+def manifest_failure_log_text(data: dict[str, Any], log_path: Path) -> str | None:
+    paths = data.get("paths")
+    if not isinstance(paths, dict):
+        return None
+    run_dir_text = paths.get("run_dir")
+    if not isinstance(run_dir_text, str) or run_dir_text == "":
+        return None
+    try:
+        resolved_run_dir = Path(run_dir_text).resolve()
+        resolved_log_path = log_path.resolve()
+        resolved_log_path.relative_to(resolved_run_dir)
+    except (OSError, ValueError):
+        return None
+    if not resolved_log_path.is_file():
+        return None
+    try:
+        with resolved_log_path.open("r", encoding="utf-8", errors="replace") as handle:
+            return handle.read(FAILURE_SUMMARY_ARTIFACT_MAX_BYTES)
+    except OSError:
+        return None
 
 
 def manifest_data_has_review_package_failure(data: dict[str, Any]) -> bool:
