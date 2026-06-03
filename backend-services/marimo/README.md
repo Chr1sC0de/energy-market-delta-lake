@@ -737,13 +737,17 @@ registry-backed Capacity context panel and links to Facility, Flow, Connection
 Point, Gas Day, GBB map, source coverage, and table explorer surfaces, then
 loads bounded recent samples through the shared gas model loader.
 
-The dashboard summarizes capacity source coverage, `capacity_type`,
-`flow_direction`, source facility, date range, and `capacity_quantity_tj`
-fields. It distinguishes short-term, medium-term, uncontracted, nameplate, and
-connection-point nameplate source coverage from the loaded `source_table` and
-`source_tables` values where present. Missing tables, unavailable Parquet
-prefixes, empty reads, filter misses, and missing columns render designed empty
-states with the checked asset, read policy, and refresh action.
+The dashboard leads with capacity KPI cards and a Plotly capacity-source
+summary built from the same filtered bounded rows as the detailed views. It
+summarizes capacity source coverage, `capacity_type`, `flow_direction`, source
+facility, date range, and `capacity_quantity_tj` fields. It distinguishes
+short-term, medium-term, uncontracted, nameplate, and connection-point
+nameplate source coverage from the loaded `source_table` and `source_tables`
+values where present. Source coverage, capacity summary, and recent loaded
+observation tables remain below the visual summary. Missing tables,
+unavailable Parquet prefixes, empty reads, filter misses, and missing columns
+render designed empty states with the checked asset, read policy, and refresh
+action.
 
 ## Capacity auction dashboard
 
@@ -755,12 +759,15 @@ Zone, gas market overview, source coverage, source lineage, and table explorer
 surfaces, then loads bounded recent samples through the shared gas model
 loader.
 
-The dashboard summarizes auction ID, `auction_date`, Hub / Zone, capacity
-period, `auction_metric`, `quantity_gj`, and `price` fields. It filters the
-bounded read by auction date, Hub / Zone, capacity period, auction metric, and
-source system. Missing tables, unavailable Parquet prefixes, empty reads,
-filter misses, and missing columns render designed empty states with the
-checked asset, read policy, and refresh action.
+The dashboard leads with capacity auction KPI cards and a Plotly auction metric
+quantity summary built from the same filtered bounded rows as the detailed
+views. It summarizes auction ID, `auction_date`, Hub / Zone, capacity period,
+`auction_metric`, `quantity_gj`, and `price` fields. It filters the bounded
+read by auction date, Hub / Zone, capacity period, auction metric, and source
+system. Auction, metric/source coverage, and recent loaded observation tables
+remain below the visual summary. Missing tables, unavailable Parquet prefixes,
+empty reads, filter misses, and missing columns render designed empty states
+with the checked asset, read policy, and refresh action.
 
 ## Capacity transactions dashboard
 
@@ -772,13 +779,17 @@ Capacity Auctions, gas market overview, source coverage, source lineage, and
 table explorer surfaces, then loads bounded recent samples through the shared
 gas model loader.
 
-The dashboard summarizes `transaction_type`, transaction and supply dates,
+The dashboard leads with capacity transaction KPI cards and a Plotly
+transaction activity summary built from the same filtered bounded rows as the
+detailed views. It summarizes `transaction_type`, transaction and supply dates,
 source location, source facility, `quantity_tj`, `quantity_gj`, `volume_pj`,
 `price`, and source coverage fields. It filters the bounded read by
 transaction type, transaction date, source location, source facility, and
-source system. Missing tables, unavailable Parquet prefixes, empty reads,
-filter misses, and missing columns render designed empty states with the
-checked asset, read policy, and refresh action.
+source system. Transaction summary, source coverage, and recent loaded
+observation tables remain below the visual summary. Missing tables,
+unavailable Parquet prefixes, empty reads, filter misses, and missing columns
+render designed empty states with the checked asset, read policy, and refresh
+action.
 
 ## Nomination and demand forecast dashboard
 
@@ -1055,14 +1066,16 @@ the shared bounded gas model loader and session cache from
 filters the loaded bounded preview by Gas Day, source facility, zone,
 `adequacy_flag`, and `source_system`.
 
-The dashboard shows loaded linepack KPIs, `actual_linepack_gj` quantity
-coverage, adequacy flags and descriptions, facility and zone coverage, source
-coverage by source system and source table, bounded row previews, and
-Linepack, Flow, Capacity, MOS, source coverage, and table explorer context
-links from the Marimo registry. Missing linepack data, unavailable Parquet
-prefixes, missing optional fields, and filter combinations with no matches
-render dashboard empty states with the checked table, read policy, and refresh
-action.
+The dashboard leads with linepack KPI cards and a Plotly adequacy trend built
+from the same filtered bounded rows as the detailed views. It shows
+`actual_linepack_gj` quantity coverage, adequacy flags and descriptions,
+facility and zone coverage, source coverage by source system and source table,
+bounded row previews, and Linepack, Flow, Capacity, MOS, source coverage, and
+table explorer context links from the Marimo registry. Source coverage,
+facility/zone adequacy summary, and recent loaded observation tables remain
+below the visual summary. Missing linepack data, unavailable Parquet prefixes,
+missing optional fields, and filter combinations with no matches render
+dashboard empty states with the checked table, read policy, and refresh action.
 
 ## Bid-Offer stack dashboard
 

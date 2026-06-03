@@ -14548,6 +14548,72 @@ def linepack_summary_frame(
     return summary.select([*list(_LINEPACK_SUMMARY_SCHEMA)])
 
 
+def linepack_adequacy_trend_figure(
+    load: GasTableLoad | None,
+    gas_date_filter: str = LINEPACK_GAS_DATE_FILTER_ALL,
+    facility_filter: str = LINEPACK_FACILITY_FILTER_ALL,
+    zone_filter: str = LINEPACK_ZONE_FILTER_ALL,
+    adequacy_flag_filter: str = LINEPACK_ADEQUACY_FLAG_FILTER_ALL,
+    source_system_filter: str = LINEPACK_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    height: int = 320,
+) -> Figure:
+    """Return a linepack adequacy trend chart for the current filters."""
+    dataframe = _filtered_linepack_dataframe(
+        load,
+        gas_date_filter,
+        facility_filter,
+        zone_filter,
+        adequacy_flag_filter,
+        source_system_filter,
+    )
+    figure = Figure()
+    layout = plotly_theme_defaults(height=height)
+    layout["yaxis"] = {
+        "gridcolor": "#d8e2de",
+        "title": "Total linepack GJ",
+        "zeroline": False,
+    }
+    if dataframe.is_empty():
+        figure.update_layout(**layout)
+        return figure
+
+    chart_frame = (
+        dataframe.group_by("gas_date", "adequacy_flag")
+        .agg(
+            pl.col("actual_linepack_gj").sum().alias("total linepack gj"),
+            pl.len().alias("rows"),
+            pl.col("source_system").drop_nulls().n_unique().alias("source systems"),
+        )
+        .sort(["gas_date", "adequacy_flag"], nulls_last=True)
+    )
+    for adequacy_flag, rows in chart_frame.group_by(
+        "adequacy_flag",
+        maintain_order=True,
+    ):
+        adequacy_label = _format_optional_value(adequacy_flag[0])
+        figure.add_trace(
+            Scatter(
+                x=rows.get_column("gas_date").to_list(),
+                y=rows.get_column("total linepack gj").to_list(),
+                mode="lines+markers",
+                name=adequacy_label,
+                customdata=[
+                    [row["adequacy_flag"], row["rows"], row["source systems"]]
+                    for row in rows.to_dicts()
+                ],
+                hovertemplate=(
+                    "<b>%{x}</b><br>Total linepack: %{y:,.2f} GJ"
+                    "<br>Adequacy flag: %{customdata[0]}"
+                    "<br>Rows: %{customdata[1]:,}"
+                    "<br>Source systems: %{customdata[2]:,}<extra></extra>"
+                ),
+            )
+        )
+    figure.update_layout(**layout)
+    return figure
+
+
 def linepack_source_coverage_frame(
     load: GasTableLoad | None,
     gas_date_filter: str = LINEPACK_GAS_DATE_FILTER_ALL,
@@ -15071,6 +15137,66 @@ def capacity_outlook_summary_frame(
     return summary.select([*list(_CAPACITY_OUTLOOK_SUMMARY_SCHEMA)])
 
 
+def capacity_outlook_summary_figure(
+    load: GasTableLoad | None,
+    date_range_filter: str = CAPACITY_OUTLOOK_DATE_RANGE_FILTER_ALL,
+    capacity_type_filter: str = CAPACITY_OUTLOOK_CAPACITY_TYPE_FILTER_ALL,
+    direction_filter: str = CAPACITY_OUTLOOK_DIRECTION_FILTER_ALL,
+    facility_filter: str = CAPACITY_OUTLOOK_FACILITY_FILTER_ALL,
+    source_coverage_filter: str = CAPACITY_OUTLOOK_SOURCE_COVERAGE_FILTER_ALL,
+    source_system_filter: str = CAPACITY_OUTLOOK_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    height: int = 320,
+) -> Figure:
+    """Return a capacity-source summary chart for the current filters."""
+    summary = capacity_outlook_summary_frame(
+        load,
+        date_range_filter,
+        capacity_type_filter,
+        direction_filter,
+        facility_filter,
+        source_coverage_filter,
+        source_system_filter,
+    )
+    figure = Figure()
+    layout = plotly_theme_defaults(height=height)
+    layout["yaxis"] = {
+        "gridcolor": "#d8e2de",
+        "title": "Total capacity TJ",
+        "zeroline": False,
+    }
+    if summary.is_empty():
+        figure.update_layout(**layout)
+        return figure
+
+    chart_frame = (
+        summary.group_by("capacity source coverage", "direction")
+        .agg(
+            pl.col("total capacity tj").sum().alias("total capacity tj"),
+            pl.col("rows").sum().alias("rows"),
+        )
+        .sort(["total capacity tj", "capacity source coverage"], descending=True)
+        .head(16)
+    )
+    for direction, rows in chart_frame.group_by("direction", maintain_order=True):
+        direction_label = _format_optional_value(direction[0])
+        figure.add_trace(
+            Bar(
+                x=rows.get_column("capacity source coverage").to_list(),
+                y=rows.get_column("total capacity tj").to_list(),
+                name=direction_label,
+                customdata=[[row["direction"], row["rows"]] for row in rows.to_dicts()],
+                hovertemplate=(
+                    "<b>%{x}</b><br>Total capacity: %{y:,.2f} TJ"
+                    "<br>Direction: %{customdata[0]}"
+                    "<br>Rows: %{customdata[1]:,}<extra></extra>"
+                ),
+            )
+        )
+    figure.update_layout(**layout, barmode="group")
+    return figure
+
+
 def capacity_outlook_observation_frame(
     load: GasTableLoad | None,
     date_range_filter: str = CAPACITY_OUTLOOK_DATE_RANGE_FILTER_ALL,
@@ -15511,6 +15637,72 @@ def capacity_auction_metric_frame(
         )
     )
     return metric_summary.select([*list(_CAPACITY_AUCTION_METRIC_SCHEMA)])
+
+
+def capacity_auction_metric_figure(
+    load: GasTableLoad | None,
+    auction_date_filter: str = CAPACITY_AUCTION_AUCTION_DATE_FILTER_ALL,
+    zone_filter: str = CAPACITY_AUCTION_ZONE_FILTER_ALL,
+    capacity_period_filter: str = CAPACITY_AUCTION_CAPACITY_PERIOD_FILTER_ALL,
+    metric_filter: str = CAPACITY_AUCTION_METRIC_FILTER_ALL,
+    source_system_filter: str = CAPACITY_AUCTION_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    height: int = 320,
+) -> Figure:
+    """Return an auction metric quantity chart for the current filters."""
+    metric_summary = capacity_auction_metric_frame(
+        load,
+        auction_date_filter,
+        zone_filter,
+        capacity_period_filter,
+        metric_filter,
+        source_system_filter,
+    )
+    figure = Figure()
+    layout = plotly_theme_defaults(height=height)
+    layout["yaxis"] = {
+        "gridcolor": "#d8e2de",
+        "title": "Total quantity GJ",
+        "zeroline": False,
+    }
+    if metric_summary.is_empty():
+        figure.update_layout(**layout)
+        return figure
+
+    chart_frame = (
+        metric_summary.group_by("auction metric", "source system")
+        .agg(
+            pl.col("total quantity gj").sum().alias("total quantity gj"),
+            pl.col("rows").sum().alias("rows"),
+            pl.col("auction ids").sum().alias("auction ids"),
+        )
+        .sort(["total quantity gj", "auction metric"], descending=True)
+        .head(16)
+    )
+    for source_system, rows in chart_frame.group_by(
+        "source system",
+        maintain_order=True,
+    ):
+        source_system_label = _format_optional_value(source_system[0])
+        figure.add_trace(
+            Bar(
+                x=rows.get_column("auction metric").to_list(),
+                y=rows.get_column("total quantity gj").to_list(),
+                name=source_system_label,
+                customdata=[
+                    [row["source system"], row["rows"], row["auction ids"]]
+                    for row in rows.to_dicts()
+                ],
+                hovertemplate=(
+                    "<b>%{x}</b><br>Total quantity: %{y:,.2f} GJ"
+                    "<br>Source system: %{customdata[0]}"
+                    "<br>Rows: %{customdata[1]:,}"
+                    "<br>Auction IDs: %{customdata[2]:,}<extra></extra>"
+                ),
+            )
+        )
+    figure.update_layout(**layout, barmode="group")
+    return figure
 
 
 def capacity_auction_observation_frame(
@@ -15996,6 +16188,76 @@ def capacity_transaction_source_coverage_frame(
         )
     )
     return coverage.select([*list(_CAPACITY_TRANSACTION_SOURCE_COVERAGE_SCHEMA)])
+
+
+def capacity_transaction_activity_figure(
+    load: GasTableLoad | None,
+    transaction_type_filter: str = CAPACITY_TRANSACTION_TYPE_FILTER_ALL,
+    transaction_date_filter: str = CAPACITY_TRANSACTION_DATE_FILTER_ALL,
+    location_filter: str = CAPACITY_TRANSACTION_LOCATION_FILTER_ALL,
+    facility_filter: str = CAPACITY_TRANSACTION_FACILITY_FILTER_ALL,
+    source_system_filter: str = CAPACITY_TRANSACTION_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    height: int = 320,
+) -> Figure:
+    """Return a transaction activity chart for the current filters."""
+    summary = capacity_transaction_summary_frame(
+        load,
+        transaction_type_filter,
+        transaction_date_filter,
+        location_filter,
+        facility_filter,
+        source_system_filter,
+    )
+    figure = Figure()
+    layout = plotly_theme_defaults(height=height)
+    layout["yaxis"] = {
+        "gridcolor": "#d8e2de",
+        "title": "Rows",
+        "zeroline": False,
+    }
+    if summary.is_empty():
+        figure.update_layout(**layout)
+        return figure
+
+    chart_frame = (
+        summary.group_by("transaction type", "source location")
+        .agg(
+            pl.col("rows").sum().alias("rows"),
+            pl.col("total quantity tj").sum().alias("total quantity tj"),
+            pl.col("total volume pj").sum().alias("total volume pj"),
+            pl.col("price rows").sum().alias("price rows"),
+        )
+        .sort(["rows", "transaction type"], descending=True)
+        .head(16)
+    )
+    for location, rows in chart_frame.group_by("source location", maintain_order=True):
+        location_label = _format_optional_value(location[0])
+        figure.add_trace(
+            Bar(
+                x=rows.get_column("transaction type").to_list(),
+                y=rows.get_column("rows").to_list(),
+                name=location_label,
+                customdata=[
+                    [
+                        row["source location"],
+                        row["total quantity tj"],
+                        row["total volume pj"],
+                        row["price rows"],
+                    ]
+                    for row in rows.to_dicts()
+                ],
+                hovertemplate=(
+                    "<b>%{x}</b><br>Rows: %{y:,}"
+                    "<br>Source location: %{customdata[0]}"
+                    "<br>Total quantity: %{customdata[1]:,.2f} TJ"
+                    "<br>Total volume: %{customdata[2]:,.2f} PJ"
+                    "<br>Price rows: %{customdata[3]:,}<extra></extra>"
+                ),
+            )
+        )
+    figure.update_layout(**layout, barmode="group")
+    return figure
 
 
 def capacity_transaction_observation_frame(

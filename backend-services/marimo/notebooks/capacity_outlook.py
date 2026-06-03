@@ -29,10 +29,13 @@ def _():
         capacity_outlook_source_coverage_frame,
         capacity_outlook_source_coverage_options,
         capacity_outlook_source_system_options,
+        capacity_outlook_summary_figure,
         capacity_outlook_summary_frame,
         discover_dashboard_config,
         gas_table_load_status_frame,
         gas_table_load_status_message,
+        render_kpi_cards_html,
+        render_visual_empty_state_html,
         render_capacity_outlook_context_links,
         render_dashboard_context_panel,
     )
@@ -58,6 +61,7 @@ def _():
         capacity_outlook_source_coverage_frame,
         capacity_outlook_source_coverage_options,
         capacity_outlook_source_system_options,
+        capacity_outlook_summary_figure,
         capacity_outlook_summary_frame,
         discover_dashboard_config,
         gas_table_load_status_frame,
@@ -65,6 +69,8 @@ def _():
         mo,
         pl,
         refresh_token_from_control,
+        render_kpi_cards_html,
+        render_visual_empty_state_html,
         render_capacity_outlook_context_links,
         render_dashboard_context_panel,
     )
@@ -242,11 +248,14 @@ def _(
     capacity_outlook_empty_state_markdown,
     capacity_outlook_kpi_frame,
     capacity_outlook_load,
+    capacity_outlook_summary_figure,
     capacity_type_filter,
     date_range_filter,
     direction_filter,
     facility_filter,
     mo,
+    render_kpi_cards_html,
+    render_visual_empty_state_html,
     source_coverage_filter,
     source_system_filter,
 ):
@@ -261,13 +270,36 @@ def _(
     )
     if kpis.is_empty():
         kpi_view = mo.md(capacity_outlook_empty_state_markdown(capacity_outlook_load))
+        capacity_visual = mo.Html(
+            render_visual_empty_state_html(
+                title="No capacity summary to chart",
+                detail=(
+                    "The current filters do not match loaded bounded capacity "
+                    "outlook rows."
+                ),
+            )
+        )
     else:
-        kpi_view = mo.ui.table(kpis, selection=None)
+        kpi_view = mo.Html(
+            render_kpi_cards_html(kpis, title="Capacity outlook health KPIs")
+        )
+        capacity_visual = mo.ui.plotly(
+            capacity_outlook_summary_figure(
+                capacity_outlook_load,
+                date_range_filter.value,
+                capacity_type_filter.value,
+                direction_filter.value,
+                facility_filter.value,
+                source_coverage_filter.value,
+                source_system_filter.value,
+            )
+        )
 
     mo.vstack(
         [
             mo.md("## Capacity Outlook Health"),
             kpi_view,
+            capacity_visual,
         ]
     )
     return

@@ -22,6 +22,7 @@ def _():
         capacity_auction_capacity_period_options,
         capacity_auction_empty_state_markdown,
         capacity_auction_kpi_frame,
+        capacity_auction_metric_figure,
         capacity_auction_metric_frame,
         capacity_auction_metric_options,
         capacity_auction_observation_frame,
@@ -31,6 +32,8 @@ def _():
         discover_dashboard_config,
         gas_table_load_status_frame,
         gas_table_load_status_message,
+        render_kpi_cards_html,
+        render_visual_empty_state_html,
         render_capacity_auction_context_links,
         render_dashboard_context_panel,
     )
@@ -49,6 +52,7 @@ def _():
         capacity_auction_capacity_period_options,
         capacity_auction_empty_state_markdown,
         capacity_auction_kpi_frame,
+        capacity_auction_metric_figure,
         capacity_auction_metric_frame,
         capacity_auction_metric_options,
         capacity_auction_observation_frame,
@@ -61,6 +65,8 @@ def _():
         mo,
         pl,
         refresh_token_from_control,
+        render_kpi_cards_html,
+        render_visual_empty_state_html,
         render_capacity_auction_context_links,
         render_dashboard_context_panel,
     )
@@ -280,9 +286,12 @@ def _(
     capacity_auction_empty_state_markdown,
     capacity_auction_kpi_frame,
     capacity_auction_load,
+    capacity_auction_metric_figure,
     capacity_period_filter,
     metric_filter,
     mo,
+    render_kpi_cards_html,
+    render_visual_empty_state_html,
     source_system_filter,
     zone_filter,
 ):
@@ -296,13 +305,35 @@ def _(
     )
     if kpis.is_empty():
         kpi_view = mo.md(capacity_auction_empty_state_markdown(capacity_auction_load))
+        auction_visual = mo.Html(
+            render_visual_empty_state_html(
+                title="No auction metric summary to chart",
+                detail=(
+                    "The current filters do not match loaded bounded capacity "
+                    "auction rows."
+                ),
+            )
+        )
     else:
-        kpi_view = mo.ui.table(kpis, selection=None)
+        kpi_view = mo.Html(
+            render_kpi_cards_html(kpis, title="Capacity auction health KPIs")
+        )
+        auction_visual = mo.ui.plotly(
+            capacity_auction_metric_figure(
+                capacity_auction_load,
+                auction_date_filter.value,
+                zone_filter.value,
+                capacity_period_filter.value,
+                metric_filter.value,
+                source_system_filter.value,
+            )
+        )
 
     mo.vstack(
         [
             mo.md("## Capacity Auction Summary"),
             kpi_view,
+            auction_visual,
         ]
     )
     return

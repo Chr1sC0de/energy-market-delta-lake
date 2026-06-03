@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
-from typing import Any, Self, cast
+from typing import Any, Protocol, Self, cast
 
 import polars as pl
 import pytest
@@ -230,6 +230,7 @@ from marimoserver.gas_dashboard import (
     capacity_auction_capacity_period_options,
     capacity_auction_empty_state_markdown,
     capacity_auction_kpi_frame,
+    capacity_auction_metric_figure,
     capacity_auction_metric_frame,
     capacity_auction_metric_options,
     capacity_auction_observation_frame,
@@ -237,6 +238,7 @@ from marimoserver.gas_dashboard import (
     capacity_auction_summary_frame,
     capacity_auction_zone_options,
     capacity_transaction_date_options,
+    capacity_transaction_activity_figure,
     capacity_transaction_empty_state_markdown,
     capacity_transaction_facility_options,
     capacity_transaction_kpi_frame,
@@ -256,6 +258,7 @@ from marimoserver.gas_dashboard import (
     capacity_outlook_source_coverage_frame,
     capacity_outlook_source_coverage_options,
     capacity_outlook_source_system_options,
+    capacity_outlook_summary_figure,
     capacity_outlook_summary_frame,
     connection_point_context_empty_state_markdown,
     connection_point_dimension_coverage_frame,
@@ -364,6 +367,7 @@ from marimoserver.gas_dashboard import (
     market_price_trend_frame,
     market_price_type_summary_frame,
     linepack_adequacy_flag_options,
+    linepack_adequacy_trend_figure,
     linepack_empty_state_markdown,
     linepack_facility_options,
     linepack_gas_date_options,
@@ -558,6 +562,19 @@ from marimoserver.table_explorer import (
     TableFormat,
     TablePrefix,
 )
+
+
+class _PlotlyFigure(Protocol):
+    def to_plotly_json(self) -> dict[str, Any]: ...
+
+
+def _figure_data(figure: _PlotlyFigure) -> list[dict[str, Any]]:
+    return cast(list[dict[str, Any]], figure.to_plotly_json()["data"])
+
+
+def _trace_y_total(trace: Mapping[str, Any]) -> float:
+    values = cast(list[float | int], trace.get("y", []))
+    return float(sum(values))
 
 
 def _assert_current_source_chunks(entry: DashboardRegistryEntry) -> None:
@@ -5280,6 +5297,7 @@ def test_capacity_outlook_helpers_summarize_filters_and_source_coverage() -> Non
     source_coverage = capacity_outlook_source_coverage_frame(load)
     summary = capacity_outlook_summary_frame(load)
     observations = capacity_outlook_observation_frame(load, preview_rows=10)
+    figure = capacity_outlook_summary_figure(load)
     kpi_values = {
         row["metric"]: row["value"]
         for row in capacity_outlook_kpi_frame(load).to_dicts()
@@ -5313,6 +5331,9 @@ def test_capacity_outlook_helpers_summarize_filters_and_source_coverage() -> Non
         "GBB",
     )
     assert filtered_kpis.row(0, named=True)["value"] == "2"
+    figure_data = _figure_data(figure)
+    assert len(figure_data) == 3
+    assert sum(_trace_y_total(trace) for trace in figure_data) == 150.0
     assert (
         summary.select(
             "capacity source coverage",
@@ -5363,6 +5384,7 @@ def test_capacity_outlook_helpers_cover_missing_data_and_empty_states() -> None:
     kpis = capacity_outlook_kpi_frame(missing_columns_load)
     coverage = capacity_outlook_source_coverage_frame(missing_columns_load)
     observations = capacity_outlook_observation_frame(missing_columns_load)
+    empty_figure = capacity_outlook_summary_figure(empty_load)
     filtered = capacity_outlook_summary_frame(
         missing_columns_load,
         facility_filter="missing",
@@ -5376,6 +5398,7 @@ def test_capacity_outlook_helpers_cover_missing_data_and_empty_states() -> None:
     assert kpis.row(0, named=True)["value"] == "1"
     assert coverage.row(0, named=True)["capacity source coverage"] == "Nameplate rating"
     assert observations.row(0, named=True)["capacity_quantity_tj"] is None
+    assert _figure_data(empty_figure) == []
     assert filtered.is_empty()
     assert "No capacity outlook data is available" in unavailable_markdown
     assert "FileNotFoundError: no parquet files found" in unavailable_markdown
@@ -5677,6 +5700,7 @@ def test_capacity_auction_helpers_summarize_filters_and_metrics() -> None:
     )
     metric_summary = capacity_auction_metric_frame(load)
     observations = capacity_auction_observation_frame(load, preview_rows=10)
+    figure = capacity_auction_metric_figure(load)
 
     assert kpi_values["Loaded auction rows"] == "4"
     assert kpi_values["Auction IDs"] == "2"
@@ -5705,6 +5729,9 @@ def test_capacity_auction_helpers_summarize_filters_and_metrics() -> None:
         "transfer",
         "zone_reference",
     }
+    figure_data = _figure_data(figure)
+    assert len(figure_data) == 1
+    assert _trace_y_total(figure_data[0]) == 60.0
     assert (
         observations.select(
             "auction id",
@@ -5772,6 +5799,7 @@ def test_capacity_auction_helpers_cover_missing_data_and_empty_states() -> None:
     kpis = capacity_auction_kpi_frame(missing_columns_load)
     summary = capacity_auction_summary_frame(missing_columns_load)
     observations = capacity_auction_observation_frame(missing_columns_load)
+    empty_figure = capacity_auction_metric_figure(empty_load)
     filtered = capacity_auction_metric_frame(
         missing_columns_load,
         zone_filter="missing",
@@ -5791,6 +5819,7 @@ def test_capacity_auction_helpers_cover_missing_data_and_empty_states() -> None:
     assert summary.row(0, named=True)["auction metric"] == "system_capability"
     assert summary.row(0, named=True)["zone"] == "(missing Hub / Zone)"
     assert observations.row(0, named=True)["quantity_gj"] is None
+    assert _figure_data(empty_figure) == []
     assert filtered.is_empty()
     assert capacity_auction_kpi_frame(empty_load).is_empty()
     assert capacity_auction_summary_frame(empty_load).is_empty()
@@ -5983,6 +6012,7 @@ def test_capacity_transaction_helpers_summarize_filters_sources_and_measures() -
     )
     source_coverage = capacity_transaction_source_coverage_frame(load)
     observations = capacity_transaction_observation_frame(load, preview_rows=10)
+    figure = capacity_transaction_activity_figure(load)
 
     assert kpi_values["Loaded transaction rows"] == "4"
     assert kpi_values["Transaction types"] == "4"
@@ -6012,6 +6042,7 @@ def test_capacity_transaction_helpers_summarize_filters_sources_and_measures() -
         lng_shipment_table,
         swap_transaction_table,
     }
+    assert sum(_trace_y_total(trace) for trace in _figure_data(figure)) == 4
     assert (
         observations.select(
             "transaction type",
@@ -6081,6 +6112,7 @@ def test_capacity_transaction_helpers_cover_missing_data_and_empty_states() -> N
     summary = capacity_transaction_summary_frame(missing_columns_load)
     source_coverage = capacity_transaction_source_coverage_frame(missing_columns_load)
     observations = capacity_transaction_observation_frame(missing_columns_load)
+    empty_figure = capacity_transaction_activity_figure(empty_load)
     filtered = capacity_transaction_source_coverage_frame(
         missing_columns_load,
         location_filter="missing",
@@ -6104,6 +6136,7 @@ def test_capacity_transaction_helpers_cover_missing_data_and_empty_states() -> N
         "(empty source_table/source_tables value)"
     )
     assert observations.row(0, named=True)["volume_pj"] is None
+    assert _figure_data(empty_figure) == []
     assert filtered.is_empty()
     assert capacity_transaction_kpi_frame(empty_load).is_empty()
     assert capacity_transaction_summary_frame(empty_load).is_empty()
@@ -6174,6 +6207,7 @@ def test_linepack_helpers_summarize_quantities_adequacy_and_sources() -> None:
     summary = linepack_summary_frame(load)
     source_coverage = linepack_source_coverage_frame(load)
     observations = linepack_observation_frame(load)
+    figure = linepack_adequacy_trend_figure(load)
     filtered_kpis = linepack_kpi_frame(load, adequacy_flag_filter="Red")
     facility_filtered_kpis = linepack_kpi_frame(load, facility_filter="F1")
     zone_filtered_kpis = linepack_kpi_frame(load, zone_filter="zone-2")
@@ -6229,6 +6263,9 @@ def test_linepack_helpers_summarize_quantities_adequacy_and_sources() -> None:
     assert facility_filtered_kpi_values["Loaded linepack rows"] == "2"
     assert zone_filtered_kpi_values["Loaded linepack rows"] == "1"
     assert source_filtered_kpi_values["Loaded linepack rows"] == "1"
+    figure_data = _figure_data(figure)
+    assert len(figure_data) == 3
+    assert sum(_trace_y_total(trace) for trace in figure_data) == 2600.0
     assert summary.select(
         "source system",
         "source table",
@@ -6333,6 +6370,7 @@ def test_linepack_helpers_cover_missing_data_behavior() -> None:
     assert linepack_summary_frame(empty_load).is_empty()
     assert linepack_source_coverage_frame(empty_load).is_empty()
     assert linepack_observation_frame(empty_load).is_empty()
+    assert _figure_data(linepack_adequacy_trend_figure(empty_load)) == []
     assert linepack_gas_date_options(empty_load) == (LINEPACK_GAS_DATE_FILTER_ALL,)
     assert linepack_facility_options(empty_load) == (LINEPACK_FACILITY_FILTER_ALL,)
     assert linepack_zone_options(empty_load) == (LINEPACK_ZONE_FILTER_ALL,)
