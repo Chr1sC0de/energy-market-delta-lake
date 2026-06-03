@@ -11,6 +11,7 @@ Marimo-Codex research workspace image.
 - [Image split](#image-split)
 - [Dashboard standard](#dashboard-standard)
 - [Dashboard registry](#dashboard-registry)
+- [Dashboard-to-Market-context provenance](#dashboard-to-market-context-provenance)
 - [Readiness and catalogue workflow](#readiness-and-catalogue-workflow)
 - [Glossary explorer](#glossary-explorer)
 - [Concept-to-asset explorer](#concept-to-asset-explorer)
@@ -58,8 +59,8 @@ The dashboard app in [src/marimoserver/main.py](src/marimoserver/main.py):
 - exposes `/health` for container health checks
 - discovers `*.py` notebooks from `notebooks/`
 - mounts each notebook as a marimo sub-app under `/marimo/<notebook-name>`
-- serves a concept gallery hub at `/marimo`, grouped by generated Market
-  context concept and filterable by audience tag
+- serves a concept gallery hub at `/marimo` for registry concepts, filterable
+  by audience and story group
 - serves the code-local dashboard roadmap registry at
   `/marimo/dashboard-registry.json`
 - links the Caddy-served shared light theme at `/theme.css` for the index and
@@ -148,10 +149,11 @@ behavior covered by helper tests and the dashboard standard.
 
 [src/marimoserver/dashboard_registry.py](src/marimoserver/dashboard_registry.py)
 defines the Marimo-local dashboard registry used by the dashboard roadmap. It
-parses structured records into typed entries with concept IDs, audience tags,
-planned or available status, notebook names and routes, backing
-`silver.gas_model` assets, Market context IDs, source chunk IDs,
-silver chunk paths, and source hashes.
+parses structured records into `DashboardRegistryEntry` values with dashboard
+concept IDs, audience tags, planned or available status, notebook names and
+routes, backing `silver.gas_model` assets, Market context IDs, source chunk
+IDs, silver chunk paths, source hashes, and optional external artifact
+references.
 
 The `/marimo` entry route renders this registry as a concept gallery hub.
 Available registry entries link only when their backing notebook is mounted in
@@ -181,6 +183,59 @@ notebooks call it with their registry concept IDs near the top of the notebook.
 renders the AWS bounded-read diagnostic surface from environment-derived
 Marimo config and registry metadata only. It does not call S3 or Dagster
 GraphQL at runtime.
+
+## Dashboard-to-Market-context provenance
+
+Maintainers can trace dashboard provenance from runtime metadata to generated
+corpus evidence without opening generated Markdown from the dashboard process:
+
+1. `DashboardRegistryEntry.concept_id` names the Marimo dashboard-roadmap
+   concept, such as `flow-context` or `citation-chain-explorer`. This ID
+   drives the concept gallery, context panels, and registry-backed explorer
+   grouping.
+2. `DashboardRegistryEntry.market_context_ids` names the related **Market
+   context** records, such as `glossary:flow` or `market-context:index`. These
+   are stable corpus IDs, not file paths. The registry still accepts legacy
+   generated-gold path references for fixtures and converts known paths into
+   those IDs.
+3. `DashboardRegistryEntry.source_chunks` records `SourceChunkReference`
+   values. Each reference carries a `chunk_id` and may include a silver chunk
+   path plus source hash copied from generated corpus metadata. Complete
+   references point reviewers toward the generated silver chunk and source
+   document hash; incomplete references stay visible as registry coverage gaps.
+4. `DashboardRegistryEntry.backing_assets` connects the same concept to
+   `silver.gas_model.*` assets. The concept-to-asset, data dictionary, table
+   explorer, and source-lineage surfaces use these asset IDs for dashboard and
+   table navigation.
+5. `external_artifact_refs` and legacy `generated_gold_paths` are optional
+   corpus artifact references. They do not make generated gold or silver
+   Markdown a Marimo runtime dependency.
+
+ADR [0010](../../docs/adr/0010-gas-market-knowledge-base.md) owns the Gas market
+knowledge base boundary: default generated corpus output lives under
+`$ENERGY_MARKET_CORPUS_ROOT`, the legacy
+`tools/gas-market-knowledge-base/generated/` tree is ignored, and generated
+bronze, silver, and gold corpus artifacts are corpus output. Maintained router
+docs, including this README and the dashboard standard, keep
+`## Sync metadata`; generated corpus Markdown does not.
+
+The registry-backed maintainer views each inspect one part of that chain:
+
+- Glossary explorer: reads Marimo registry entries with `glossary:*` Market
+  context IDs and source chunk IDs. Use it to see which glossary concepts,
+  related concepts, and dashboard links are seeded from the registry. It does
+  not open generated gold glossary Markdown.
+- Concept-to-asset explorer: reads glossary explorer output plus registry
+  `backing_assets`. Use it to see which Market context concepts map to
+  `silver.gas_model` assets and dashboard routes. It does not read table rows.
+- Schema data dictionary explorer: reads concept-to-asset mapping plus Dagster
+  GraphQL table schema metadata. Use it to see which mapped assets expose
+  parsed column metadata by concept and gas-model mart. It does not change ETL
+  schemas or read generated corpus artifacts.
+- Citation-chain explorer: reads registry Market context IDs, source chunks,
+  silver chunk paths, and source hashes. Use it to see which dashboard concepts
+  have complete citation-chain metadata and which fields are missing. It does
+  not copy generated corpus prose into maintained docs.
 
 ## Readiness and catalogue workflow
 
@@ -264,15 +319,15 @@ implicit runtime behavior changes.
 registry-backed glossary browser. It uses
 [src/marimoserver/glossary_explorer.py](src/marimoserver/glossary_explorer.py)
 to list seeded glossary concepts from the Marimo-local dashboard registry and
-show each concept's Market context metadata path, source chunk IDs, inferred
-related concepts, and planned or available dashboard links.
+show each concept's Market context ID, source chunk IDs, inferred related
+concepts, and planned or available dashboard links.
 
-The dashboard consumes the parsed registry rather than opening generated Market context
-Markdown itself. Missing Market context IDs or source chunk IDs render as
-validation-visible gaps inside the concept card rather than fallback prose. Its
-first viewport includes a registry health strip with source, freshness, concept
-count, scope, available-dashboard count, planned-dashboard count, and
-metadata-gap count.
+The dashboard consumes the parsed registry rather than opening generated
+Market context Markdown itself. Missing Market context IDs or source chunk IDs
+render as validation-visible gaps inside the concept card rather than fallback
+prose. Its first viewport includes a registry health strip with source,
+freshness, concept count, scope, available-dashboard count, planned-dashboard
+count, and metadata-gap count.
 
 ## Concept-to-asset explorer
 
@@ -284,13 +339,13 @@ Facility, and Participant to backing `silver.gas_model` assets from the
 Marimo-local dashboard registry.
 
 The dashboard reads no table rows and consumes Market context lineage through
-the parsed registry. Its first viewport shows registry health, mapped asset count,
-available dashboard count, planned dashboard count, and coverage-gap count.
-Concept cards link to mounted dashboard routes, planned concept-gallery cards,
-and Gas Model Table Explorer deep links where the registry asset can be
-resolved to a `silver/gas_model/<table>` entry. Concepts with no backing assets
-and registry assets without glossary concept coverage render as explicit
-coverage gaps.
+the parsed registry and glossary explorer output. Its first viewport shows
+registry health, mapped asset count, available dashboard count, planned
+dashboard count, and coverage-gap count. Concept cards link to mounted
+dashboard routes, planned concept-gallery cards, and Gas Model Table Explorer
+deep links where the registry asset can be resolved to a
+`silver/gas_model/<table>` entry. Concepts with no backing assets and registry
+assets without glossary concept coverage render as explicit coverage gaps.
 
 ## Schema data dictionary explorer
 
@@ -303,11 +358,12 @@ concept-to-asset mapping from
 [src/marimoserver/concept_asset_explorer.py](src/marimoserver/concept_asset_explorer.py).
 
 The dashboard groups mapped fields by Market context concept, documented
-gas-model mart, asset, and dashboard route. It does not scan table rows, change
-ETL schemas, or read generated Market context artifacts at runtime. Unavailable Dagster
-GraphQL, mapped assets missing from Dagster table metadata, and assets without
-parsed column metadata stay visible as explicit schema states in the asset and
-field tables.
+gas-model mart, asset, and dashboard route. It is a schema view over registry
+mapping plus Dagster GraphQL metadata; it does not scan table rows, change ETL
+schemas, or read generated Market context artifacts at runtime. Unavailable
+Dagster GraphQL, mapped assets missing from Dagster table metadata, and assets
+without parsed column metadata stay visible as explicit schema states in the
+asset and field tables.
 
 ## Citation-chain explorer
 
@@ -319,11 +375,12 @@ IDs, silver chunk paths, and source hashes from the code-local Marimo dashboard
 registry.
 
 The dashboard reads no table rows and consumes Market context and source chunk
-lineage through the parsed registry. Its first viewport shows registry health,
-complete-record count, coverage-gap count, source chunk count, and source hash
-count. Concept cards make incomplete citation-chain metadata visible as
-registry coverage gaps instead of copying generated corpus prose into
-maintained docs.
+lineage through the parsed registry. It treats a complete chain as a Market
+context ID plus at least one source chunk with a silver chunk path and source
+hash. Its first viewport shows registry health, complete-record count,
+coverage-gap count, source chunk count, and source hash count. Concept cards
+make incomplete citation-chain metadata visible as registry coverage gaps
+instead of copying generated corpus prose into maintained docs.
 
 ## Data readiness overview
 
@@ -1634,6 +1691,8 @@ prek run -a
 - [Authentication service](../authentication/README.md)
 - [Gas-model maintainer contract](../dagster-user/aemo-etl/docs/gas_model/README.md)
 - [Marimo dashboard standard](docs/dashboard-standard.md)
+- [Gas market knowledge base ADR](../../docs/adr/0010-gas-market-knowledge-base.md)
+- [Gas market knowledge base Subproject](../../tools/gas-market-knowledge-base/README.md)
 - [Repository workflow](../../docs/repository/workflow.md)
 
 ## Sync metadata
@@ -1642,6 +1701,8 @@ prek run -a
 - `sync.sources`:
   - `backend-services/marimo/src/marimoserver/main.py`
   - `backend-services/marimo/src/marimoserver/dashboard_registry.py`
+  - `docs/adr/0010-gas-market-knowledge-base.md`
+  - `tools/gas-market-knowledge-base/README.md`
   - `backend-services/marimo/pyproject.toml`
   - `backend-services/marimo/Dockerfile`
   - `backend-services/marimo/docs/dashboard-standard.md`

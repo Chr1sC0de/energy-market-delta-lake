@@ -93,6 +93,12 @@ include the previous failure detail. **Issue completion review** repair attempts
 draw from the same per-issue budget. Full-access implementation passes that
 change files outside the issue's context anchors still fail immediately without
 retry.
+Ralph runs every spawned Codex subprocess with a hermetic command shape:
+`codex exec --ignore-user-config --ephemeral --disable hooks --model <model>`.
+The default model is `gpt-5.5`, configurable with `--codex-model`. Codex
+tool/model bootstrap failures, such as invalid user-configured image tool
+models, are treated as local environment failures rather than ordinary
+implementation attempts.
 
 The checkpointed Operator run path wraps the issue and **Promotion** commands
 for unattended cleanup. It uses the same lane-aware drain scheduler as plain
@@ -457,6 +463,12 @@ Use a different per-issue Codex attempt budget:
 python3 scripts/ralph.py --drain --max-codex-attempts 3
 ```
 
+Use a different Codex subprocess model:
+
+```bash
+python3 scripts/ralph.py --drain --codex-model gpt-5.5
+```
+
 Implement one specific issue:
 
 ```bash
@@ -585,10 +597,11 @@ python3 scripts/ralph.py --doctor --drain-promote-all --shape-issues-run .shape-
 ```
 
 The doctor checks local tool availability, clean root worktree state, GitHub
-CLI auth, **Sandboxed issue access**, required labels, Git push dry-runs for
-the selected **Integration target** set, and optional shape-issues live assessor
-provenance. It does not claim issues, create worktrees, update labels, push, or
-run **Promotion**.
+CLI auth, **Sandboxed issue access**, a hermetic Codex subprocess smoke for
+drain, issue, and Promotion intents that use Codex, required labels, Git push
+dry-runs for the selected **Integration target** set, and optional shape-issues
+live assessor provenance. It does not claim issues, create worktrees, update
+labels, push, or run **Promotion**.
 
 Live `--issue`, `--drain`, `--promote`,
 `--apply-exploratory-acceptance-decisions`, and
@@ -625,6 +638,9 @@ validated create-only helper that calls only issue search and issue create. This
 does not grant Git push access; Git fetches, **Local integration**, Exploratory
 handoff pushes, **Integration target** pushes, and **Promotion** stay in
 Ralph's outer loop.
+The subprocess command ignores user Codex config, runs ephemerally, disables
+hooks, and passes an explicit model so workstation image/tool preferences do
+not leak into Ralph issue work.
 
 Ralph treats ready issues whose `## Context anchors` include `.agents/` `Path:`
 or `Doc:` paths as agent-workflow changes. Those issues require
@@ -1053,6 +1069,14 @@ files, QA and review evidence, Review package state, and failure log. When the
 failure type is `review_package_failed`, inspection also prints the generator
 log path, validation reason, failure reason, media failure evidence, and next
 safe action.
+No-change pre-implementation Codex environment failures are a stricter eligible
+subcase: the run must have no changed files, no QA results, no **Issue
+completion review**, no Review package, no **Local integration**, no push state,
+and a recognized Codex subprocess environment signal in the manifest or bounded
+Codex JSONL log. Live recovery for this subcase comments
+`Ralph environment requeue completed.`, cleans Ralph-owned worktrees and the
+local issue branch, restores `ready-for-agent`, and does not preserve a backup
+implementation commit because Codex failed before changes were accepted.
 
 Preview a safe pre-push requeue before mutating anything:
 
@@ -1246,6 +1270,10 @@ phase-limited **Sandboxed issue access**. Ready issues that name `.agents/`
 context anchors use the **Full-access implementation pass** only when the
 operator passed `--allow-full-access-implementation`; they retain read-only issue
 commands and must pass Ralph's context-anchor diff guard before QA.
+Both modes use `--ignore-user-config`, `--ephemeral`, `--disable hooks`, and the
+configured `--codex-model`. Workspace-write attempts keep Codex sandboxing;
+full-access attempts use Codex's approvals-and-sandbox bypass only for the
+implementation subprocess.
 
 Before building the Codex implementation prompts for an issue, Ralph fetches
 issue comments for the issue being implemented. The prompt keeps the issue body
@@ -2287,13 +2315,20 @@ scripts/aemo-etl-e2e run \
 
 ## Failure handling
 
-Codex or QA failures get one retry in the same worktree. If retry fails, Ralph:
+Recoverable Codex or QA failures consume the configured `--max-codex-attempts`
+budget in the same worktree. If the budget is exhausted, Ralph:
 
 - keeps the failed worktree for inspection
 - adds `agent-failed`
 - removes `agent-running`
 - leaves a result comment with the failing command and log path
 - continues drain mode with the next actionable issue
+
+Codex subprocess environment failures, including invalid local tool/model
+configuration surfaced before any implementation changes, hard-stop the current
+attempt without burning the remaining Codex attempt budget. When the failed run
+has no changed files and no downstream gates started, Ralph can recover it
+through the no-change environment requeue path described above.
 
 Successful issues remove the implementation worktree, any integration worktree,
 and the local temporary branch after trunk closure, Gitflow integration, or

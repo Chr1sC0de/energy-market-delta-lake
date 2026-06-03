@@ -1093,6 +1093,7 @@ class RalphLoop:
     def run(self) -> None:
         self._validate_tools()
         self._validate_clean_root_worktree_for_live_run()
+        self._validate_codex_subprocess_smoke_for_live_run()
 
         if self.config.bootstrap_labels:
             self.github.auth_status()
@@ -1758,8 +1759,52 @@ class RalphLoop:
             return True
         return not self.config.bootstrap_labels
 
+    def _uses_codex_subprocess_flow(self) -> bool:
+        if self.config.promote:
+            return not self.config.skip_post_promotion_review
+        if self.config.drain:
+            return True
+        if self.config.issue is not None:
+            return True
+        return False
+
+    def _validate_codex_subprocess_smoke_for_live_run(self) -> None:
+        if self.config.dry_run:
+            return
+        if not self._uses_codex_subprocess_flow():
+            return
+        self.validate_codex_subprocess_smoke()
+
+    def validate_codex_subprocess_smoke(self) -> dict[str, Any]:
+        command = codex_exec_command(
+            self.config.repo_root,
+            codex_model=self.config.codex_model,
+        )
+        try:
+            self.runner.run(
+                command,
+                cwd=self.config.repo_root,
+                input_text=CODEX_SUBPROCESS_SMOKE_PROMPT,
+                phase="Ralph Codex subprocess smoke",
+                execute_in_dry_run=False,
+                timeout_seconds=CODEX_SUBPROCESS_SMOKE_TIMEOUT_SECONDS,
+            )
+        except CommandFailure as error:
+            raise codex_subprocess_environment_failure(
+                error,
+                phase="Ralph Codex subprocess smoke",
+            ) from error
+        return {
+            "model": self.config.codex_model,
+            "timeout_seconds": CODEX_SUBPROCESS_SMOKE_TIMEOUT_SECONDS,
+        }
+
     def _validate_tools(self) -> None:
-        tools = ("git", "gh") if self.config.promote else ("git", "gh", "codex")
+        tools = (
+            ("git", "gh")
+            if self.config.promote and self.config.skip_post_promotion_review
+            else ("git", "gh", "codex")
+        )
         missing = [tool for tool in tools if shutil.which(tool) is None]
         if missing:
             raise RalphError(f"Missing required command(s): {', '.join(missing)}")
@@ -7314,6 +7359,7 @@ class RalphLoop:
                     cwd,
                     sandbox_mode=sandbox_mode,
                     output_last_message=output_last_message,
+                    codex_model=self.config.codex_model,
                 ),
                 cwd=cwd,
                 input_text=prompt,
@@ -7337,6 +7383,11 @@ class RalphLoop:
                         "free capacity, then rerun the Operator command or targeted "
                         "issue"
                     ),
+                ) from error
+            if looks_like_environment_failure(error):
+                raise codex_subprocess_environment_failure(
+                    error,
+                    phase=phase,
                 ) from error
             raise
 
@@ -7862,6 +7913,7 @@ class RalphOperatorRun:
         self.loop._validate_tools()
         self.loop._validate_clean_root_worktree_for_live_run()
         self._preflight_qa_runtime_disk(label="Operator launch")
+        self.loop.validate_codex_subprocess_smoke()
         self.github.auth_status()
         self.loop._validate_labels()
 
@@ -11453,7 +11505,10 @@ def pre_push_requeue_comment_exists(
     run_dir_text = str(run_dir)
     for comment in comments:
         body = str(comment.get("body") or "")
-        if PRE_PUSH_REQUEUE_COMMENT_TITLE in body and run_dir_text in body:
+        if (
+            any(title in body for title in REQUEUE_COMMENT_TITLES)
+            and run_dir_text in body
+        ):
             return True
     return False
 
@@ -11462,7 +11517,7 @@ def pre_push_requeue_comment_count(comments: list[dict[str, Any]]) -> int:
     count = 0
     for comment in comments:
         body = str(comment.get("body") or "")
-        if PRE_PUSH_REQUEUE_COMMENT_TITLE in body:
+        if any(title in body for title in REQUEUE_COMMENT_TITLES):
             count += 1
     return count
 
@@ -11483,14 +11538,26 @@ def build_pre_push_requeue_comment(
     cleanup_actions: list[dict[str, str]],
     labels_to_add: list[str],
     labels_to_remove: list[str],
+    environment_requeue: bool = False,
 ) -> str:
-    lines = [
-        PRE_PUSH_REQUEUE_COMMENT_TITLE,
-        "",
-        (
+    title = (
+        ENVIRONMENT_REQUEUE_COMMENT_TITLE
+        if environment_requeue
+        else PRE_PUSH_REQUEUE_COMMENT_TITLE
+    )
+    intro = (
+        "Ralph is returning this failed pre-implementation Codex environment "
+        "run to `ready-for-agent` for a fresh normal claim."
+        if environment_requeue
+        else (
             "Ralph is returning this failed pre-push implementation run to "
             "`ready-for-agent` for a fresh normal claim."
-        ),
+        )
+    )
+    lines = [
+        title,
+        "",
+        intro,
         "",
         f"Recovered from run: `{run_dir}`",
         f"Delivery mode: `{delivery_mode}`",
@@ -11501,7 +11568,12 @@ def build_pre_push_requeue_comment(
             f"remove `{format_requeue_label_list(labels_to_remove)}`"
         ),
     ]
-    if backup_commit is None:
+    if environment_requeue:
+        lines.append(
+            "Preserved implementation commit: not applicable; Codex failed before "
+            "changes were accepted"
+        )
+    elif backup_commit is None:
         lines.append("Preserved implementation commit: no local issue branch found")
     else:
         lines.append(
@@ -11751,6 +11823,9 @@ class RalphRunRecovery:
                 "Run is not eligible for pre-push requeue: "
                 + "; ".join(eligibility_reasons)
             )
+        environment_requeue = manifest_data_is_no_change_environment_failure(
+            manifest.data
+        )
 
         self.github.auth_status()
         issue = self.github.view_issue(issue_number)
@@ -11795,24 +11870,27 @@ class RalphRunRecovery:
             worktrees=worktrees,
         )
 
-        branch_commit = (
+        issue_branch_commit = (
             self.git.local_branch_commit(issue_branch)
             if issue_branch is not None
             else None
         )
+        branch_commit_to_preserve = None if environment_requeue else issue_branch_commit
         backup_ref = pre_push_requeue_backup_ref(manifest)
         backup_commit = self.git.ref_commit(backup_ref)
         if (
-            branch_commit is not None
+            branch_commit_to_preserve is not None
             and backup_commit is not None
-            and branch_commit != backup_commit
+            and branch_commit_to_preserve != backup_commit
         ):
             raise RalphError(
                 f"Refusing pre-push requeue because backup ref {backup_ref} "
                 f"already points at {backup_commit}, not local issue branch "
-                f"{issue_branch} at {branch_commit}."
+                f"{issue_branch} at {branch_commit_to_preserve}."
             )
-        preserved_commit = branch_commit or backup_commit
+        preserved_commit = (
+            None if environment_requeue else branch_commit_to_preserve or backup_commit
+        )
         self._pre_push_requeue_refuse_if_target_contains(
             preserved_commit,
             target_branch=target_branch,
@@ -11840,7 +11918,7 @@ class RalphRunRecovery:
 
         branch_cleanup_action = self._pre_push_requeue_issue_branch_action(
             issue_branch,
-            branch_commit=branch_commit,
+            branch_commit=issue_branch_commit,
         )
         planned_cleanup_actions = [*cleanup_actions, branch_cleanup_action]
         comments = self.github.issue_comments(issue_number)
@@ -11859,22 +11937,35 @@ class RalphRunRecovery:
                 eligibility_reasons=eligibility_reasons,
                 cleanup_actions=planned_cleanup_actions,
                 backup_ref=backup_ref,
-                branch_commit=branch_commit,
+                branch_commit=issue_branch_commit,
+                branch_commit_to_preserve=branch_commit_to_preserve,
                 backup_commit=backup_commit,
                 comment_exists=comment_exists,
                 labels_to_add=labels_to_add,
                 labels_to_remove=labels_to_remove,
+                environment_requeue=environment_requeue,
             )
             return
 
         try:
-            if branch_commit is not None and backup_commit is None:
+            if environment_requeue:
+                emit(
+                    f"#{issue_number}: no implementation commit to preserve for "
+                    "pre-implementation environment failure"
+                )
+                backup_commit_for_comment = None
+                backup_commit_for_manifest = None
+            elif branch_commit_to_preserve is not None and backup_commit is None:
                 emit(
                     f"#{issue_number}: preserving implementation commit "
-                    f"{branch_commit} at {backup_ref}"
+                    f"{branch_commit_to_preserve} at {backup_ref}"
                 )
-                self.git.update_ref(backup_ref, branch_commit, run_dir=run_dir)
-                backup_commit = branch_commit
+                self.git.update_ref(
+                    backup_ref,
+                    branch_commit_to_preserve,
+                    run_dir=run_dir,
+                )
+                backup_commit = branch_commit_to_preserve
             elif backup_commit is not None:
                 emit(
                     f"#{issue_number}: backup ref already preserved "
@@ -11882,6 +11973,9 @@ class RalphRunRecovery:
                 )
             else:
                 emit(f"#{issue_number}: no local issue branch commit to preserve")
+            if not environment_requeue:
+                backup_commit_for_comment = backup_commit
+                backup_commit_for_manifest = backup_commit
 
             completed_cleanup_actions: list[dict[str, str]] = []
             for action in cleanup_actions:
@@ -11891,7 +11985,7 @@ class RalphRunRecovery:
 
             branch_status = self._pre_push_requeue_delete_issue_branch(
                 issue_branch,
-                branch_commit=branch_commit,
+                branch_commit=issue_branch_commit,
                 run_dir=run_dir,
             )
             completed_cleanup_actions.append(branch_status)
@@ -11909,10 +12003,11 @@ class RalphRunRecovery:
                         delivery_mode=delivery_mode,
                         target_branch=target_branch,
                         backup_ref=backup_ref,
-                        backup_commit=backup_commit,
+                        backup_commit=backup_commit_for_comment,
                         cleanup_actions=completed_cleanup_actions,
                         labels_to_add=labels_to_add,
                         labels_to_remove=labels_to_remove,
+                        environment_requeue=environment_requeue,
                     ),
                     run_dir=run_dir,
                 )
@@ -11941,7 +12036,10 @@ class RalphRunRecovery:
                 "pre_push_requeued",
                 details={
                     "backup_ref": backup_ref,
-                    "backup_commit": backup_commit,
+                    "backup_commit": backup_commit_for_manifest,
+                    "requeue_kind": "environment"
+                    if environment_requeue
+                    else "pre_push",
                     "cleanup": completed_cleanup_actions,
                 },
             )
@@ -12150,23 +12248,36 @@ class RalphRunRecovery:
         cleanup_actions: list[dict[str, str]],
         backup_ref: str,
         branch_commit: str | None,
+        branch_commit_to_preserve: str | None,
         backup_commit: str | None,
         comment_exists: bool,
         labels_to_add: list[str],
         labels_to_remove: list[str],
+        environment_requeue: bool = False,
     ) -> None:
         run_dir = manifest_run_dir(manifest)
         delivery_mode = manifest_delivery_mode(manifest)
         target_branch = manifest_integration_target(manifest)
-        preserved_commit = branch_commit or backup_commit
-        emit("Ralph pre-push requeue recovery")
+        preserved_commit = (
+            None if environment_requeue else branch_commit_to_preserve or backup_commit
+        )
+        heading = (
+            "Ralph environment requeue recovery"
+            if environment_requeue
+            else "Ralph pre-push requeue recovery"
+        )
+        emit(heading)
         emit(f"Run directory: {run_dir}")
         emit(f"Issue: #{issue.number} {issue.title}".rstrip())
         emit(f"Eligibility: eligible ({'; '.join(eligibility_reasons)})")
         emit(f"Labels to add: {format_requeue_label_list(labels_to_add)}")
         emit(f"Labels to remove: {format_requeue_label_list(labels_to_remove)}")
-        if branch_commit is not None and backup_commit is None:
-            emit(f"Backup ref: would create {backup_ref} -> {branch_commit}")
+        if environment_requeue:
+            emit("Backup ref: not needed for pre-implementation environment failure")
+        elif branch_commit_to_preserve is not None and backup_commit is None:
+            emit(
+                f"Backup ref: would create {backup_ref} -> {branch_commit_to_preserve}"
+            )
         elif backup_commit is not None:
             emit(f"Backup ref: already present {backup_ref} -> {backup_commit}")
         else:
@@ -12190,6 +12301,7 @@ class RalphRunRecovery:
                 cleanup_actions=cleanup_actions,
                 labels_to_add=labels_to_add,
                 labels_to_remove=labels_to_remove,
+                environment_requeue=environment_requeue,
             )
             for line in comment_body.rstrip().splitlines():
                 emit(f"  {line}")
@@ -14033,6 +14145,26 @@ def command_failure_summary(error: CommandFailure) -> str:
     return "\n\n".join(pieces)
 
 
+def codex_subprocess_environment_failure(
+    error: CommandFailure,
+    *,
+    phase: str,
+) -> EnvironmentFailure:
+    guidance = (
+        "Resolve the Codex subprocess environment or configuration failure, "
+        "then rerun the Operator command or targeted issue."
+    )
+    return EnvironmentFailure(
+        (
+            f"Codex subprocess environment/configuration failure during {phase}.\n\n"
+            f"{command_failure_summary(error)}\n\nRecovery guidance: {guidance}"
+        ),
+        log_path=error.log_path,
+        failure_type=CODEX_SUBPROCESS_ENVIRONMENT_FAILURE_TYPE,
+        recovery_guidance=guidance,
+    )
+
+
 def tail_text(value: str, *, max_lines: int = 80) -> str:
     lines = value.splitlines()
     return "\n".join(lines[-max_lines:])
@@ -14050,6 +14182,14 @@ def qa_log_prefix_for_codex_attempt(attempt: int) -> str:
     if attempt == 2:
         return "qa-retry"
     return f"qa-retry-{attempt}"
+
+
+def ralph_intent_uses_codex_subprocess(args: CliArgs) -> bool:
+    if args.promote:
+        return not args.skip_post_promotion_review
+    if args.drain or args.drain_promote_all:
+        return True
+    return args.issue is not None
 
 
 def build_config(args: CliArgs, runner: CommandRunner) -> LoopConfig:
@@ -14090,6 +14230,7 @@ def build_config(args: CliArgs, runner: CommandRunner) -> LoopConfig:
         drain=args.drain or args.drain_promote_all,
         max_issues=args.max_issues,
         max_codex_attempts=args.max_codex_attempts,
+        codex_model=args.codex_model,
         exploratory_concurrency=args.exploratory_concurrency,
         auto_pre_push_requeue=args.auto_pre_push_requeue,
         auto_pre_push_requeue_limit=args.auto_pre_push_requeue_limit,
@@ -14118,6 +14259,8 @@ def operator_child_command(args: CliArgs, run_dir: Path) -> list[str]:
         str(args.max_issues),
         "--max-codex-attempts",
         str(args.max_codex_attempts),
+        "--codex-model",
+        args.codex_model,
         "--exploratory-concurrency",
         str(args.exploratory_concurrency),
         "--auto-pre-push-requeue-limit",
@@ -14318,10 +14461,15 @@ def run_ralph_doctor(args: CliArgs, runner: CommandRunner) -> dict[str, Any]:
             )
         return {"targets": list(targets)}
 
+    def check_codex_subprocess_smoke() -> dict[str, Any]:
+        return loop.validate_codex_subprocess_smoke()
+
     doctor_check(checks, "required tools", check_tools)
     doctor_check(checks, "root worktree", check_worktree)
     doctor_check(checks, "GitHub CLI auth", lambda: loop.github.auth_status() or {})
     doctor_check(checks, "sandboxed issue access", check_sandboxed_issue_access)
+    if ralph_intent_uses_codex_subprocess(args):
+        doctor_check(checks, "Codex subprocess smoke", check_codex_subprocess_smoke)
     doctor_check(checks, "GitHub labels", check_labels)
     doctor_check(checks, "Git push dry-run", check_push_dry_run)
     if args.shape_issues_run is not None:
@@ -14597,6 +14745,16 @@ def typer_options(
             ),
         ),
     ] = DEFAULT_CODEX_ATTEMPT_BUDGET,
+    codex_model: Annotated[
+        str,
+        typer.Option(
+            "--codex-model",
+            help=(
+                "Codex model for Ralph subprocesses. Defaults to "
+                f"{DEFAULT_CODEX_MODEL}."
+            ),
+        ),
+    ] = DEFAULT_CODEX_MODEL,
     exploratory_concurrency: Annotated[
         int,
         typer.Option(
@@ -14804,6 +14962,8 @@ def validate_cli_args(args: CliArgs) -> None:
         cli_error("--max-cycles must be 0 or greater.")
     if args.max_codex_attempts < 1:
         cli_error("--max-codex-attempts must be 1 or greater.")
+    if args.codex_model.strip() == "":
+        cli_error("--codex-model must not be empty.")
     if args.exploratory_concurrency < 1:
         cli_error("--exploratory-concurrency must be 1 or greater.")
     if args.auto_pre_push_requeue_limit < 0:

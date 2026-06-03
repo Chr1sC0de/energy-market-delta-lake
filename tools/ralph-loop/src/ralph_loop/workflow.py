@@ -119,11 +119,14 @@ DEFAULT_TRUNK_BRANCH = "main"
 DEFAULT_EXPLORATORY_BRANCH_PREFIX = "agent/exploratory"
 DEFAULT_DRAIN_BUDGET = 10
 DEFAULT_CODEX_ATTEMPT_BUDGET = 5
+DEFAULT_CODEX_MODEL = "gpt-5.5"
 DEFAULT_EXPLORATORY_CONCURRENCY = 2
 DEFAULT_OPERATOR_MAX_CYCLES = 10
 DEFAULT_AUTO_PRE_PUSH_REQUEUE_LIMIT = 2
 DEFAULT_DEPLOY_REPAIR_CYCLE_LIMIT = 2
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
+CODEX_SUBPROCESS_SMOKE_PROMPT = "Respond exactly with: ralph-codex-smoke-ok"
+CODEX_SUBPROCESS_SMOKE_TIMEOUT_SECONDS = 120
 QA_RUNTIME_MIN_FREE_BYTES = 5 * 1024 * 1024 * 1024
 QA_RUNTIME_MIN_FREE_INODES = 100_000
 QA_RUNTIME_MIN_FREE_BYTES_ENV = "RALPH_QA_RUNTIME_MIN_FREE_BYTES"
@@ -141,6 +144,11 @@ RUN_MANIFEST_LINE_PATTERN = re.compile(
 GITFLOW_INTEGRATION_COMMENT_TITLE = "Ralph Gitflow integration completed."
 MANUAL_GITFLOW_RECOVERY_COMMENT_TITLE = "Ralph Gitflow manual recovery completed."
 PRE_PUSH_REQUEUE_COMMENT_TITLE = "Ralph pre-push requeue completed."
+ENVIRONMENT_REQUEUE_COMMENT_TITLE = "Ralph environment requeue completed."
+REQUEUE_COMMENT_TITLES = (
+    PRE_PUSH_REQUEUE_COMMENT_TITLE,
+    ENVIRONMENT_REQUEUE_COMMENT_TITLE,
+)
 EXPLORATORY_ACCEPTANCE_COMMENT_TITLE = "Ralph exploratory acceptance completed."
 MANUAL_GITFLOW_RECOVERY_HINT_PATTERN = re.compile(
     r"(?is)\bmanual(?:ly)?\b.{0,120}\brecover(?:y|ed|ing)?\b"
@@ -364,7 +372,10 @@ ENVIRONMENT_FAILURE_PATTERNS = (
     "podman.sock",
     "permission denied while trying to connect",
     "no space left on device",
+    "image_generation_user_error",
+    "the model 'gpt-image-2' does not exist",
 )
+CODEX_SUBPROCESS_ENVIRONMENT_FAILURE_TYPE = "codex_subprocess_environment_failure"
 
 
 class DeliveryModeOption(str, Enum):
@@ -420,6 +431,7 @@ class CliArgs:
     drain: bool = False
     max_issues: int = DEFAULT_DRAIN_BUDGET
     max_codex_attempts: int = DEFAULT_CODEX_ATTEMPT_BUDGET
+    codex_model: str = DEFAULT_CODEX_MODEL
     exploratory_concurrency: int = DEFAULT_EXPLORATORY_CONCURRENCY
     auto_pre_push_requeue: bool = True
     auto_pre_push_requeue_limit: int = DEFAULT_AUTO_PRE_PUSH_REQUEUE_LIMIT
@@ -1417,6 +1429,7 @@ class LoopConfig:
     drain: bool
     max_issues: int
     max_codex_attempts: int
+    codex_model: str
     exploratory_concurrency: int
     auto_pre_push_requeue: bool
     auto_pre_push_requeue_limit: int
@@ -4892,10 +4905,17 @@ def codex_exec_command(
     *,
     sandbox_mode: str = WORKSPACE_WRITE_CODEX_SANDBOX,
     output_last_message: Path | None = None,
+    codex_model: str = DEFAULT_CODEX_MODEL,
 ) -> list[str]:
     command = [
         "codex",
         "exec",
+        "--ignore-user-config",
+        "--ephemeral",
+        "--disable",
+        "hooks",
+        "--model",
+        codex_model,
         "--cd",
         str(cwd),
     ]

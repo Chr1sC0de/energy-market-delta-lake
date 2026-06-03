@@ -378,14 +378,24 @@ def _(
 
     mo.vstack(
         [
-            mo.md("""
-            ## Source Identifier Coverage
-
-            Coverage groups rows by source system, source table, and source
-            report, including accepted source identifiers, source files, Gas Day
-            span, and freshness timestamps.
-            """),
-            source_summary_view,
+            mo.md("## Source Identifier Coverage"),
+            mo.accordion(
+                {
+                    "Source identifier coverage drilldown": mo.vstack(
+                        [
+                            mo.md("""
+                            Coverage groups rows by source system, source table,
+                            and source report, including accepted source
+                            identifiers, source files, Gas Day span, and
+                            freshness timestamps.
+                            """),
+                            source_summary_view,
+                        ]
+                    )
+                },
+                multiple=False,
+                lazy=True,
+            ),
         ]
     )
     return

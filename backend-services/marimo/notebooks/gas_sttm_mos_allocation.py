@@ -521,14 +521,24 @@ def _(
 
     mo.vstack(
         [
-            mo.md("""
-            ## Source Coverage
-
-            Coverage groups each MOS/allocation fact by source system, source
-            table, source report, Gas Day, Hub / Zone, Facility, source file,
-            and accepted source identifier coverage.
-            """),
-            source_coverage_view,
+            mo.md("## Source Coverage"),
+            mo.accordion(
+                {
+                    "Source coverage drilldown": mo.vstack(
+                        [
+                            mo.md("""
+                            Coverage groups each MOS/allocation fact by source
+                            system, source table, source report, Gas Day, Hub /
+                            Zone, Facility, source file, and accepted source
+                            identifier coverage.
+                            """),
+                            source_coverage_view,
+                        ]
+                    )
+                },
+                multiple=False,
+                lazy=True,
+            ),
         ]
     )
     return

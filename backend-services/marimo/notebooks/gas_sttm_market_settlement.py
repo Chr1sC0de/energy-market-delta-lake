@@ -337,15 +337,25 @@ def _(
 
     mo.vstack(
         [
-            mo.md("""
-            ## Source Coverage
-
-            Coverage groups rows by source system, source table, and source
-            report, including settlement run, stage, component, hub, facility,
-            Gas Day, settlement period, quantity, amount, source file, and
-            accepted source identifier coverage.
-            """),
-            source_coverage_view,
+            mo.md("## Source Coverage"),
+            mo.accordion(
+                {
+                    "Source coverage drilldown": mo.vstack(
+                        [
+                            mo.md("""
+                            Coverage groups rows by source system, source table,
+                            and source report, including settlement run, stage,
+                            component, hub, facility, Gas Day, settlement
+                            period, quantity, amount, source file, and accepted
+                            source identifier coverage.
+                            """),
+                            source_coverage_view,
+                        ]
+                    )
+                },
+                multiple=False,
+                lazy=True,
+            ),
         ]
     )
     return

@@ -301,14 +301,24 @@ def _(
 
     mo.vstack(
         [
-            mo.md("""
-            ## Price Type And Source Summary
-
-            This sampled/recent-only view summarizes the currently loaded
-            bounded rows by `gas_date`, `price_type`, `source_system`,
-            `source_table`, and populated price measure columns.
-            """),
-            type_summary_view,
+            mo.md("## Price Type And Source Summary"),
+            mo.accordion(
+                {
+                    "Price type and source drilldown": mo.vstack(
+                        [
+                            mo.md("""
+                            This sampled/recent-only view summarizes the
+                            currently loaded bounded rows by `gas_date`,
+                            `price_type`, `source_system`, `source_table`, and
+                            populated price measure columns.
+                            """),
+                            type_summary_view,
+                        ]
+                    )
+                },
+                multiple=False,
+                lazy=True,
+            ),
         ]
     )
     return

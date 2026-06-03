@@ -344,14 +344,24 @@ def _(
 
     mo.vstack(
         [
-            mo.md("""
-            ## Source Coverage
-
-            Coverage is calculated from source system, source table,
-            `market_code`, Gas Day, source file, source identifier, and ingest
-            fields in the loaded bounded rows.
-            """),
-            source_coverage_view,
+            mo.md("## Source Coverage"),
+            mo.accordion(
+                {
+                    "Source coverage drilldown": mo.vstack(
+                        [
+                            mo.md("""
+                            Coverage is calculated from source system, source
+                            table, `market_code`, Gas Day, source file, source
+                            identifier, and ingest fields in the loaded bounded
+                            rows.
+                            """),
+                            source_coverage_view,
+                        ]
+                    )
+                },
+                multiple=False,
+                lazy=True,
+            ),
         ]
     )
     return

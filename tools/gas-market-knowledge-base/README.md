@@ -294,6 +294,33 @@ path from maintained-doc discovery, and external corpus roots are outside the
 maintained router documentation scope. Generated corpus Markdown is corpus
 artifact output rather than maintained router documentation.
 
+## Dashboard Registry Boundary
+
+The Marimo dashboard registry may copy stable **Market context** IDs, source
+chunk IDs, silver chunk paths, and source hashes from generated corpus evidence
+into code-local `DashboardRegistryEntry` records. Those fields let dashboard
+views show provenance when the external corpus root is unavailable in the
+dashboard runtime. They do not move generated gold or silver Markdown into the
+Marimo image, and they do not make the ignored
+`tools/gas-market-knowledge-base/generated/` tree maintained router
+documentation.
+
+Dashboard maintainer views each consume a bounded slice of that metadata:
+
+- the glossary explorer groups registry concepts by `glossary:*` Market
+  context IDs and source chunk IDs
+- the concept-to-asset explorer maps those concepts to registry
+  `silver.gas_model.*` backing assets
+- the schema data dictionary combines the concept-to-asset mapping with
+  Dagster GraphQL schema metadata
+- the citation-chain explorer audits Market context IDs, source chunk IDs,
+  silver chunk paths, and source hashes from the registry
+
+ADR [0010](../../docs/adr/0010-gas-market-knowledge-base.md) remains the source
+of truth for generated corpus roots and artifact boundaries. The Marimo docs
+describe dashboard runtime behavior; generated corpus Markdown remains
+reviewable corpus output without `## Sync metadata`.
+
 ## Layout
 
 - `src/gas_market_knowledge_base/archive_audit.py`: archive-prefix completeness
@@ -338,6 +365,13 @@ artifact output rather than maintained router documentation.
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `.gitignore`
+  - `backend-services/marimo/README.md`
+  - `backend-services/marimo/docs/dashboard-standard.md`
+  - `backend-services/marimo/src/marimoserver/dashboard_registry.py`
+  - `backend-services/marimo/src/marimoserver/glossary_explorer.py`
+  - `backend-services/marimo/src/marimoserver/concept_asset_explorer.py`
+  - `backend-services/marimo/src/marimoserver/data_dictionary_explorer.py`
+  - `backend-services/marimo/src/marimoserver/citation_chain_explorer.py`
   - `docs/adr/0010-gas-market-knowledge-base.md`
   - `docs/repository/documentation-sync.md`
   - `tools/gas-market-knowledge-base/.pre-commit-config.yaml`
