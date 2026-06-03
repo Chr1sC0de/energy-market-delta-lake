@@ -419,14 +419,17 @@ from marimoserver.gas_dashboard import (
     render_nomination_forecast_context_links,
     render_facility_context_links,
     render_facility_flow_storage_context_links,
+    render_facility_flow_storage_status_html,
     render_forecast_actual_context_links,
     render_flow_context_links,
+    render_flow_source_status_html,
     render_heating_value_pressure_context_links,
     render_hub_zone_context_links,
     render_linepack_context_links,
     render_operational_meter_flow_context_links,
     render_participant_context_links,
     render_pipeline_connection_operations_context_links,
+    render_relationship_gap_status_html,
     render_schedule_run_context_links,
     render_scheduled_quantity_context_links,
     render_settlement_activity_context_links,
@@ -1492,6 +1495,101 @@ def test_dashboard_visual_primitives_escape_and_label_bounded_scope() -> None:
     assert theme["height"] == 420
     assert theme["hovermode"] == "x unified"
     assert theme["paper_bgcolor"] == "rgba(0,0,0,0)"
+
+
+def test_flow_and_relationship_status_visuals_escape_and_render_rows() -> None:
+    source_summary = pl.DataFrame(
+        {
+            "fact": ["Flow <fact>"],
+            "source system": ['GBB<script>alert("x")</script>'],
+            "source table": ["silver.source"],
+            "rows": [4],
+            "measure rows": [3],
+            "latest gas date": [date(2024, 1, 4)],
+            "latest source update": [datetime(2024, 1, 4, 7)],
+            "latest ingest": [datetime(2024, 1, 4, 8)],
+            "detail": ["loaded"],
+        }
+    )
+    relationship_gaps = pl.DataFrame(
+        [
+            {
+                "relationship": "Fact -> Dimension",
+                "source table": "silver.fact",
+                "source rows": 5,
+                "matched rows": 4,
+                "gap rows": 1,
+                "coverage gap": "Missing <dimension>",
+            },
+            {
+                "relationship": "Dimension -> Optional context",
+                "source table": "silver.dimension",
+                "source rows": "not loaded",
+                "matched rows": "4",
+                "gap rows": False,
+                "coverage gap": "Covered",
+            },
+        ],
+        strict=False,
+    )
+
+    source_html = render_flow_source_status_html(source_summary, title="Flow <status>")
+    gap_html = render_relationship_gap_status_html(
+        relationship_gaps,
+        title="Relationship <status>",
+    )
+    empty_source_html = render_flow_source_status_html(source_summary.clear())
+    empty_gap_html = render_relationship_gap_status_html(relationship_gaps.clear())
+
+    assert "<script>" not in source_html
+    assert "Flow &lt;fact&gt;" in source_html
+    assert "GBB&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;" in source_html
+    assert "Flow &lt;status&gt;" in source_html
+    assert "3 measure rows" in source_html
+    assert "Fact -&gt; Dimension" in gap_html
+    assert "Missing &lt;dimension&gt;" in gap_html
+    assert 'data-status="gap"' in gap_html
+    assert 'data-status="covered"' in gap_html
+    assert "1 gap rows" in gap_html
+    assert "dashboard-visual-empty--compact" in empty_source_html
+    assert "dashboard-visual-empty--compact" in empty_gap_html
+
+
+def test_facility_flow_storage_status_visual_renders_measure_bars() -> None:
+    daily_summary = pl.DataFrame(
+        {
+            "gas date": [date(2024, 1, 3)],
+            "rows": [2],
+            "facilities": [2],
+            "source systems": [1],
+            "demand rows": [1],
+            "total demand tj": [12.0],
+            "supply rows": [2],
+            "total supply tj": [14.0],
+            "transfer in rows": [1],
+            "total transfer in tj": [0.0],
+            "transfer out rows": [1],
+            "total transfer out tj": [None],
+            "held storage rows": [1],
+            "total held storage tj": [54.0],
+            "latest source update": [datetime(2024, 1, 3, 7)],
+            "latest ingest": [datetime(2024, 1, 3, 8)],
+        }
+    )
+
+    html = render_facility_flow_storage_status_html(
+        daily_summary,
+        title="Facility <summary>",
+    )
+    empty_html = render_facility_flow_storage_status_html(daily_summary.clear())
+
+    assert "Facility &lt;summary&gt;" in html
+    assert "2024-01-03" in html
+    assert "2 rows | 2 facilities" in html
+    assert "Demand" in html
+    assert "54 TJ" in html
+    assert "dashboard-measure-bar" in html
+    assert "dashboard-visual-empty--compact" in empty_html
 
 
 def test_market_price_bounded_trend_and_exception_helpers_label_scope() -> None:

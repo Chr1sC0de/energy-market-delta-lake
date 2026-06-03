@@ -22,7 +22,9 @@ def _():
         pipeline_connection_operations_table_specs,
         pipeline_connection_relationship_gap_frame,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_pipeline_connection_operations_context_links,
+        render_relationship_gap_status_html,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
 
@@ -42,7 +44,9 @@ def _():
         pl,
         refresh_token_from_control,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_pipeline_connection_operations_context_links,
+        render_relationship_gap_status_html,
     )
 
 
@@ -152,8 +156,11 @@ def _(
     gas_table_load_status_frame,
     gas_table_load_status_message,
     mo,
+    pipeline_connection_gaps,
     pipeline_connection_kpis,
     pipeline_connection_loads,
+    render_kpi_cards_html,
+    render_relationship_gap_status_html,
 ):
     mo.vstack(
         [
@@ -164,7 +171,18 @@ def _(
                 {gas_table_load_status_message(pipeline_connection_loads)}
                 """
             ),
-            mo.ui.table(pipeline_connection_kpis, selection=None),
+            mo.Html(
+                render_kpi_cards_html(
+                    pipeline_connection_kpis,
+                    title="Pipeline and Connection Operations KPIs",
+                )
+            ),
+            mo.Html(
+                render_relationship_gap_status_html(
+                    pipeline_connection_gaps,
+                    title="Pipeline and Connection relationship coverage",
+                )
+            ),
             mo.accordion(
                 {
                     "Pipeline and Connection read diagnostics": mo.ui.table(

@@ -8542,6 +8542,126 @@ def render_visual_empty_state_html(
 </section>"""
 
 
+def render_flow_source_status_html(
+    source_summary: pl.DataFrame,
+    *,
+    title: str = "Flow source coverage",
+) -> str:
+    """Render an escaped Flow source coverage visual from the summary frame."""
+    if source_summary.is_empty():
+        return render_visual_empty_state_html(
+            title=title,
+            detail=(
+                "No Flow source coverage rows are available in the loaded "
+                "bounded reads."
+            ),
+            compact=True,
+        )
+
+    rows = source_summary.to_dicts()
+    max_measure_rows = max(
+        (max(0.0, _number_value(row.get("measure rows"))) for row in rows),
+        default=0.0,
+    )
+    items = "\n".join(
+        _render_flow_source_status_row(row, max_measure_rows) for row in rows
+    )
+    return f"""\
+<style>
+{_dashboard_visual_primitives_css()}
+</style>
+<section class="dashboard-status-visual" aria-label="{escape(title, quote=True)}">
+    <header>
+        <p class="dashboard-status-visual__eyebrow">Source coverage</p>
+        <h3>{escape(title)}</h3>
+    </header>
+    <div class="dashboard-status-list">
+        {items}
+    </div>
+</section>"""
+
+
+def render_relationship_gap_status_html(
+    relationship_gaps: pl.DataFrame,
+    *,
+    title: str = "Relationship coverage",
+) -> str:
+    """Render an escaped relationship coverage visual from a gap frame."""
+    if relationship_gaps.is_empty():
+        return render_visual_empty_state_html(
+            title=title,
+            detail=("No relationship rows are available in the loaded bounded reads."),
+            compact=True,
+        )
+
+    rows = relationship_gaps.to_dicts()
+    items = "\n".join(_render_relationship_gap_status_row(row) for row in rows)
+    return f"""\
+<style>
+{_dashboard_visual_primitives_css()}
+</style>
+<section class="dashboard-status-visual" aria-label="{escape(title, quote=True)}">
+    <header>
+        <p class="dashboard-status-visual__eyebrow">Relationship status</p>
+        <h3>{escape(title)}</h3>
+    </header>
+    <div class="dashboard-status-list">
+        {items}
+    </div>
+</section>"""
+
+
+def render_facility_flow_storage_status_html(
+    daily_summary: pl.DataFrame,
+    *,
+    title: str = "Facility flow and storage totals",
+) -> str:
+    """Render an escaped daily flow/storage visual from the daily frame."""
+    if daily_summary.is_empty():
+        return render_visual_empty_state_html(
+            title=title,
+            detail=(
+                "No Facility Flow and Storage rows are available for the "
+                "current filters."
+            ),
+            compact=True,
+        )
+
+    rows = daily_summary.to_dicts()
+    measure_columns = (
+        ("Demand", "total demand tj"),
+        ("Supply", "total supply tj"),
+        ("Transfer in", "total transfer in tj"),
+        ("Transfer out", "total transfer out tj"),
+        ("Held storage", "total held storage tj"),
+    )
+    max_measure = max(
+        (
+            max(0.0, _number_value(row.get(column)))
+            for row in rows
+            for _, column in measure_columns
+        ),
+        default=0.0,
+    )
+    items = "\n".join(
+        _render_facility_flow_storage_status_row(row, measure_columns, max_measure)
+        for row in rows
+    )
+    return f"""\
+<style>
+{_dashboard_visual_primitives_css()}
+</style>
+<section class="dashboard-status-visual" aria-label="{escape(title, quote=True)}">
+    <header>
+        <p class="dashboard-status-visual__eyebrow">Gas Day summary</p>
+        <h3>{escape(title)}</h3>
+    </header>
+    <div class="dashboard-status-list dashboard-status-list--dense">
+        {items}
+    </div>
+</section>"""
+
+
 def plotly_theme_defaults(*, height: int = 360) -> dict[str, object]:
     """Return Plotly layout defaults compatible with the repo dashboard theme."""
     return {
@@ -20827,6 +20947,134 @@ def _render_kpi_card(row: Mapping[str, object]) -> str:
 </article>"""
 
 
+def _render_flow_source_status_row(
+    row: Mapping[str, object],
+    max_measure_rows: float,
+) -> str:
+    fact = escape(_format_cell_value(row.get("fact")))
+    source_system = escape(_format_cell_value(row.get("source system")))
+    source_table = escape(_format_cell_value(row.get("source table")))
+    rows = escape(_format_cell_value(row.get("rows")))
+    measure_rows = _number_value(row.get("measure rows"))
+    measure_label = escape(_format_cell_value(row.get("measure rows")))
+    latest_gas_date = escape(_format_cell_value(row.get("latest gas date")))
+    width = _status_bar_width(measure_rows, max_measure_rows)
+    return f"""\
+<article class="dashboard-status-row">
+    <div class="dashboard-status-row__heading">
+        <strong>{fact}</strong>
+        <span>{measure_label} measure rows</span>
+    </div>
+    <div class="dashboard-status-row__bar" aria-hidden="true">
+        <span style="width: {width:.1f}%"></span>
+    </div>
+    <p>{source_system} | {source_table}</p>
+    <ul>
+        <li>{rows} loaded rows</li>
+        <li>Latest Gas Day {latest_gas_date}</li>
+    </ul>
+</article>"""
+
+
+def _render_relationship_gap_status_row(row: Mapping[str, object]) -> str:
+    relationship = escape(_format_cell_value(row.get("relationship")))
+    source_rows = _number_value(row.get("source rows"))
+    matched_rows = _number_value(row.get("matched rows"))
+    gap_rows = _number_value(row.get("gap rows"))
+    source_label = escape(_format_cell_value(row.get("source rows")))
+    matched_label = escape(_format_cell_value(row.get("matched rows")))
+    gap_label = escape(_format_cell_value(row.get("gap rows")))
+    coverage_gap = escape(_format_cell_value(row.get("coverage gap")))
+    covered_width = (
+        100.0
+        if source_rows == 0.0
+        else _status_bar_width(
+            matched_rows,
+            source_rows,
+            min_visible=0.0,
+        )
+    )
+    status = "gap" if gap_rows > 0 else "covered"
+    return f"""\
+<article class="dashboard-status-row" data-status="{status}">
+    <div class="dashboard-status-row__heading">
+        <strong>{relationship}</strong>
+        <span>{gap_label} gap rows</span>
+    </div>
+    <div class="dashboard-status-row__bar" aria-hidden="true">
+        <span style="width: {covered_width:.1f}%"></span>
+    </div>
+    <p>{coverage_gap}</p>
+    <ul>
+        <li>{source_label} source rows</li>
+        <li>{matched_label} matched rows</li>
+    </ul>
+</article>"""
+
+
+def _render_facility_flow_storage_status_row(
+    row: Mapping[str, object],
+    measure_columns: Sequence[tuple[str, str]],
+    max_measure: float,
+) -> str:
+    gas_date = escape(_format_cell_value(row.get("gas date")))
+    rows = escape(_format_cell_value(row.get("rows")))
+    facilities = escape(_format_cell_value(row.get("facilities")))
+    bars = "\n".join(
+        _render_measure_status_bar(label, row.get(column), max_measure)
+        for label, column in measure_columns
+    )
+    latest_update = escape(_format_cell_value(row.get("latest source update")))
+    return f"""\
+<article class="dashboard-status-row dashboard-status-row--measures">
+    <div class="dashboard-status-row__heading">
+        <strong>{gas_date}</strong>
+        <span>{rows} rows | {facilities} facilities</span>
+    </div>
+    <div class="dashboard-measure-bars">
+        {bars}
+    </div>
+    <p>Latest source update {latest_update}</p>
+</article>"""
+
+
+def _render_measure_status_bar(
+    label: str,
+    value: object,
+    max_measure: float,
+) -> str:
+    numeric_value = _number_value(value)
+    width = _status_bar_width(numeric_value, max_measure)
+    return f"""\
+<div class="dashboard-measure-bar">
+    <span>{escape(label)}</span>
+    <div aria-hidden="true"><span style="width: {width:.1f}%"></span></div>
+    <strong>{escape(_format_number(numeric_value))} TJ</strong>
+</div>"""
+
+
+def _number_value(value: object) -> float:
+    if isinstance(value, bool) or value is None:
+        return 0.0
+    if isinstance(value, int | float):
+        return 0.0 if isinstance(value, float) and isnan(value) else float(value)
+    try:
+        return float(str(value).replace(",", ""))
+    except ValueError:
+        return 0.0
+
+
+def _status_bar_width(
+    value: float,
+    max_value: float,
+    *,
+    min_visible: float = 2.0,
+) -> float:
+    if value <= 0.0 or max_value <= 0.0:
+        return 0.0
+    return max(min_visible, min(100.0, (value / max_value) * 100.0))
+
+
 def _market_price_plotly_trace_label(
     measure_column: str,
     source_system: object,
@@ -20930,6 +21178,137 @@ def _dashboard_visual_primitives_css() -> str:
     background:
         linear-gradient(135deg, transparent 52%, var(--emdl-line, #cfdbd6) 52%),
         linear-gradient(90deg, var(--emdl-flow, #2d7f75), var(--emdl-warn, #b9822c));
+}
+
+.dashboard-status-visual {
+    padding: 0.9rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+}
+
+.dashboard-status-visual header {
+    margin-bottom: 0.75rem;
+}
+
+.dashboard-status-visual__eyebrow {
+    margin: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.74rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.dashboard-status-visual h3 {
+    margin: 0.2rem 0 0;
+    color: var(--emdl-ink, #1f2a2e);
+    font-size: 1.05rem;
+}
+
+.dashboard-status-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 0.75rem;
+}
+
+.dashboard-status-list--dense {
+    grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+}
+
+.dashboard-status-row {
+    min-height: 8rem;
+    padding: 0.8rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-soft, #f7faf8);
+}
+
+.dashboard-status-row[data-status="gap"] {
+    border-color: var(--emdl-warn, #b9822c);
+}
+
+.dashboard-status-row__heading {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.dashboard-status-row__heading strong {
+    color: var(--emdl-ink, #1f2a2e);
+    font-size: 0.98rem;
+    line-height: 1.25;
+}
+
+.dashboard-status-row__heading span {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.82rem;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.dashboard-status-row__bar,
+.dashboard-measure-bar div {
+    height: 0.55rem;
+    margin-top: 0.65rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e6eeea;
+}
+
+.dashboard-status-row__bar span,
+.dashboard-measure-bar div span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--emdl-flow, #2d7f75);
+}
+
+.dashboard-status-row[data-status="gap"] .dashboard-status-row__bar span {
+    background: var(--emdl-warn, #b9822c);
+}
+
+.dashboard-status-row p {
+    margin: 0.65rem 0 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.86rem;
+    line-height: 1.35;
+}
+
+.dashboard-status-row ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.8rem;
+    margin: 0.65rem 0 0;
+    padding: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.82rem;
+    list-style: none;
+}
+
+.dashboard-measure-bars {
+    display: grid;
+    gap: 0.55rem;
+    margin-top: 0.75rem;
+}
+
+.dashboard-measure-bar {
+    display: grid;
+    grid-template-columns: 6.5rem minmax(5rem, 1fr) 4.5rem;
+    gap: 0.55rem;
+    align-items: center;
+}
+
+.dashboard-measure-bar span,
+.dashboard-measure-bar strong {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.8rem;
+}
+
+.dashboard-measure-bar strong {
+    color: var(--emdl-ink, #1f2a2e);
+    text-align: right;
 }
 """
 
