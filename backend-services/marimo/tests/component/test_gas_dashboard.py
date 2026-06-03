@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
-from typing import Self
+from typing import Any, Self, cast
 
 import polars as pl
 import pytest
@@ -359,6 +359,7 @@ from marimoserver.gas_dashboard import (
     market_price_source_system_options,
     market_price_source_table_options,
     market_price_trend_diagnostic_frame,
+    market_price_trend_figure,
     market_price_trend_frame,
     market_price_type_summary_frame,
     linepack_adequacy_flag_options,
@@ -400,7 +401,9 @@ from marimoserver.gas_dashboard import (
     pipeline_connection_operations_kpi_frame,
     pipeline_connection_operations_table_specs,
     pipeline_connection_relationship_gap_frame,
+    plotly_theme_defaults,
     read_parquet_table,
+    render_bounded_data_note_html,
     render_dashboard_context_panel,
     render_bid_stack_context_links,
     render_capacity_auction_context_links,
@@ -408,7 +411,9 @@ from marimoserver.gas_dashboard import (
     render_capacity_outlook_context_links,
     render_connection_point_context_links,
     render_customer_transfer_context_links,
+    render_kpi_cards_html,
     render_market_price_context_links,
+    render_visual_empty_state_html,
     render_nomination_forecast_context_links,
     render_facility_context_links,
     render_facility_flow_storage_context_links,
@@ -1306,6 +1311,7 @@ def test_market_price_summaries_filters_and_context_links() -> None:
     kpis = market_price_kpi_frame(load)
     type_summary = market_price_type_summary_frame(load)
     trend = market_price_trend_frame(load)
+    trend_figure = market_price_trend_figure(load)
     context_links = render_market_price_context_links()
     vicgas_observations = market_price_observation_frame(
         load,
@@ -1414,6 +1420,11 @@ def test_market_price_summaries_filters_and_context_links() -> None:
             "price_value_gst_ex, administered_price",
         ],
     }
+    trend_figure_data = cast(Any, trend_figure.data)
+    trend_figure_layout = cast(Any, trend_figure.layout)
+    assert len(trend_figure_data) == 3
+    assert trend_figure_layout.hovermode == "x unified"
+    assert trend_figure_layout.template.layout.plot_bgcolor == "white"
     assert vicgas_observations["source table"].to_list() == [vicgas_table]
     assert market_price_kpi_frame(load, gas_date_filter="2024-01-01").row(
         0,
@@ -1427,6 +1438,56 @@ def test_market_price_summaries_filters_and_context_links() -> None:
     assert 'href="/marimo/sample_energy_market/"' in context_links
     assert "Schedule Context" in context_links
     assert "Planned dashboard" in context_links
+
+
+def test_dashboard_visual_primitives_escape_and_label_bounded_scope() -> None:
+    kpis = pl.DataFrame(
+        {
+            "metric": ['Rows <script>alert("x")</script>'],
+            "value": ["<100"],
+            "detail": ["Loaded from <unsafe> source"],
+        }
+    )
+
+    cards_html = render_kpi_cards_html(kpis, title='Unsafe "title"')
+    empty_cards_html = render_kpi_cards_html(
+        pl.DataFrame(
+            schema={"metric": pl.String, "value": pl.String, "detail": pl.String}
+        ),
+        empty_message="No <unsafe> metrics",
+    )
+    note_html = render_bounded_data_note_html(
+        title="Bounded <rows>",
+        detail="Only the loaded <sample> is inspected.",
+        status="warn<script>",
+    )
+    empty_html = render_visual_empty_state_html(
+        title="No <chart>",
+        detail="Refresh <data>",
+        action="Widen <filters>",
+        compact=True,
+    )
+    empty_trend_figure = market_price_trend_figure(None, height=280)
+    theme = plotly_theme_defaults(height=420)
+
+    assert "<script>" not in cards_html
+    assert "Rows &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;" in cards_html
+    assert "&lt;100" in cards_html
+    assert "Unsafe &quot;title&quot;" in cards_html
+    assert "No &lt;unsafe&gt; metrics" in empty_cards_html
+    assert "Bounded &lt;rows&gt;" in note_html
+    assert "warn&lt;script&gt;" in note_html
+    assert "No &lt;chart&gt;" in empty_html
+    assert "dashboard-visual-empty--compact" in empty_html
+    assert "Widen &lt;filters&gt;" in empty_html
+    empty_trend_figure_data = cast(Any, empty_trend_figure.data)
+    empty_trend_figure_layout = cast(Any, empty_trend_figure.layout)
+    assert len(empty_trend_figure_data) == 0
+    assert empty_trend_figure_layout.height == 280
+    assert empty_trend_figure_layout.hovermode == "x unified"
+    assert theme["height"] == 420
+    assert theme["hovermode"] == "x unified"
+    assert theme["paper_bgcolor"] == "rgba(0,0,0,0)"
 
 
 def test_market_price_bounded_trend_and_exception_helpers_label_scope() -> None:

@@ -134,6 +134,8 @@ authoring contract for curated dashboards:
   notebook
 - keep source, freshness, load status, row coverage, bounded-read policy, and
   degraded-state warnings visible before detailed tables
+- satisfy the first-viewport visual contract with KPI cards, a job-matched
+  visual, designed empty states, and drilldown tables below the visual summary
 - load `silver.gas_model` rows through bounded loader helpers such as
   `load_gas_model_tables()` or dashboard-specific cached wrappers
 - render registry context, load health, KPIs, bounded-scope copy, links, and
@@ -878,15 +880,17 @@ model loader and session cache from
 filters the loaded bounded preview by Gas Day, `price_type`, `source_system`,
 and `source_table`.
 
-The dashboard shows loaded price KPIs, latest `gas_date`, price-type and source
-summaries, available price measure columns, bounded per-measure trend
-diagnostics, recent/sample exception candidates for missing measures,
-non-positive values, and bounded range edges, a recent loaded trend table,
-bounded observation previews, and Market price plus Schedule context links from
-the Marimo registry. AWS mode labels these trend and exception views as
-sampled/recent-only bounded reads. Missing market-price data, unavailable
-Parquet prefixes, and filter combinations with no matches render dashboard
-empty states with the checked table, read policy, and refresh action.
+The dashboard shows first-viewport price health KPI cards and a light-hover
+Plotly trend chart built from the same bounded, filtered rows as the detail
+views. Price-type and source summaries, available price measure columns,
+bounded per-measure trend diagnostics, recent/sample exception candidates for
+missing measures, non-positive values, bounded range edges, a recent loaded
+trend table, bounded observation previews, and Market price plus Schedule
+context links from the Marimo registry remain available below the visual
+summary. AWS mode labels these trend and exception views as sampled/recent-only
+bounded reads. Missing market-price data, unavailable Parquet prefixes, and
+filter combinations with no matches render dashboard empty states with the
+checked table, read policy, and refresh action.
 
 ## Schedule runs dashboard
 

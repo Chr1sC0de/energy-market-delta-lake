@@ -28,10 +28,14 @@ def _():
         market_price_source_system_options,
         market_price_source_table_options,
         market_price_trend_diagnostic_frame,
+        market_price_trend_figure,
         market_price_trend_frame,
         market_price_type_summary_frame,
+        render_bounded_data_note_html,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_market_price_context_links,
+        render_visual_empty_state_html,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
 
@@ -54,39 +58,31 @@ def _():
         market_price_source_system_options,
         market_price_source_table_options,
         market_price_trend_diagnostic_frame,
+        market_price_trend_figure,
         market_price_trend_frame,
         market_price_type_summary_frame,
         mo,
         pl,
+        render_bounded_data_note_html,
         refresh_token_from_control,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_market_price_context_links,
+        render_visual_empty_state_html,
     )
 
 
 @app.cell
-def _(mo, render_dashboard_context_panel, render_market_price_context_links):
-    mo.vstack(
-        [
-            mo.md("""
-            # Gas Market Prices
+def _(mo):
+    mo.md("""
+    # Gas Market Prices
 
-            **Dashboard brief**: **Dashboard intent**: Analytical. Operators
-            and analysts use this dashboard to inspect curated gas market price
-            observations from
-            `silver.gas_model.silver_gas_fact_market_price`, including
-            `price_type`, `source_system`, `source_table`, `gas_date`,
-            Schedule context fields, populated price measures, bounded trend
-            diagnostics, and recent/sample exception candidates. Freshness,
-            load timing, cache status, and bounded preview policy come from
-            the shared gas model loader. Missing LocalStack/AWS data and
-            filter matches with no rows render as designed empty states instead
-            of notebook tracebacks.
-            """),
-            mo.Html(render_dashboard_context_panel("gas-market-prices")),
-            mo.Html(render_market_price_context_links()),
-        ]
-    )
+    **Dashboard brief**: **Dashboard intent**: Analytical. Operators and
+    analysts inspect bounded `silver.gas_model.silver_gas_fact_market_price`
+    observations by date, type, system, and table. The first viewport shows
+    data health, refresh, filters, KPI cards, and a bounded price trend;
+    drilldown diagnostics and tables sit below.
+    """)
     return
 
 
@@ -132,27 +128,243 @@ def _(
     market_price_bounded_scope_markdown,
     market_price_load,
     mo,
+    render_bounded_data_note_html,
 ):
     price_loads = [market_price_load]
+    table_status = (
+        "available"
+        if market_price_load.available
+        else "unavailable"
+        if market_price_load.error is not None
+        else "empty"
+    )
+    row_policy = (
+        "Full table scans enabled"
+        if market_price_load.row_limit is None
+        else f"Bounded preview cap: {market_price_load.row_limit:,} rows"
+    )
+    load_ms = round(market_price_load.load_duration_seconds * 1000)
+    cache_status = "cache hit" if market_price_load.cache_hit else "cache miss"
     mo.vstack(
         [
-            mo.callout(
-                mo.md(gas_table_load_status_message(price_loads)),
-                kind="neutral",
+            mo.Html(
+                render_bounded_data_note_html(
+                    title=f"Data health: {table_status}",
+                    detail=(
+                        f"{int(market_price_load.available)} of 1 tables "
+                        f"available; {row_policy}; loaded in {load_ms} ms; "
+                        f"{cache_status}. KPI, trend, diagnostic, and exception "
+                        "views use loaded rows and active filters only. Refresh "
+                        "after materializing or reseeding rows."
+                    ),
+                    status=table_status,
+                )
             ),
-            mo.callout(
-                mo.md(market_price_bounded_scope_markdown(config, market_price_load)),
-                kind="warn" if config.aws_runtime else "neutral",
+        ]
+    )
+    return (price_loads,)
+
+
+@app.cell
+def _(
+    MARKET_PRICE_GAS_DATE_FILTER_ALL,
+    MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
+    MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
+    MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
+    market_price_load,
+    market_price_gas_date_options,
+    market_price_price_type_options,
+    market_price_source_system_options,
+    market_price_source_table_options,
+    mo,
+):
+    gas_date_filter = mo.ui.dropdown(
+        options=market_price_gas_date_options(market_price_load),
+        value=MARKET_PRICE_GAS_DATE_FILTER_ALL,
+        searchable=True,
+        label="Date",
+        full_width=False,
+    )
+    price_type_filter = mo.ui.dropdown(
+        options=market_price_price_type_options(market_price_load),
+        value=MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
+        searchable=True,
+        label="Type",
+        full_width=False,
+    )
+    source_system_filter = mo.ui.dropdown(
+        options=market_price_source_system_options(market_price_load),
+        value=MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
+        searchable=True,
+        label="System",
+        full_width=False,
+    )
+    source_table_filter = mo.ui.dropdown(
+        options=market_price_source_table_options(market_price_load),
+        value=MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
+        searchable=True,
+        label="Table",
+        full_width=False,
+    )
+
+    mo.vstack(
+        [
+            mo.md("**First view filters**"),
+            mo.vstack(
+                [
+                    mo.hstack(
+                        [
+                            gas_date_filter,
+                            price_type_filter,
+                        ],
+                        gap=1,
+                    ),
+                    mo.hstack(
+                        [
+                            source_system_filter,
+                            source_table_filter,
+                        ],
+                        gap=1,
+                    ),
+                ],
+                gap=1,
             ),
-            mo.accordion(
-                {
-                    "Market price read diagnostics": mo.ui.table(
+        ],
+        gap=0.5,
+    )
+    return gas_date_filter, price_type_filter, source_system_filter, source_table_filter
+
+
+@app.cell
+def _(
+    market_price_kpi_frame,
+    market_price_load,
+    market_price_trend_figure,
+    mo,
+    render_bounded_data_note_html,
+    render_kpi_cards_html,
+    render_visual_empty_state_html,
+    gas_date_filter,
+    price_type_filter,
+    source_system_filter,
+    source_table_filter,
+):
+    kpis = market_price_kpi_frame(
+        market_price_load,
+        price_type_filter.value,
+        source_system_filter.value,
+        source_table_filter.value,
+        gas_date_filter.value,
+    )
+    trend_figure = market_price_trend_figure(
+        market_price_load,
+        price_type_filter.value,
+        source_system_filter.value,
+        source_table_filter.value,
+        gas_date_filter.value,
+        height=300,
+    )
+    trend_has_data = len(trend_figure.data) > 0
+    if kpis.is_empty() and not trend_has_data:
+        price_health_visual = mo.Html(
+            render_visual_empty_state_html(
+                title="No price health metrics or bounded price trend",
+                detail=(
+                    "No loaded market price rows match the current read and "
+                    "filters; drilldown empty-state detail remains below."
+                ),
+                action="Refresh data or widen the current filters.",
+                compact=True,
+            )
+        )
+    elif kpis.is_empty():
+        kpi_view = mo.Html(
+            render_visual_empty_state_html(
+                title="No price health metrics",
+                detail=(
+                    "No loaded market price rows match the current read and "
+                    "filters; drilldown empty-state detail remains below."
+                ),
+                action="Refresh data or widen the current filters.",
+                compact=True,
+            )
+        )
+        price_trend_visual = mo.ui.plotly(trend_figure)
+        price_health_visual = mo.vstack([kpi_view, price_trend_visual])
+    else:
+        kpi_view = mo.Html(render_kpi_cards_html(kpis, title="Price health KPIs"))
+        if trend_has_data:
+            price_trend_visual = mo.ui.plotly(trend_figure)
+        else:
+            price_trend_visual = mo.Html(
+                render_visual_empty_state_html(
+                    title="No bounded price trend",
+                    detail="The bounded read and filters do not contain plotted price measures.",
+                    action="Refresh data or widen the current filters.",
+                    compact=True,
+                )
+            )
+        price_health_visual = mo.vstack([kpi_view, price_trend_visual])
+
+    mo.vstack(
+        [
+            mo.md("## Price Health"),
+            price_health_visual,
+            mo.Html(
+                render_bounded_data_note_html(
+                    title="Visuals use the loaded bounded rows",
+                    detail=(
+                        "KPI cards and the trend chart respect the current "
+                        "filters, refresh state, cache state, and bounded read "
+                        "policy shown above."
+                    ),
+                )
+            ),
+        ]
+    )
+    return
+
+
+@app.cell
+def _(
+    config,
+    gas_table_load_status_frame,
+    gas_table_load_status_message,
+    market_price_bounded_scope_markdown,
+    market_price_load,
+    mo,
+    price_loads,
+):
+    mo.accordion(
+        {
+            "Market price read diagnostics": mo.vstack(
+                [
+                    mo.md(gas_table_load_status_message(price_loads)),
+                    mo.md(
+                        market_price_bounded_scope_markdown(
+                            config,
+                            market_price_load,
+                        )
+                    ),
+                    mo.ui.table(
                         gas_table_load_status_frame(price_loads),
                         selection=None,
-                    )
-                },
-                multiple=False,
-            ),
+                    ),
+                ]
+            )
+        },
+        multiple=False,
+        lazy=True,
+    )
+    return
+
+
+@app.cell
+def _(mo, render_dashboard_context_panel, render_market_price_context_links):
+    mo.vstack(
+        [
+            mo.Html(render_dashboard_context_panel("gas-market-prices")),
+            mo.Html(render_market_price_context_links()),
         ]
     )
     return
@@ -180,98 +392,10 @@ def _(config, mo, pl):
             ],
         }
     )
-    mo.ui.table(config_frame, selection=None)
-    return
-
-
-@app.cell
-def _(
-    MARKET_PRICE_GAS_DATE_FILTER_ALL,
-    MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
-    MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
-    MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
-    market_price_load,
-    market_price_gas_date_options,
-    market_price_price_type_options,
-    market_price_source_system_options,
-    market_price_source_table_options,
-    mo,
-):
-    gas_date_filter = mo.ui.dropdown(
-        options=market_price_gas_date_options(market_price_load),
-        value=MARKET_PRICE_GAS_DATE_FILTER_ALL,
-        searchable=True,
-        label="Gas date",
-        full_width=True,
-    )
-    price_type_filter = mo.ui.dropdown(
-        options=market_price_price_type_options(market_price_load),
-        value=MARKET_PRICE_PRICE_TYPE_FILTER_ALL,
-        searchable=True,
-        label="Price type",
-        full_width=True,
-    )
-    source_system_filter = mo.ui.dropdown(
-        options=market_price_source_system_options(market_price_load),
-        value=MARKET_PRICE_SOURCE_SYSTEM_FILTER_ALL,
-        searchable=True,
-        label="Source system",
-        full_width=True,
-    )
-    source_table_filter = mo.ui.dropdown(
-        options=market_price_source_table_options(market_price_load),
-        value=MARKET_PRICE_SOURCE_TABLE_FILTER_ALL,
-        searchable=True,
-        label="Source table",
-        full_width=True,
-    )
-
-    mo.vstack(
-        [
-            mo.md("## Filters"),
-            mo.hstack(
-                [
-                    gas_date_filter,
-                    price_type_filter,
-                    source_system_filter,
-                    source_table_filter,
-                ],
-                gap=1,
-            ),
-        ],
-        gap=0.5,
-    )
-    return gas_date_filter, price_type_filter, source_system_filter, source_table_filter
-
-
-@app.cell
-def _(
-    market_price_empty_state_markdown,
-    market_price_kpi_frame,
-    market_price_load,
-    mo,
-    gas_date_filter,
-    price_type_filter,
-    source_system_filter,
-    source_table_filter,
-):
-    kpis = market_price_kpi_frame(
-        market_price_load,
-        price_type_filter.value,
-        source_system_filter.value,
-        source_table_filter.value,
-        gas_date_filter.value,
-    )
-    if kpis.is_empty():
-        kpi_view = mo.md(market_price_empty_state_markdown(market_price_load))
-    else:
-        kpi_view = mo.ui.table(kpis, selection=None)
-
-    mo.vstack(
-        [
-            mo.md("## Price Health"),
-            kpi_view,
-        ]
+    mo.accordion(
+        {"Runtime read configuration": mo.ui.table(config_frame, selection=None)},
+        multiple=False,
+        lazy=True,
     )
     return
 

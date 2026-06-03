@@ -149,6 +149,24 @@ def test_source_coverage_details_render_in_lazy_accordions(
     assert "lazy=True" in section
 
 
+def test_market_prices_first_viewport_keeps_visual_before_diagnostics() -> None:
+    source = (CURATED_NOTEBOOKS_DIR / "gas_market_prices.py").read_text(
+        encoding="utf-8"
+    )
+
+    filter_heading = source.index("**First view filters**")
+    price_health_heading = source.index("## Price Health")
+    diagnostics = source.index("Market price read diagnostics")
+    trend_build = source.index("trend_figure = market_price_trend_figure")
+    filter_build = source.index("gas_date_filter = mo.ui.dropdown")
+
+    assert filter_heading < price_health_heading
+    assert price_health_heading < diagnostics
+    assert source[filter_build:price_health_heading].count("full_width=False") == 4
+    assert trend_build < price_health_heading
+    assert "height=300" in source[trend_build:diagnostics]
+
+
 @pytest.mark.parametrize(
     "target",
     DASHBOARD_SMOKE_TARGETS,
