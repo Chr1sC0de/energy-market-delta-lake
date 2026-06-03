@@ -1208,16 +1208,13 @@ class RalphLoop:
                 fatal_error = self._collect_exploratory_results(
                     active_exploratory,
                     wait_for_one=False,
-                    completed_manifests=(
-                        refresh_gate_completed_manifests
-                        if refresh_gate_cohort_issue_numbers
-                        else None
-                    ),
+                    completed_manifests=refresh_gate_completed_manifests,
                 )
                 if fatal_error is not None:
                     self._raise_after_exploratory_workers_finish(
                         active_exploratory,
                         fatal_error,
+                        completed_manifests=refresh_gate_completed_manifests,
                     )
                 self._prune_refresh_gate_observation_cohort(
                     active_exploratory,
@@ -1256,13 +1253,17 @@ class RalphLoop:
 
                 if attempt_budget_reached:
                     if active_exploratory and self._run_scheduler_triage_if_available(
-                        active_exploratory
+                        active_exploratory,
+                        completed_manifests=refresh_gate_completed_manifests,
                     ):
                         continue
                     emit(f"Reached --max-issues {self.config.max_issues}.")
                     if active_exploratory:
                         emit("Waiting for active Exploratory worker(s) to finish.")
-                    fatal_error = self._wait_for_exploratory_workers(active_exploratory)
+                    fatal_error = self._wait_for_exploratory_workers(
+                        active_exploratory,
+                        completed_manifests=refresh_gate_completed_manifests,
+                    )
                     if fatal_error is not None:
                         raise fatal_error
                     return
@@ -1289,7 +1290,8 @@ class RalphLoop:
                             "Exploratory worker(s) to finish before claim."
                         )
                         fatal_error = self._wait_for_exploratory_workers(
-                            active_exploratory
+                            active_exploratory,
+                            completed_manifests=refresh_gate_completed_manifests,
                         )
                         if fatal_error is not None:
                             raise fatal_error
@@ -1304,7 +1306,8 @@ class RalphLoop:
                             "active Exploratory worker(s) to finish before claim."
                         )
                         fatal_error = self._wait_for_exploratory_workers(
-                            active_exploratory
+                            active_exploratory,
+                            completed_manifests=refresh_gate_completed_manifests,
                         )
                         if fatal_error is not None:
                             raise fatal_error
@@ -1362,6 +1365,7 @@ class RalphLoop:
                         self._raise_after_exploratory_workers_finish(
                             active_exploratory,
                             error,
+                            completed_manifests=refresh_gate_completed_manifests,
                         )
                     except IssueFailure as error:
                         emit(
@@ -1373,6 +1377,7 @@ class RalphLoop:
                         self._raise_after_exploratory_workers_finish(
                             active_exploratory,
                             error,
+                            completed_manifests=refresh_gate_completed_manifests,
                         )
                     self._wait_for_ready_issue_refresh_claim_gate(
                         active_exploratory,
@@ -1385,21 +1390,21 @@ class RalphLoop:
                     continue
 
                 if active_exploratory:
-                    if self._run_scheduler_triage_if_available(active_exploratory):
+                    if self._run_scheduler_triage_if_available(
+                        active_exploratory,
+                        completed_manifests=refresh_gate_completed_manifests,
+                    ):
                         continue
                     fatal_error = self._collect_exploratory_results(
                         active_exploratory,
                         wait_for_one=True,
-                        completed_manifests=(
-                            refresh_gate_completed_manifests
-                            if refresh_gate_cohort_issue_numbers
-                            else None
-                        ),
+                        completed_manifests=refresh_gate_completed_manifests,
                     )
                     if fatal_error is not None:
                         self._raise_after_exploratory_workers_finish(
                             active_exploratory,
                             fatal_error,
+                            completed_manifests=refresh_gate_completed_manifests,
                         )
                     self._prune_refresh_gate_observation_cohort(
                         active_exploratory,
@@ -1585,6 +1590,8 @@ class RalphLoop:
         active_exploratory: dict[
             Future[RunManifest | None], ReadyImplementationCandidate
         ],
+        *,
+        completed_manifests: list[RunManifest] | None = None,
     ) -> bool:
         triage_issue = self._next_triage_issue()
         if triage_issue is None:
@@ -1596,6 +1603,7 @@ class RalphLoop:
                 self._raise_after_exploratory_workers_finish(
                     active_exploratory,
                     error,
+                    completed_manifests=completed_manifests,
                 )
             raise
         self.triaged_this_run.add(triage_issue.number)
@@ -1641,6 +1649,7 @@ class RalphLoop:
                 self._raise_after_exploratory_workers_finish(
                     active_exploratory,
                     fatal_error,
+                    completed_manifests=completed_manifests,
                 )
             self._prune_refresh_gate_observation_cohort(
                 active_exploratory,
@@ -1658,6 +1667,7 @@ class RalphLoop:
             self._raise_after_exploratory_workers_finish(
                 active_exploratory,
                 fatal_error,
+                completed_manifests=completed_manifests,
             )
         self._prune_refresh_gate_observation_cohort(
             active_exploratory,
@@ -1674,8 +1684,11 @@ class RalphLoop:
         completed_manifests: list[RunManifest],
         cohort_issue_numbers: set[int],
     ) -> None:
-        if not cohort_issue_numbers:
+        if not active_exploratory:
             completed_manifests.clear()
+            cohort_issue_numbers.clear()
+            return
+        if not cohort_issue_numbers:
             return
         active_issue_numbers = {
             candidate.issue.number for candidate in active_exploratory.values()
@@ -1765,13 +1778,15 @@ class RalphLoop:
         ],
         *,
         fatal_stop_error: RalphError | None = None,
+        completed_manifests: list[RunManifest] | None = None,
     ) -> RalphError | None:
         first_fatal_error: RalphError | None = None
         while active_exploratory:
             fatal_error = self._collect_exploratory_results(
                 active_exploratory,
                 wait_for_one=True,
-                fatal_stop_error=fatal_stop_error,
+                fatal_stop_error=first_fatal_error or fatal_stop_error,
+                completed_manifests=completed_manifests,
             )
             if first_fatal_error is None and fatal_error is not None:
                 first_fatal_error = fatal_error
@@ -1783,6 +1798,8 @@ class RalphLoop:
             Future[RunManifest | None], ReadyImplementationCandidate
         ],
         error: RalphError,
+        *,
+        completed_manifests: list[RunManifest] | None = None,
     ) -> None:
         active_issue_numbers = [
             candidate.issue.number for candidate in active_exploratory.values()
@@ -1804,11 +1821,34 @@ class RalphLoop:
         log_path = getattr(error, "log_path", None)
         if isinstance(log_path, Path):
             emit(f"Recovery evidence log: {log_path}", err=True)
+        self._record_completed_exploratory_fatal_stop_observations(
+            completed_manifests,
+            error=error,
+            active_issue_numbers=active_issue_numbers,
+        )
         self._wait_for_exploratory_workers(
             active_exploratory,
             fatal_stop_error=error,
+            completed_manifests=completed_manifests,
         )
         raise error
+
+    def _record_completed_exploratory_fatal_stop_observations(
+        self,
+        completed_manifests: list[RunManifest] | None,
+        *,
+        error: RalphError,
+        active_issue_numbers: list[int],
+    ) -> None:
+        if not completed_manifests:
+            return
+        for manifest in completed_manifests:
+            manifest.record_drain_scheduler_fatal_stop(
+                "observed",
+                error=error,
+                active_issue_numbers=active_issue_numbers,
+            )
+        completed_manifests.clear()
 
     def _validate_clean_root_worktree_for_live_run(self) -> None:
         if self.config.dry_run:
