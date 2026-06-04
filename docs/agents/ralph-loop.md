@@ -1366,6 +1366,13 @@ ordinary implementation, Codex, and QA retries; after each repair Ralph reruns
 selected QA, refreshes redacted security diff evidence from the repaired diff,
 and reruns **Issue completion review** before **Local integration**, Trunk push,
 or Exploratory handoff can proceed.
+Evidence-only repairs are allowed when the review finding asks for local
+browser/development-review evidence and the repair log records the evidence
+without a repo diff. Ralph checks that selected QA already exists, the repair
+log contains Marimo browser-review evidence for desktop and narrow viewports,
+controls exercised, and traceback absence, then records
+`repair_evidence_recorded` and reruns **Issue completion review** without
+requiring an artificial code change.
 Before starting repair, Ralph classifies failed review findings. A finding that
 only reports missing post-**Promotion** deployed AWS workflow evidence is
 recorded as deferred deployment evidence and the issue can continue, because

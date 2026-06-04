@@ -271,6 +271,42 @@ No blocking security findings.
 The issue would be integrated incomplete.
 """
 
+ISSUE_COMPLETION_REVIEW_BROWSER_EVIDENCE_FAIL_MARKDOWN = """# Issue completion review
+
+## Review result
+
+fail
+
+## Findings
+
+- Missing required Playwright/browser development-review evidence for curated
+  Marimo dashboard changes. The handoff must record pages opened, desktop and
+  narrow viewports reviewed, controls exercised, and visual/interaction fixes
+  when local browser review is available.
+
+## Security review
+
+No blocking security findings.
+
+## Residual risk
+
+The code changes appear to satisfy the functional acceptance criteria.
+"""
+
+ISSUE_COMPLETION_REVIEW_BROWSER_REPAIR_EVIDENCE = """
+Repaired the completion-review finding by running the required Marimo browser review.
+
+Browser evidence:
+- Ran `uv run --with playwright python scripts/review_promoted_dashboards.py`
+- Reviewed `/marimo/source_coverage_matrix/`,
+  `/marimo/source_table_lineage_explorer/`, and
+  `/marimo/sample_energy_market/`
+- Covered both desktop `1440x1100` and narrow `390x900`
+- Exercised controls: refresh data run button, source-system filter, coverage-state filter
+- Verified no visible traceback text
+- Visual check found no interaction or layout fixes needed
+"""
+
 REVIEW_PACKAGE_HTML = """<!doctype html>
 <html>
 <head><meta charset="utf-8"><title>Review package for issue #42</title></head>
@@ -689,6 +725,7 @@ class FakeRunner:
         | None = None,
         fail_post_promotion_review: bool = False,
         issue_completion_review_markdowns: list[str] | None = None,
+        issue_completion_review_repair_outputs: list[str] | None = None,
         review_package_html: str = REVIEW_PACKAGE_HTML,
         fail_review_package: bool = False,
         fail_marimo_review_media: bool = False,
@@ -711,6 +748,9 @@ class FakeRunner:
         self.fail_command_attempts = fail_command_attempts or {}
         self.fail_post_promotion_review = fail_post_promotion_review
         self.issue_completion_review_markdowns = issue_completion_review_markdowns or []
+        self.issue_completion_review_repair_outputs = (
+            issue_completion_review_repair_outputs or []
+        )
         self.review_package_html = review_package_html
         self.fail_review_package = fail_review_package
         self.fail_marimo_review_media = fail_marimo_review_media
@@ -984,7 +1024,14 @@ class FakeRunner:
                 "Repair GitHub issue" in input_text
                 and "Issue completion review" in input_text
             ):
-                return ralph.CompletedCommand(stdout="", stderr="")
+                output = (
+                    self.issue_completion_review_repair_outputs.pop(0)
+                    if self.issue_completion_review_repair_outputs
+                    else ""
+                )
+                if log_path is not None and output:
+                    log_path.write_text(output, encoding="utf-8")
+                return ralph.CompletedCommand(stdout=output, stderr="")
             if "Generate a Review package" in input_text:
                 if self.fail_review_package:
                     raise ralph.CommandFailure(
@@ -14563,6 +14610,86 @@ Build it.
             review["deferred_deployment_evidence"]["recommended_action"],
         )
         self.assertEqual(review["repair_attempts"], [])
+
+    def test_browser_evidence_only_repair_reruns_review_without_code_diff(
+        self,
+    ) -> None:
+        changed_file = "backend-services/marimo/notebooks/source_coverage_matrix.py"
+        runner = FakeRunner(
+            issue_completion_review_markdowns=[
+                ISSUE_COMPLETION_REVIEW_BROWSER_EVIDENCE_FAIL_MARKDOWN,
+                ISSUE_COMPLETION_REVIEW_PASS_MARKDOWN,
+            ],
+            issue_completion_review_repair_outputs=[
+                ISSUE_COMPLETION_REVIEW_BROWSER_REPAIR_EVIDENCE
+            ],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            worktree_path, run_dir, manifest, access_plan = (
+                implementation_attempt_context(tmp_path, loop, issue)
+            )
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+
+            changed_files, qa_results = loop._run_issue_completion_review_with_repair(
+                issue,
+                delivery_plan=delivery_plan,
+                changed_files=[changed_file],
+                qa_results=[passed_qa_result(tmp_path)],
+                worktree_path=worktree_path,
+                run_dir=run_dir,
+                manifest=manifest,
+                access_plan=access_plan,
+                base_ref="origin/dev",
+            )
+
+            manifest_data = json.loads(
+                (run_dir / ralph.MANIFEST_NAME).read_text(encoding="utf-8")
+            )
+
+        review_calls = [
+            call
+            for call in runner.calls
+            if call.input_text is not None
+            and "Run an Issue completion review" in call.input_text
+        ]
+        repair_calls = [
+            call
+            for call in runner.calls
+            if call.input_text is not None
+            and "Repair GitHub issue #42 after Issue completion review findings"
+            in call.input_text
+        ]
+        review = manifest_data["issue_completion_review"]
+
+        self.assertEqual(changed_files, [changed_file])
+        self.assertEqual(len(qa_results), 1)
+        self.assertEqual(len(review_calls), 2)
+        self.assertEqual(len(repair_calls), 1)
+        self.assertIn("Evidence-only repair boundary", review_calls[1].input_text)
+        self.assertIn(
+            "artificial code diff",
+            repair_calls[0].input_text,
+        )
+        self.assertEqual(review["status"], "passed")
+        self.assertEqual(
+            [attempt["result"] for attempt in review["attempts"]],
+            ["fail", "pass"],
+        )
+        self.assertEqual(
+            review["repair_attempts"][0]["status"],
+            "repair_evidence_recorded",
+        )
+        self.assertIn(
+            "issue_completion_review_evidence_only_repair_recorded",
+            [event["stage"] for event in manifest_data["events"]],
+        )
 
     def test_out_of_scope_review_failure_records_followup_without_repair(self) -> None:
         runner = FakeRunner(

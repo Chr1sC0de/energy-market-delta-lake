@@ -84,6 +84,11 @@ records why deployed AWS workflow logs are post-**Promotion** evidence. Ralph
 therefore classifies deployment-evidence-only review failures as deferred
 Operator evidence instead of spending no-change repair attempts before
 **Local integration**.
+The same review loop also treats successful Marimo browser/development-review
+repairs as evidence-only when no repo file needed changing. The repair log must
+show desktop and narrow route review, exercised controls, and traceback absence;
+Ralph records `repair_evidence_recorded` and reruns **Issue completion review**
+instead of forcing an artificial code diff.
 
 ## Sync metadata
 
