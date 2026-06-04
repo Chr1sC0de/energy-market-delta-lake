@@ -16,7 +16,7 @@ import sys
 import textwrap
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -283,6 +283,18 @@ def codex_env_for_sandbox_issue_access(
 def is_deploy_credential_env_name(name: str) -> bool:
     upper_name = name.upper()
     return upper_name.startswith(("AWS_", "PULUMI_"))
+
+
+def sanitized_post_promotion_deployment_env(
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    source = os.environ if environ is None else environ
+    return {
+        name: value
+        for name, value in source.items()
+        if value == ""
+        or not (name == "AWS_ENDPOINT_URL" or name.startswith("AWS_ENDPOINT_URL_"))
+    }
 
 
 class CommandRunner:
@@ -9310,6 +9322,7 @@ class RalphOperatorRun:
                 log_path=log_path,
                 phase=f"post-Promotion deployment: {command.name}",
                 execute_in_dry_run=False,
+                env=sanitized_post_promotion_deployment_env(),
             )
         except CommandFailure as error:
             child_manifest.record_deployment_execution(

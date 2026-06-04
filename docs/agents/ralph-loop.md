@@ -1719,8 +1719,11 @@ command. `user_code_redeploy` runs
 `infrastructure/aws-pulumi/scripts/redeploy-user-code` from the AWS Pulumi
 **Subproject**. `full_deployed_workflow` runs
 `infrastructure/aws-pulumi/scripts/run-integration-tests --with-idempotency`
-from that **Subproject**, so the same log is the **Deployed test** evidence and
-the full-tier idempotency evidence.
+from that **Subproject** with non-empty `AWS_ENDPOINT_URL` and
+`AWS_ENDPOINT_URL_*` entries removed from the subprocess environment, so the
+same log is the **Deployed test** evidence and the full-tier idempotency
+evidence. The AWS Pulumi script still rejects direct runs that inherit endpoint
+override variables.
 
 If a checkpointed Operator deployment command or its **Deployed test** evidence
 fails, Ralph runs a deploy-failure analysis pass before recording the

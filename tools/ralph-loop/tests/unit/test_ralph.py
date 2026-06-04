@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -9974,7 +9975,17 @@ class RalphOperatorRunTests(unittest.TestCase):
                 changed_files=["infrastructure/aws-pulumi/components/ecs_services.py"],
             )
 
-            with redirect_stdout(io.StringIO()):
+            with (
+                patch.dict(
+                    os.environ,
+                    {
+                        "AWS_ENDPOINT_URL": "http://localhost:4566",
+                        "AWS_ENDPOINT_URL_S3": "http://localhost:4566",
+                        "AWS_ENDPOINT_URL_EMPTY": "",
+                    },
+                ),
+                redirect_stdout(io.StringIO()),
+            ):
                 operator.run()
 
             manifest = json.loads((run_dir / ralph.OPERATOR_MANIFEST_NAME).read_text())
@@ -10006,12 +10017,36 @@ class RalphOperatorRunTests(unittest.TestCase):
             ralph.POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG,
             deployment_calls[0].args,
         )
+        deployment_env = deployment_calls[0].env
+        self.assertIsNotNone(deployment_env)
+        assert deployment_env is not None
+        self.assertNotIn("AWS_ENDPOINT_URL", deployment_env)
+        self.assertNotIn("AWS_ENDPOINT_URL_S3", deployment_env)
+        self.assertEqual(deployment_env["AWS_ENDPOINT_URL_EMPTY"], "")
         deployment = promotion_manifest["deployment_execution"]
         self.assertEqual(deployment["status"], "succeeded")
         self.assertEqual(
             deployment["command_path"],
             ralph.POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_COMMAND,
         )
+        self.assertEqual(
+            deployment["command"],
+            [
+                str(expected_command),
+                ralph.POST_PROMOTION_DEPLOYMENT_FULL_WORKFLOW_IDEMPOTENCY_ARG,
+            ],
+        )
+        self.assertEqual(
+            deployment["cwd"],
+            str(loop.config.repo_root / "infrastructure" / "aws-pulumi"),
+        )
+        self.assertEqual(
+            deployment["log_path"],
+            str(
+                promotion_manifest_path.parent / "deployment-full-deployed-workflow.log"
+            ),
+        )
+        self.assertEqual(deployment["exit_status"], 0)
         self.assertEqual(deployment["deployed_test_evidence"]["status"], "passed")
         self.assertEqual(
             deployment["full_tier_idempotency_evidence"]["status"],
