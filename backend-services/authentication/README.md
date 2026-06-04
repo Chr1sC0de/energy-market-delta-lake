@@ -66,9 +66,12 @@ The service reads these environment variables:
 - `COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL`
 - `COGNITO_TOKEN_SIGNING_KEY_URL`
 - `COGNITO_DAGSTER_AUTH_CLIENT_SECRET`
+- `AWS_DEFAULT_REGION`
 
 `WEBSITE_ROOT_URL` is normalized to an HTTPS, slash-free base URL before the
 service redirects the browser back to `/dagster-webserver/admin` or `/marimo`.
+`AWS_DEFAULT_REGION` configures the regional Cognito IDP client used by the
+username/password login endpoint.
 
 The configured Cognito app client must allow callback URLs that match the
 external auth callback routes for each protected surface:
