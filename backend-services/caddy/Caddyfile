@@ -12,11 +12,11 @@
 }
 
 {$ROOT_DNS} {
-    # Static files — only served when the path is not a Dagster app path.
+    # Static files — only served when the path is not an app or auth path.
     # /_next/*, /graphql, /favicon.*, /manifest.json are all Dagster assets
     # that the webserver serves from its root regardless of path prefix.
     @static {
-        not path /dagster-webserver* /oauth2* /_next* /graphql* /favicon.* /manifest.json /marimo*
+        not path /dagster-webserver* /oauth2* /auth* /logout* /_next* /graphql* /favicon.* /manifest.json /marimo*
     }
     handle @static {
         root * /var/www/html
@@ -42,7 +42,9 @@
     # guest server route
     reverse_proxy /dagster-webserver/guest* {$DAGSTER_WEBSERVER_GUEST}
 
-    # Auth server routes (login and OAuth callback)
+    # Auth server routes (custom auth API, login, logout, and OAuth callback)
+    reverse_proxy /auth* {$DAGSTER_AUTHSERVER}
+    reverse_proxy /logout {$DAGSTER_AUTHSERVER}
     reverse_proxy /dagster-webserver/admin/login* {$DAGSTER_AUTHSERVER}
     reverse_proxy /oauth2/dagster-webserver/admin* {$DAGSTER_AUTHSERVER}
 
