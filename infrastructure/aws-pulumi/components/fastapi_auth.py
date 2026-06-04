@@ -44,9 +44,6 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
         # Read secrets from Pulumi config
         config = pulumi.Config()
         self._cognito_client_id = config.require_secret("cognito_client_id")
-        self._cognito_server_metadata_url = config.require_secret(
-            "cognito_server_metadata_url"
-        )
         self._cognito_token_signing_key_url = config.require_secret(
             "cognito_token_signing_key_url"
         )
@@ -93,13 +90,11 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
     def _setup_cognito_parameters(self) -> None:
         self.cognito_parameter_names = {
             "client_id": f"/{self.name}/dagster/fastapi-auth/cognito_client_id",
-            "server_metadata_url": f"/{self.name}/dagster/fastapi-auth/cognito_server_metadata_url",
             "token_signing_key_url": f"/{self.name}/dagster/fastapi-auth/cognito_token_signing_key_url",
             "client_secret": f"/{self.name}/dagster/fastapi-auth/cognito_client_secret",
         }
         parameter_values = {
             "client_id": self._cognito_client_id,
-            "server_metadata_url": self._cognito_server_metadata_url,
             "token_signing_key_url": self._cognito_token_signing_key_url,
             "client_secret": self._cognito_client_secret,
         }
@@ -171,9 +166,6 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
             ),
             region=region.region,
             cognito_client_id_param=self.cognito_parameter_names["client_id"],
-            cognito_server_metadata_url_param=self.cognito_parameter_names[
-                "server_metadata_url"
-            ],
             cognito_token_signing_key_url_param=self.cognito_parameter_names[
                 "token_signing_key_url"
             ],
@@ -199,7 +191,6 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
                 }}
 
                 COGNITO_DAGSTER_AUTH_CLIENT_ID="$(ssm_value '{a["cognito_client_id_param"]}')"
-                COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL="$(ssm_value '{a["cognito_server_metadata_url_param"]}')"
                 COGNITO_TOKEN_SIGNING_KEY_URL="$(ssm_value '{a["cognito_token_signing_key_url_param"]}')"
                 COGNITO_DAGSTER_AUTH_CLIENT_SECRET="$(ssm_value '{a["cognito_client_secret_param"]}')"
                 IMAGE_URI="{a["image_uri"]}"
@@ -221,7 +212,6 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
                     --restart unless-stopped \\
                     -p 8000:8000 \\
                     -e COGNITO_DAGSTER_AUTH_CLIENT_ID="$COGNITO_DAGSTER_AUTH_CLIENT_ID" \\
-                    -e COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL="$COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL" \\
                     -e COGNITO_TOKEN_SIGNING_KEY_URL="$COGNITO_TOKEN_SIGNING_KEY_URL" \\
                     -e COGNITO_DAGSTER_AUTH_CLIENT_SECRET="$COGNITO_DAGSTER_AUTH_CLIENT_SECRET" \\
                     -e AWS_DEFAULT_REGION={a["region"]} \\

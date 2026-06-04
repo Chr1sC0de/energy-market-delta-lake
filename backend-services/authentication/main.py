@@ -149,11 +149,11 @@ def get_hmac_key_data(token: str, jwks: JWKS) -> JWK | None:
 
 def _configured_cognito_issuer() -> str:
     """Return the configured Cognito user-pool issuer URL."""
-    metadata_url = environ["COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL"]
-    well_known_path = "/.well-known/openid-configuration"
-    if metadata_url.endswith(well_known_path):
-        return metadata_url[: -len(well_known_path)]
-    return metadata_url.rstrip("/")
+    jwks_url = environ["COGNITO_TOKEN_SIGNING_KEY_URL"]
+    jwks_path = "/.well-known/jwks.json"
+    if jwks_url.endswith(jwks_path):
+        return jwks_url[: -len(jwks_path)]
+    return jwks_url.rstrip("/")
 
 
 def _validate_access_token_claims(claims: CognitoAccessTokenClaims) -> None:

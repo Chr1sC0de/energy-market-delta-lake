@@ -33,8 +33,13 @@ Dagster, auth, and Marimo.
   `/logout*`, `/_next*`, `/graphql*`, Dagster favicon paths, and manifest paths
   from that fallback.
 - [Caddyfile](Caddyfile) proxies the custom FastAPI auth API at `/auth*` and
-  `POST /logout` to `DAGSTER_AUTHSERVER` alongside the hosted-OIDC routes used
-  by `forward_auth`.
+  `POST /logout` to `DAGSTER_AUTHSERVER`, then routes only
+  `/oauth2/dagster-webserver/admin/validate` and `/oauth2/marimo/validate` for
+  the protected-route `forward_auth` checks.
+- The shared custom session flow uses the React Router `/login` page,
+  `POST /auth/login`, an opaque browser session cookie, and server-side Cognito
+  token state. Caddy no longer advertises or proxies hosted-login start or
+  callback paths.
 - Failed Dagster admin `forward_auth` checks redirect to the shared custom
   login route at `/login?next=/dagster-webserver/admin`.
 
@@ -176,5 +181,5 @@ check** surface from the changed Subproject or root, as described in
 - `sync.qa`:
   - `git diff --name-only`
   - `rg -n "<changed-file-path>" README.md docs backend-services infrastructure tools`
-  - `npm run build` from `backend-services/caddy`
+  - `npm run build && npm run login-smoke` from `backend-services/caddy`
   - `verify links, diagrams, commands, paths, ports, env vars, and names`

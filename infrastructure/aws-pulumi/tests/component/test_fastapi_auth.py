@@ -85,10 +85,21 @@ class TestFastAPIAuthComponent:
         def check(user_data: str) -> None:
             assert "test-cognito-client-id" not in user_data
             assert "test-cognito-client-secret" not in user_data
+            assert (
+                "https://cognito.test.example.com/.well-known/jwks.json"
+                not in user_data
+            )
             assert "AWS_DEFAULT_REGION=ap-southeast-2" in user_data
             assert "aws ssm get-parameter" in user_data
+            assert set(auth.cognito_parameter_names) == {
+                "client_id",
+                "token_signing_key_url",
+                "client_secret",
+            }
             for parameter_name in auth.cognito_parameter_names.values():
                 assert parameter_name in user_data
+            assert "cognito_server_metadata_url" not in user_data
+            assert "COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL" not in user_data
 
         return auth.user_data.apply(check)
 

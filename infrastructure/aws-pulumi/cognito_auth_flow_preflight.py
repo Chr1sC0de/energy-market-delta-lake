@@ -45,15 +45,17 @@ class CognitoAppClientReference:
     user_pool_id: str
     client_id: str
     client_id_parameter_name: str
-    metadata_url_parameter_name: str
+    token_signing_key_url_parameter_name: str
 
 
-def user_pool_id_from_metadata_url(metadata_url: str) -> str:
-    """Return the user-pool ID from a Cognito OIDC metadata URL."""
-    path_parts = [part for part in urlparse(metadata_url).path.split("/") if part]
+def user_pool_id_from_token_signing_key_url(token_signing_key_url: str) -> str:
+    """Return the user-pool ID from a Cognito JWKS URL."""
+    path_parts = [
+        part for part in urlparse(token_signing_key_url).path.split("/") if part
+    ]
     if len(path_parts) < 2 or path_parts[1] != ".well-known":
         message = (
-            "Cognito metadata URL did not contain the expected "
+            "Cognito token signing key URL did not contain the expected "
             "`/<user-pool-id>/.well-known/...` path."
         )
         raise CognitoAuthFlowPreflightError(message)
@@ -65,7 +67,7 @@ def cognito_parameter_names(resource_name: str) -> dict[str, str]:
     prefix = f"/{resource_name}/dagster/fastapi-auth"
     return {
         "client_id": f"{prefix}/cognito_client_id",
-        "server_metadata_url": f"{prefix}/cognito_server_metadata_url",
+        "token_signing_key_url": f"{prefix}/cognito_token_signing_key_url",
     }
 
 
@@ -80,15 +82,15 @@ def load_app_client_reference(
         ssm_client=ssm_client,
         name=parameter_names["client_id"],
     )
-    metadata_url = _ssm_parameter_value(
+    token_signing_key_url = _ssm_parameter_value(
         ssm_client=ssm_client,
-        name=parameter_names["server_metadata_url"],
+        name=parameter_names["token_signing_key_url"],
     )
     return CognitoAppClientReference(
-        user_pool_id=user_pool_id_from_metadata_url(metadata_url),
+        user_pool_id=user_pool_id_from_token_signing_key_url(token_signing_key_url),
         client_id=client_id,
         client_id_parameter_name=parameter_names["client_id"],
-        metadata_url_parameter_name=parameter_names["server_metadata_url"],
+        token_signing_key_url_parameter_name=parameter_names["token_signing_key_url"],
     )
 
 

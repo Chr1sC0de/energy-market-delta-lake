@@ -254,14 +254,12 @@ class TestVerifyJwt:
         result = verify_jwt(FAKE_TOKEN)
         assert result is True
 
-    def test_valid_issuer_can_be_configured_without_well_known_path(
+    def test_valid_issuer_can_be_configured_without_jwks_path(
         self, mocker: MockerFixture
     ) -> None:
         mocker.patch.dict(
             main.environ,
-            {
-                "COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL": "https://cognito.example.com/"
-            },
+            {"COGNITO_TOKEN_SIGNING_KEY_URL": "https://cognito.example.com/"},
         )
         assert main._configured_cognito_issuer() == "https://cognito.example.com"
 
