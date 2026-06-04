@@ -243,6 +243,17 @@ when the plan restores `ready-for-agent` without pushing an **Integration
 target** or creating a new **Local integration** commit. After that label
 restoration, normal queue scanning can claim the issue; no priority label or
 special scheduling path is needed.
+No-change pre-implementation Codex environment failures are a distinct
+Ralph-owned requeue subcase, not ordinary implementation repair. Eligibility
+requires a failed implementation manifest with no changed files, no QA results,
+no **Issue completion review**, no Review package, no **Local integration**, no
+**Integration target** push state, and a recognized Codex subprocess
+environment signal. Live recovery comments `Ralph environment requeue
+completed.`, removes Ralph-owned worktrees and the local issue branch, restores
+`ready-for-agent`, and preserves no backup implementation ref because Codex
+failed before changes were accepted. Operators should verify the Codex
+subprocess environment, for example with `--doctor`, before the issue is
+claimed again.
 Review package media, generation, and validation failures are pre-push failures
 when QA and any required **Issue completion review** passed and no
 `integration_commit` or **Integration target** push was recorded. `--inspect-run`,

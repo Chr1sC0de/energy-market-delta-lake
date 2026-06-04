@@ -28,9 +28,11 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from marimoserver.dashboard_registry import (
     ROADMAP_AUDIENCES,
+    TASK_GROUPS,
     DashboardAudience,
     DashboardRegistryEntry,
     DashboardStatus,
+    DashboardTaskGroupMetadata,
     dashboard_registry as load_dashboard_registry,
     dashboard_registry_payload,
 )
@@ -257,11 +259,11 @@ _INDEX_CSS = """
             background: var(--emdl-blue, #166791);
         }
 
-        #audience-platform-operations:checked ~ .dashboard-grid .dashboard-card:not(.audience-platform-operations),
-        #audience-operator:checked ~ .dashboard-grid .dashboard-card:not(.audience-operator),
-        #audience-analyst:checked ~ .dashboard-grid .dashboard-card:not(.audience-analyst),
-        #audience-stakeholder:checked ~ .dashboard-grid .dashboard-card:not(.audience-stakeholder),
-        #audience-data-engineer:checked ~ .dashboard-grid .dashboard-card:not(.audience-data-engineer) {
+        #audience-platform-operations:checked ~ .gallery-content .dashboard-card:not(.audience-platform-operations),
+        #audience-operator:checked ~ .gallery-content .dashboard-card:not(.audience-operator),
+        #audience-analyst:checked ~ .gallery-content .dashboard-card:not(.audience-analyst),
+        #audience-stakeholder:checked ~ .gallery-content .dashboard-card:not(.audience-stakeholder),
+        #audience-data-engineer:checked ~ .gallery-content .dashboard-card:not(.audience-data-engineer) {
             display: none;
         }
 
@@ -273,6 +275,60 @@ _INDEX_CSS = """
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
             gap: 16px;
+        }
+
+        .gallery-content,
+        .task-section,
+        .roadmap-section {
+            display: grid;
+            gap: 18px;
+        }
+
+        .gallery-content {
+            margin-top: 18px;
+        }
+
+        .task-section,
+        .roadmap-section {
+            padding-top: 8px;
+        }
+
+        .section-heading {
+            display: grid;
+            gap: 4px;
+        }
+
+        .section-heading h2 {
+            margin: 0;
+            color: var(--emdl-slate, #354348);
+            font-size: 1.55rem;
+            line-height: 1.18;
+        }
+
+        .section-heading p {
+            max-width: 760px;
+            margin: 0;
+            color: var(--emdl-muted, #566365);
+        }
+
+        .roadmap-section {
+            margin-top: 10px;
+            padding-top: 20px;
+            border-top: 1px solid var(--emdl-line, #cfdbd6);
+        }
+
+        .roadmap-section .dashboard-grid {
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+        }
+
+        .roadmap-section .dashboard-card {
+            min-height: 0;
+            padding: 16px;
+            gap: 10px;
+        }
+
+        .roadmap-section .asset-list {
+            display: none;
         }
 
         .dashboard-card {
@@ -360,7 +416,7 @@ _INDEX_CSS = """
             background: rgb(var(--emdl-red-rgb, 158 72 57) / 0.12);
         }
 
-        .story-pill {
+        .task-pill {
             color: var(--emdl-blue, #166791);
             background: rgb(var(--emdl-blue-rgb, 22 103 145) / 0.11);
         }
@@ -572,13 +628,21 @@ def _render_index_html(mounted_notebook_names: set[str]) -> str:
     audience_labels = "\n".join(
         _render_audience_label(audience) for audience in ROADMAP_AUDIENCES
     )
+    available_entries = tuple(
+        entry for entry in entries if entry.status is DashboardStatus.AVAILABLE
+    )
+    planned_entries = tuple(
+        entry for entry in entries if entry.status is DashboardStatus.PLANNED
+    )
     overview_cards = "\n".join(
-        _render_overview_card(story, entries)
-        for story in ("market", "operations", "trust", "concepts")
+        _render_overview_card(task_group, available_entries)
+        for task_group in TASK_GROUPS
     )
-    cards = "\n".join(
-        _render_dashboard_card(entry, mounted_notebook_names) for entry in entries
+    task_sections = "\n".join(
+        _render_task_section(task_group, available_entries, mounted_notebook_names)
+        for task_group in TASK_GROUPS
     )
+    roadmap_section = _render_roadmap_section(planned_entries, mounted_notebook_names)
     html = f"""\
 <!DOCTYPE html>
 <html lang="en">
@@ -615,7 +679,7 @@ def _render_index_html(mounted_notebook_names: set[str]) -> str:
                     <span class="summary-label">registry concepts</span>
                 </li>
             </ul>
-            <div class="overview-strip" aria-label="Market story overview">
+            <div class="overview-strip" aria-label="Dashboard task overview">
 {overview_cards}
             </div>
         </section>
@@ -651,7 +715,7 @@ def _render_index_html(mounted_notebook_names: set[str]) -> str:
                 <p class="eyebrow">Route spotlight</p>
                 <h2>Source to dashboard route</h2>
                 <p>
-                    Select or focus a dashboard card to inspect its story group,
+                    Select or focus a dashboard card to inspect its task group,
                     status, audience, and backing assets.
                 </p>
                 <div class="spotlight-meta" aria-label="Spotlight details">
@@ -659,8 +723,9 @@ def _render_index_html(mounted_notebook_names: set[str]) -> str:
                     <span class="asset-pill">No auto-refresh timers</span>
                 </div>
             </div>
-            <div class="dashboard-grid">
-{cards}
+            <div class="gallery-content">
+{task_sections}
+{roadmap_section}
             </div>
         </section>
         <script>
@@ -690,15 +755,73 @@ def _render_audience_label(audience: DashboardAudience) -> str:
 
 
 def _render_overview_card(
-    story: str,
+    task_group: DashboardTaskGroupMetadata,
     entries: tuple[DashboardRegistryEntry, ...],
 ) -> str:
-    count = sum(1 for entry in entries if _story_group(entry) == story)
+    count = sum(1 for entry in entries if entry.task_group is task_group.value)
     return f"""\
                 <article class="overview-card">
-                    <strong>{escape(_label_from_slug(story))}</strong>
-                    <span>{count} dashboard concepts</span>
+                    <strong>{escape(task_group.title)}</strong>
+                    <span>{count} available dashboards</span>
                 </article>"""
+
+
+def _render_task_section(
+    task_group: DashboardTaskGroupMetadata,
+    entries: tuple[DashboardRegistryEntry, ...],
+    mounted_notebook_names: set[str],
+) -> str:
+    section_entries = tuple(
+        entry for entry in entries if entry.task_group is task_group.value
+    )
+    cards = "\n".join(
+        _render_dashboard_card(entry, mounted_notebook_names)
+        for entry in section_entries
+    )
+    task_group_id = escape(task_group.value.value, quote=True)
+    return f"""\
+                <section
+                    class="task-section task-section--{task_group_id}"
+                    id="task-{task_group_id}"
+                    aria-labelledby="task-{task_group_id}-title"
+                >
+                    <div class="section-heading">
+                        <p class="eyebrow">Available dashboards</p>
+                        <h2 id="task-{task_group_id}-title">{escape(task_group.title)}</h2>
+                        <p>{escape(task_group.description)}</p>
+                    </div>
+                    <div class="dashboard-grid">
+{cards}
+                    </div>
+                </section>"""
+
+
+def _render_roadmap_section(
+    entries: tuple[DashboardRegistryEntry, ...],
+    mounted_notebook_names: set[str],
+) -> str:
+    cards = "\n".join(
+        _render_dashboard_card(entry, mounted_notebook_names) for entry in entries
+    )
+    return f"""\
+                <section
+                    class="roadmap-section"
+                    id="roadmap"
+                    aria-labelledby="roadmap-title"
+                >
+                    <div class="section-heading">
+                        <p class="eyebrow">Roadmap</p>
+                        <h2 id="roadmap-title">Planned dashboards</h2>
+                        <p>
+                            Planned registry concepts stay visible for discovery,
+                            but available dashboard sections remain the primary
+                            gallery path.
+                        </p>
+                    </div>
+                    <div class="dashboard-grid dashboard-grid--roadmap">
+{cards}
+                    </div>
+                </section>"""
 
 
 def _render_dashboard_card(
@@ -706,21 +829,22 @@ def _render_dashboard_card(
     mounted_notebook_names: set[str],
 ) -> str:
     href = _notebook_href(entry, mounted_notebook_names)
-    story_group = _story_group(entry)
+    task_group = _task_group_metadata(entry)
     audience_classes = " ".join(
         f"audience-{escape(audience.value, quote=True)}" for audience in entry.audiences
     )
     status_kind = _status_kind(entry, href)
     card_class = (
-        f"dashboard-card dashboard-card--{status_kind} story-{story_group} "
-        f"{audience_classes}"
+        f"dashboard-card dashboard-card--{status_kind} "
+        f"task-{task_group.value.value} {audience_classes}"
     )
     search_text = " ".join(
         (
             entry.title,
             entry.description,
             entry.status.value,
-            story_group,
+            entry.task_group.value,
+            task_group.title,
             " ".join(audience.value for audience in entry.audiences),
             " ".join(entry.backing_assets),
         )
@@ -731,10 +855,10 @@ def _render_dashboard_card(
         f'data-concept-id="{escape(entry.concept_id, quote=True)}" '
         f'data-status="{escape(entry.status.value, quote=True)}" '
         f'data-availability="{escape(status_kind, quote=True)}" '
-        f'data-story="{escape(story_group, quote=True)}" '
+        f'data-task-group="{escape(entry.task_group.value, quote=True)}" '
         f'data-search="{escape(search_text.lower(), quote=True)}"'
     )
-    body = _render_dashboard_card_body(entry, status_kind, story_group)
+    body = _render_dashboard_card_body(entry, status_kind, task_group.title)
 
     if href is not None:
         return f'                <a {attributes} href="{escape(href, quote=True)}">\n{body}\n                </a>'
@@ -745,7 +869,7 @@ def _render_dashboard_card(
 def _render_dashboard_card_body(
     entry: DashboardRegistryEntry,
     status_kind: str,
-    story_group: str,
+    task_group_title: str,
 ) -> str:
     audience_tags = "\n".join(
         f'                    <span class="audience-tag">{escape(_label_from_slug(audience.value))}</span>'
@@ -771,8 +895,8 @@ def _render_dashboard_card_body(
                         <span class="status-pill status-pill--{escape(status_kind, quote=True)}">
                             {escape(_status_label(status_kind))}
                         </span>
-                        <span class="status-pill story-pill">
-                            {escape(_label_from_slug(story_group))}
+                        <span class="status-pill task-pill">
+                            {escape(task_group_title)}
                         </span>
                     </div>
                     <div>
@@ -788,6 +912,13 @@ def _render_dashboard_card_body(
                     <span class="dashboard-action dashboard-action--{escape(status_kind, quote=True)}">
                         {escape(_action_label(status_kind))}
                     </span>"""
+
+
+def _task_group_metadata(entry: DashboardRegistryEntry) -> DashboardTaskGroupMetadata:
+    for task_group in TASK_GROUPS:
+        if task_group.value is entry.task_group:
+            return task_group
+    raise ValueError(f"unknown task group: {entry.task_group}")
 
 
 def _notebook_href(
@@ -825,74 +956,6 @@ def _action_label(status_kind: str) -> str:
     return "Notebook not present in this image"
 
 
-def _story_group(entry: DashboardRegistryEntry) -> str:
-    concept_text = " ".join(
-        (
-            entry.concept_id,
-            entry.title,
-            entry.description,
-        )
-    ).lower()
-    searchable = " ".join((concept_text, " ".join(entry.backing_assets))).lower()
-    if any(
-        token in concept_text
-        for token in (
-            "price",
-            "schedule",
-            "settlement",
-            "bid",
-            "offer",
-            "allocation",
-            "market",
-            "mos",
-        )
-    ):
-        return "market"
-    if any(
-        token in searchable
-        for token in (
-            "readiness",
-            "health",
-            "lineage",
-            "coverage",
-            "freshness",
-            "diagnostic",
-            "dictionary",
-            "citation",
-            "asset catalogue",
-        )
-    ):
-        return "trust"
-    if any(
-        token in searchable
-        for token in (
-            "flow",
-            "storage",
-            "capacity",
-            "linepack",
-            "notice",
-            "forecast",
-            "operation",
-        )
-    ):
-        return "operations"
-    if any(
-        token in searchable
-        for token in (
-            "concept",
-            "glossary",
-            "explainer",
-            "participant",
-            "facility",
-            "connection",
-            "hub",
-            "gas day",
-        )
-    ):
-        return "concepts"
-    return "market"
-
-
 def _label_from_slug(value: str) -> str:
     return value.replace("-", " ").title()
 
@@ -927,7 +990,7 @@ _INDEX_JS = """
         }
         const title = card.querySelector("h2")?.textContent || "Dashboard route";
         const description = card.querySelector("p")?.textContent || "";
-        const story = card.getAttribute("data-story") || "market";
+        const taskGroup = card.getAttribute("data-task-group") || "market-activity";
         const status = card.getAttribute("data-availability") || card.getAttribute("data-status") || "available";
         const assets = Array.from(card.querySelectorAll(".asset-pill"))
             .slice(0, 4)
@@ -938,7 +1001,7 @@ _INDEX_JS = """
             <h2>${title}</h2>
             <p>${description}</p>
             <div class="spotlight-meta" aria-label="Spotlight details">
-                <span class="asset-pill">${story}</span>
+                <span class="asset-pill">${taskGroup}</span>
                 <span class="asset-pill">${status}</span>
                 ${assets}
             </div>

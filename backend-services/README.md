@@ -226,6 +226,8 @@ Useful routes:
 - `/` for the single-page React Router market workspace with direct links to
   the public Dagster source map, private Dagster admin tools, and restricted
   dashboards
+- `/login` for the shared Caddy login page that posts to the FastAPI auth API
+  and follows the API-returned safe redirect path
 - `/dagster-webserver/guest` for the guest Dagster UI
 - `/dagster-webserver/admin` for the protected admin Dagster UI
 - `/marimo` for restricted curated Marimo dashboards through Caddy, including
@@ -857,6 +859,7 @@ developer-stack setting. It renders e2e Dagster config per run from the current
   - `backend-services/dagster-core/Dockerfile`
   - `backend-services/caddy/Dockerfile`
   - `backend-services/caddy/package.json`
+  - `backend-services/caddy/scripts/login-smoke.mjs`
   - `backend-services/caddy/src/App.tsx`
   - `backend-services/caddy/src/data.ts`
   - `backend-services/caddy/src/main.tsx`

@@ -121,12 +121,12 @@ separate from maintained repository docs. Future **Market context** pages are
 external generated corpus output unless a later ADR changes the tracking
 policy. Router docs and Subproject docs still need normal **Documentation
 sync** metadata outside generated corpus output.
-Runtime dashboards may carry registry-only Market context IDs, source chunk
-IDs, source hashes, and optional external artifact references as citation
-metadata. These identifiers are metadata only: dashboards must not require
-generated gold or silver Markdown artifacts to exist on disk at runtime.
-Generated gold Markdown remains read-only corpus output rather than a dashboard
-runtime dependency.
+Runtime dashboards may carry registry-only task groups, Market context IDs,
+source chunk IDs, source hashes, and optional external artifact references as
+citation metadata. These identifiers are metadata only: dashboards must not
+require generated gold or silver Markdown artifacts to exist on disk at
+runtime. Generated gold Markdown remains read-only corpus output rather than a
+dashboard runtime dependency.
 The Marimo glossary, concept-to-asset, schema data dictionary, and
 citation-chain explorer views consume those identifiers from the code-local
 dashboard registry, with the data dictionary adding Dagster GraphQL schema

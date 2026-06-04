@@ -60,8 +60,10 @@ The dashboard app in [src/marimoserver/main.py](src/marimoserver/main.py):
 - exposes `/health` for container health checks
 - discovers `*.py` notebooks from `notebooks/`
 - mounts each notebook as a marimo sub-app under `/marimo/<notebook-name>`
-- serves a concept gallery hub at `/marimo` for registry concepts, with search,
-  audience filters, summary counts, and route spotlight context
+- serves a concept gallery hub at `/marimo` for registry concepts, with
+  available dashboards grouped first by registry task group, a compact Roadmap
+  section for planned concepts, search, audience filters, summary counts, and
+  route spotlight context
 - serves the code-local dashboard roadmap registry at
   `/marimo/dashboard-registry.json`
 - links the Caddy-served shared light theme at `/theme.css` for the index and
@@ -154,22 +156,29 @@ behavior covered by helper tests and the dashboard standard.
 [src/marimoserver/dashboard_registry.py](src/marimoserver/dashboard_registry.py)
 defines the Marimo-local dashboard registry used by the dashboard roadmap. It
 parses structured records into `DashboardRegistryEntry` values with dashboard
-concept IDs, audience tags, planned or available status, notebook names and
-routes, backing `silver.gas_model` assets, Market context IDs, source chunk
-IDs, silver chunk paths, source hashes, and optional external artifact
-references.
+concept IDs, audience tags, registry task groups, planned or available status,
+notebook names and routes, backing `silver.gas_model` assets, Market context
+IDs, source chunk IDs, silver chunk paths, source hashes, and optional external
+artifact references.
 
 The `/marimo` entry route renders this registry as a concept gallery hub.
-Available registry entries link only when their backing notebook is mounted in
-the current image. Planned entries stay visible as roadmap cards but do not
-emit notebook links. The same registry is served as JSON from
-`/marimo/dashboard-registry.json` so future Marimo notebooks can render context
-panels without reading Gas market knowledge base Markdown directly. When the
-packaged generated corpus is absent, registry loading still succeeds because
-Market context IDs, source chunk IDs, silver chunk paths, and source hashes are
-code-local registry metadata. In AWS mode this remains read-only, uses the
-existing dashboard image contents, and does not require a Docker build-context
-change.
+Available registry entries render first in the ordered task sections Data
+Health, Market Activity, Gas Operations, and Concept Evidence. Those sections
+come from each entry's explicit `task_group` registry field rather than keyword
+inference. Available entries link only when their backing notebook is mounted in
+the current image. Planned entries move below those sections into a compact
+Roadmap section and do not emit notebook links.
+
+The same registry is served as payload version 2 JSON from
+`/marimo/dashboard-registry.json`. The payload includes top-level ordered
+`task_groups` metadata plus each entry's `task_group`, so clients can render the
+same available-first task sections without duplicating grouping rules. Future
+Marimo notebooks can render context panels without reading Gas market knowledge
+base Markdown directly. When the packaged generated corpus is absent, registry
+loading still succeeds because Market context IDs, source chunk IDs, silver
+chunk paths, source hashes, and task groups are code-local registry metadata.
+In AWS mode this remains read-only, uses the existing dashboard image contents,
+and does not require a Docker build-context change.
 
 Registry-backed dashboards that only browse registry metadata may have no
 backing `silver.gas_model` assets. The concept gallery renders those entries as

@@ -82,6 +82,10 @@ Use `DashboardRegistryEntry` fields this way:
 
 - `concept_id` names the Marimo dashboard-roadmap concept and selects the
   registry context panel.
+- `task_group` places the concept in one stable concept-gallery task section:
+  Data Health, Market Activity, Gas Operations, or Concept Evidence. The
+  gallery reads this field directly; authors must not rely on title, asset, or
+  description keyword inference for grouping.
 - `market_context_ids` names the related **Market context** records, such as
   `glossary:flow`. Treat these as stable IDs, not source text.
 - `source_chunks` records `SourceChunkReference` values with a source chunk ID,
@@ -100,6 +104,12 @@ registry `backing_assets`. The schema data dictionary adds Dagster GraphQL
 schema metadata to the concept-to-asset mapping. The citation-chain explorer
 audits Market context IDs, source chunks, silver chunk paths, and source hashes
 from the registry, then renders missing fields as coverage gaps.
+
+The public `/marimo/dashboard-registry.json` payload uses schema version 2. It
+exposes ordered top-level `task_groups` metadata and each entry's `task_group`.
+The `/marimo` hub renders available dashboards first in that order, then renders
+planned concepts in a compact secondary Roadmap section below the available
+task sections.
 
 ## Dashboard intent
 

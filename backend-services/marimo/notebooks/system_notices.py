@@ -19,6 +19,8 @@ def _():
         gas_table_load_status_frame,
         gas_table_load_status_message,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
+        render_system_notice_window_status_html,
         system_notice_empty_state_markdown,
         system_notice_kpi_frame,
         system_notice_source_coverage_frame,
@@ -39,6 +41,8 @@ def _():
         pl,
         refresh_token_from_control,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
+        render_system_notice_window_status_html,
         system_notice_empty_state_markdown,
         system_notice_kpi_frame,
         system_notice_source_coverage_frame,
@@ -184,20 +188,39 @@ def _(config, mo, pl):
 
 
 @app.cell
-def _(mo, system_notice_kpi_frame, system_notice_load):
+def _(
+    critical_filter,
+    mo,
+    render_kpi_cards_html,
+    render_system_notice_window_status_html,
+    system_notice_kpi_frame,
+    system_notice_load,
+    system_notice_summary_frame,
+    window_filter,
+):
     kpis = system_notice_kpi_frame(system_notice_load)
     if kpis.is_empty():
         kpi_view = mo.callout(
             mo.md("System notice KPIs are unavailable until notice data loads."),
             kind="neutral",
         )
+        summary_view = kpi_view
     else:
-        kpi_view = mo.ui.table(kpis, selection=None)
+        kpi_view = mo.Html(render_kpi_cards_html(kpis, title="Notice metrics"))
+        notice_visual_rows = system_notice_summary_frame(
+            system_notice_load,
+            critical_filter.value,
+            window_filter.value,
+        )
+        summary_view = mo.Html(
+            render_system_notice_window_status_html(notice_visual_rows)
+        )
 
     mo.vstack(
         [
             mo.md("## Notice Summary"),
             kpi_view,
+            summary_view,
         ]
     )
     return

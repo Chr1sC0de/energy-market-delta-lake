@@ -26,12 +26,13 @@ runtime sets `DEVELOPMENT_LOCATION=aws`,
 
 The dashboard service also exposes `/marimo/dashboard-registry.json` from
 Marimo-local code constants. The registry carries planned and available
-dashboard metadata, including Market context IDs, source chunk IDs, silver
-chunk paths, and source hashes. Dashboards consume that parsed registry rather
-than opening generated Market context artifacts or silver chunk files directly.
-Generated Gas market corpus Markdown is external artifact output rather than a
-tracked runtime dependency, so dashboard deployment must continue to package
-only registry metadata and copied identifiers.
+dashboard metadata, including ordered task-group metadata, each entry's task
+group, Market context IDs, source chunk IDs, silver chunk paths, and source
+hashes. Dashboards consume that parsed registry rather than opening generated
+Market context artifacts or silver chunk files directly. Generated Gas market
+corpus Markdown is external artifact output rather than a tracked runtime
+dependency, so dashboard deployment must continue to package only registry
+metadata and copied identifiers.
 
 The curated image includes an S3 Bucket Health dashboard for configured
 S3-compatible bucket reachability, object scans, truncation, bucket errors, and
@@ -39,10 +40,12 @@ Delta or Parquet table-prefix discovery. AWS mode checks the configured buckets
 only and does not require account-wide S3 bucket listing permission.
 
 The `/marimo` entry route renders the same registry as a concept gallery hub.
-Available dashboard cards link to mounted notebook routes, while planned
-dashboard cards stay visible without notebook links. Registry-only notebooks
-such as the glossary explorer can browse Marimo-local Market context metadata
-without adding generated-file reads at runtime.
+Available dashboard cards render first in the ordered Data Health, Market
+Activity, Gas Operations, and Concept Evidence task sections, using each
+entry's explicit registry task group. Planned dashboard cards stay visible
+below those sections in a compact Roadmap section without notebook links.
+Registry-only notebooks such as the glossary explorer can browse Marimo-local
+Market context metadata without adding generated-file reads at runtime.
 
 Caddy does not serve Marimo packaged static assets from its own static root. It
 keeps `/marimo/*/assets/*`, notebook favicons, notebook manifests,

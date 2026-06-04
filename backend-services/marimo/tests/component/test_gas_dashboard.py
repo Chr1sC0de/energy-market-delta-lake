@@ -413,6 +413,7 @@ from marimoserver.gas_dashboard import (
     render_bounded_data_note_html,
     render_dashboard_context_panel,
     render_bid_stack_context_links,
+    render_bid_stack_summary_html,
     render_capacity_auction_context_links,
     render_capacity_transaction_context_links,
     render_capacity_outlook_context_links,
@@ -430,7 +431,9 @@ from marimoserver.gas_dashboard import (
     render_flow_context_links,
     render_flow_source_status_html,
     render_heating_value_pressure_context_links,
+    render_heating_value_pressure_summary_html,
     render_hub_zone_context_links,
+    render_gas_quality_summary_html,
     render_linepack_context_links,
     render_operational_meter_flow_context_links,
     render_participant_context_links,
@@ -442,9 +445,11 @@ from marimoserver.gas_dashboard import (
     render_settlement_activity_context_links,
     render_sttm_capacity_settlement_context_links,
     render_sttm_contingency_gas_context_links,
+    render_sttm_contingency_gas_summary_html,
     render_sttm_market_settlement_context_links,
     render_sttm_mos_allocation_context_links,
     render_source_coverage_matrix_html,
+    render_system_notice_window_status_html,
     scada_pressure_observation_frame,
     schedule_run_empty_state_markdown,
     schedule_run_gas_date_options,
@@ -1519,6 +1524,101 @@ def test_dashboard_visual_primitives_escape_and_label_bounded_scope() -> None:
     assert theme["height"] == 420
     assert theme["hovermode"] == "x unified"
     assert theme["paper_bgcolor"] == "rgba(0,0,0,0)"
+
+
+def test_dashboard_summary_visuals_escape_and_render_bars() -> None:
+    bid_html = render_bid_stack_summary_html(
+        pl.DataFrame(
+            {
+                "source system": ['STTM <script>alert("x")</script>'],
+                "zone": ["SYD"],
+                "facility": ["FAC1"],
+                "bid step": [1],
+                "rows": [2],
+                "participants": [1],
+                "bid ids": [1],
+                "avg bid price": [9.5],
+                "total bid quantity gj": [100.0],
+            }
+        )
+    )
+    contingency_html = render_sttm_contingency_gas_summary_html(
+        pl.DataFrame(
+            {
+                "contingency grain": ["bid_offer_step"],
+                "quantity type": ["called_step_quantity"],
+                "hub": ["SYD"],
+                "rows": [2],
+                "gas days": [1],
+                "facilities": [1],
+                "bid/offer ids": [1],
+                "total quantity gj": [80.0],
+            }
+        )
+    )
+    notice_html = render_system_notice_window_status_html(
+        pl.DataFrame(
+            {
+                "notice id": ["critical-1", "notice-2"],
+                "critical": [True, False],
+                "window": ["Active", "Ended"],
+                "source table": ["table-a", "table-b"],
+            }
+        )
+    )
+    quality_html = render_gas_quality_summary_html(
+        pl.DataFrame(
+            {
+                "quality type": ["Heating <value>"],
+                "unit": ["MJ/m3"],
+                "observations": [3],
+                "source points": [2],
+                "avg quantity": [39.2],
+                "latest gas date": [date(2024, 1, 2)],
+            }
+        )
+    )
+    heating_pressure_html = render_heating_value_pressure_summary_html(
+        pl.DataFrame(
+            {
+                "field group": ["SCADA pressure"],
+                "field": ["pressure_kpa"],
+                "available rows": [4],
+                "source-qualified identifiers": [1],
+                "latest value": ["521.0"],
+            }
+        )
+    )
+    empty_html = render_bid_stack_summary_html(
+        pl.DataFrame(schema={"total bid quantity gj": pl.Float64})
+    )
+    sparse_html = render_bid_stack_summary_html(
+        pl.DataFrame({"total bid quantity gj": [1.0]})
+    )
+    empty_notice_html = render_system_notice_window_status_html(
+        pl.DataFrame(
+            schema={
+                "notice id": pl.String,
+                "critical": pl.Boolean,
+                "window": pl.String,
+                "source table": pl.String,
+            }
+        )
+    )
+
+    assert "<script>" not in bid_html
+    assert "STTM &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;" in bid_html
+    assert "dashboard-status-row__bar" in bid_html
+    assert "100.0 total bid quantity gj" in bid_html
+    assert "Contingency quantity by grain and hub" in contingency_html
+    assert "Critical | Active" in notice_html
+    assert "Non-critical | Ended" in notice_html
+    assert "Heating &lt;value&gt;" in quality_html
+    assert "SCADA pressure | pressure_kpa" in heating_pressure_html
+    assert "dashboard-visual-empty--compact" in empty_html
+    assert "Unspecified" in sparse_html
+    assert "No additional detail reported." in sparse_html
+    assert "No system notices are available" in empty_notice_html
 
 
 def test_flow_and_relationship_status_visuals_escape_and_render_rows() -> None:

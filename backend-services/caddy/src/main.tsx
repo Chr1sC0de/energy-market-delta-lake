@@ -6,7 +6,7 @@ import {
   RouterProvider,
 } from "react-router";
 
-import App, { HomePage } from "./App";
+import App, { HomePage, LoginPage } from "./App";
 import "./styles/site.css";
 
 const router = createBrowserRouter([
@@ -15,6 +15,7 @@ const router = createBrowserRouter([
     element: <App />,
     children: [
       { index: true, element: <HomePage /> },
+      { path: "login", element: <LoginPage /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],
   },

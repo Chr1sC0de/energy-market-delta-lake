@@ -27,12 +27,72 @@ class DashboardAudience(StrEnum):
     DATA_ENGINEER = "data-engineer"
 
 
+class DashboardTaskGroup(StrEnum):
+    """Stable task sections used by the Marimo concept gallery."""
+
+    DATA_HEALTH = "data-health"
+    MARKET_ACTIVITY = "market-activity"
+    GAS_OPERATIONS = "gas-operations"
+    CONCEPT_EVIDENCE = "concept-evidence"
+
+
+@dataclass(frozen=True)
+class DashboardTaskGroupMetadata:
+    """Display metadata for one ordered dashboard task group."""
+
+    value: DashboardTaskGroup
+    title: str
+    description: str
+
+    def to_dict(self) -> dict[str, str]:
+        """Return a JSON-serializable task-group metadata record."""
+        return {
+            "value": self.value.value,
+            "title": self.title,
+            "description": self.description,
+        }
+
+
 ROADMAP_AUDIENCES: tuple[DashboardAudience, ...] = (
     DashboardAudience.PLATFORM_OPERATIONS,
     DashboardAudience.OPERATOR,
     DashboardAudience.ANALYST,
     DashboardAudience.STAKEHOLDER,
     DashboardAudience.DATA_ENGINEER,
+)
+TASK_GROUPS: tuple[DashboardTaskGroupMetadata, ...] = (
+    DashboardTaskGroupMetadata(
+        value=DashboardTaskGroup.DATA_HEALTH,
+        title="Data Health",
+        description=(
+            "Readiness, storage, catalogue, lineage, coverage, and bounded-read "
+            "surfaces for judging the platform state before analysis."
+        ),
+    ),
+    DashboardTaskGroupMetadata(
+        value=DashboardTaskGroup.MARKET_ACTIVITY,
+        title="Market Activity",
+        description=(
+            "Price, schedule, bid, allocation, settlement, and customer-transfer "
+            "surfaces for commercial market activity."
+        ),
+    ),
+    DashboardTaskGroupMetadata(
+        value=DashboardTaskGroup.GAS_OPERATIONS,
+        title="Gas Operations",
+        description=(
+            "Flow, storage, capacity, nominations, quality, notices, and network "
+            "surfaces for operational gas-market monitoring."
+        ),
+    ),
+    DashboardTaskGroupMetadata(
+        value=DashboardTaskGroup.CONCEPT_EVIDENCE,
+        title="Concept Evidence",
+        description=(
+            "Registry-backed glossary, concept, asset, schema, and citation "
+            "surfaces that explain dashboard evidence."
+        ),
+    ),
 )
 
 type DashboardRegistryRecord = Mapping[str, object]
@@ -318,6 +378,7 @@ class DashboardRegistryEntry:
     title: str
     description: str
     audiences: tuple[DashboardAudience, ...]
+    task_group: DashboardTaskGroup
     status: DashboardStatus
     notebook_name: str | None
     backing_assets: tuple[str, ...]
@@ -332,6 +393,7 @@ class DashboardRegistryEntry:
         title: str,
         description: str,
         audiences: tuple[DashboardAudience, ...],
+        task_group: DashboardTaskGroup = DashboardTaskGroup.CONCEPT_EVIDENCE,
         status: DashboardStatus,
         notebook_name: str | None,
         backing_assets: tuple[str, ...],
@@ -355,6 +417,7 @@ class DashboardRegistryEntry:
         object.__setattr__(self, "title", title)
         object.__setattr__(self, "description", description)
         object.__setattr__(self, "audiences", audiences)
+        object.__setattr__(self, "task_group", task_group)
         object.__setattr__(self, "status", status)
         object.__setattr__(self, "notebook_name", notebook_name)
         object.__setattr__(self, "backing_assets", backing_assets)
@@ -412,6 +475,7 @@ class DashboardRegistryEntry:
             "title": self.title,
             "description": self.description,
             "audiences": [audience.value for audience in self.audiences],
+            "task_group": self.task_group.value,
             "status": self.status.value,
             "notebook_name": self.notebook_name,
             "notebook_route": self.notebook_route,
@@ -435,6 +499,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "market-activity",
         "notebook_name": "sample_energy_market",
         "backing_assets": (
             "silver.gas_model.silver_gas_fact_market_price",
@@ -477,6 +542,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "data-engineer"),
         "status": "available",
+        "task_group": "data-health",
         "notebook_name": "source_coverage_matrix",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_date",
@@ -527,6 +593,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "data-engineer"),
         "status": "available",
+        "task_group": "data-health",
         "notebook_name": "source_table_lineage_explorer",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_date",
@@ -577,6 +644,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "market-activity",
         "notebook_name": "gas_market_prices",
         "backing_assets": ("silver.gas_model.silver_gas_fact_market_price",),
         "market_context_ids": ("glossary:schedule",),
@@ -596,6 +664,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "market-activity",
         "notebook_name": "gas_schedule_runs",
         "backing_assets": ("silver.gas_model.silver_gas_fact_schedule_run",),
         "market_context_ids": (
@@ -622,6 +691,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "market-activity",
         "notebook_name": "gas_scheduled_quantities",
         "backing_assets": ("silver.gas_model.silver_gas_fact_scheduled_quantity",),
         "market_context_ids": (
@@ -646,6 +716,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "gas-operations",
         "notebook_name": "gbb_interactive_map",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_facility",
@@ -686,6 +757,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "gas-operations",
         "notebook_name": "facility_flow_storage",
         "backing_assets": ("silver.gas_model.silver_gas_fact_facility_flow_storage",),
         "market_context_ids": (
@@ -710,6 +782,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "gas-operations",
         "notebook_name": "nomination_demand_forecast",
         "backing_assets": ("silver.gas_model.silver_gas_fact_nomination_forecast",),
         "market_context_ids": (
@@ -735,6 +808,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "gas-operations",
         "notebook_name": "forecast_vs_actual",
         "backing_assets": (
             "silver.gas_model.silver_gas_fact_nomination_forecast",
@@ -762,6 +836,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("data-engineer", "operator", "analyst"),
         "status": "available",
+        "task_group": "data-health",
         "notebook_name": "table_explorer",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_date",
@@ -784,6 +859,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("platform-operations", "operator", "data-engineer"),
         "status": "available",
+        "task_group": "data-health",
         "notebook_name": "data_readiness_overview",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_date",
@@ -807,6 +883,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("platform-operations", "operator", "data-engineer"),
         "status": "available",
+        "task_group": "data-health",
         "notebook_name": "aws_bounded_read_diagnostics",
         "backing_assets": (),
         "market_context_ids": (),
@@ -822,6 +899,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("platform-operations", "operator", "data-engineer"),
         "status": "available",
+        "task_group": "data-health",
         "notebook_name": "dagster_asset_catalogue_status",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_date",
@@ -845,6 +923,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("platform-operations", "operator", "data-engineer"),
         "status": "available",
+        "task_group": "data-health",
         "notebook_name": "materialization_freshness",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_date",
@@ -868,6 +947,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("platform-operations", "operator", "data-engineer"),
         "status": "available",
+        "task_group": "data-health",
         "notebook_name": "s3_bucket_health",
         "backing_assets": (),
         "market_context_ids": (),
@@ -883,6 +963,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("analyst", "stakeholder", "data-engineer"),
         "status": "available",
+        "task_group": "concept-evidence",
         "notebook_name": "glossary_explorer",
         "backing_assets": (),
         "market_context_ids": ("glossary:index",),
@@ -898,6 +979,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("analyst", "data-engineer", "stakeholder"),
         "status": "available",
+        "task_group": "concept-evidence",
         "notebook_name": "concept_to_asset_explorer",
         "backing_assets": (),
         "market_context_ids": ("glossary:index",),
@@ -913,6 +995,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("analyst", "data-engineer", "operator"),
         "status": "available",
+        "task_group": "concept-evidence",
         "notebook_name": "schema_data_dictionary_explorer",
         "backing_assets": (),
         "market_context_ids": ("glossary:index",),
@@ -928,6 +1011,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("analyst", "data-engineer", "operator"),
         "status": "available",
+        "task_group": "concept-evidence",
         "notebook_name": "citation_chain_explorer",
         "backing_assets": (),
         "market_context_ids": ("market-context:index",),
@@ -943,6 +1027,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "gas-operations",
         "notebook_name": "system_notices",
         "backing_assets": ("silver.gas_model.silver_gas_fact_system_notice",),
         "market_context_ids": (),
@@ -958,6 +1043,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "gas-operations",
         "notebook_name": "gas_quality_composition",
         "backing_assets": ("silver.gas_model.silver_gas_fact_gas_quality",),
         "market_context_ids": (),
@@ -974,6 +1060,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "gas-operations",
         "notebook_name": "heating_value_pressure",
         "backing_assets": (
             "silver.gas_model.silver_gas_fact_heating_value",
@@ -993,6 +1080,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "market-activity",
         "notebook_name": "gas_customer_transfer_activity",
         "backing_assets": ("silver.gas_model.silver_gas_fact_customer_transfer",),
         "market_context_ids": (),
@@ -1008,6 +1096,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("analyst", "stakeholder", "data-engineer"),
         "status": "available",
+        "task_group": "concept-evidence",
         "notebook_name": "gas_day_explainer",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_date",
@@ -1036,6 +1125,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("analyst", "data-engineer", "stakeholder"),
         "status": "available",
+        "task_group": "concept-evidence",
         "notebook_name": "participant_explainer",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_participant",
@@ -1062,6 +1152,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "concept-evidence",
         "notebook_name": "facility_explainer",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_facility",
@@ -1085,6 +1176,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("analyst", "stakeholder"),
         "status": "available",
+        "task_group": "concept-evidence",
         "notebook_name": "hub_zone_explainer",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_zone",
@@ -1110,6 +1202,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "concept-evidence",
         "notebook_name": "connection_point_explainer",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_connection_point",
@@ -1136,6 +1229,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "data-engineer"),
         "status": "available",
+        "task_group": "gas-operations",
         "notebook_name": "pipeline_connection_operations",
         "backing_assets": (
             "silver.gas_model.silver_gas_dim_connection_point",
@@ -1171,6 +1265,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "data-engineer"),
         "status": "available",
+        "task_group": "gas-operations",
         "notebook_name": "operational_meter_flow",
         "backing_assets": (
             "silver.gas_model.silver_gas_fact_operational_meter_flow",
@@ -1194,6 +1289,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "planned",
+        "task_group": "market-activity",
         "backing_assets": (
             "silver.gas_model.silver_gas_fact_schedule_run",
             "silver.gas_model.silver_gas_fact_scheduled_quantity",
@@ -1217,6 +1313,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "market-activity",
         "notebook_name": "gas_bid_offer_stack",
         "backing_assets": ("silver.gas_model.silver_gas_fact_bid_stack",),
         "market_context_ids": ("glossary:bid-offer",),
@@ -1237,6 +1334,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "market-activity",
         "notebook_name": "gas_sttm_contingency_gas",
         "backing_assets": (
             "silver.gas_model.silver_gas_fact_sttm_contingency_gas_call",
@@ -1253,6 +1351,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst"),
         "status": "planned",
+        "task_group": "market-activity",
         "backing_assets": (
             "silver.gas_model.silver_gas_fact_sttm_allocation_quantity",
             "silver.gas_model.silver_gas_fact_sttm_allocation_limit",
@@ -1276,6 +1375,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("analyst", "stakeholder"),
         "status": "available",
+        "task_group": "market-activity",
         "notebook_name": "gas_settlement_activity",
         "backing_assets": ("silver.gas_model.silver_gas_fact_settlement_activity",),
         "market_context_ids": ("glossary:settlement",),
@@ -1298,6 +1398,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "market-activity",
         "notebook_name": "gas_sttm_market_settlement",
         "backing_assets": ("silver.gas_model.silver_gas_fact_sttm_market_settlement",),
         "market_context_ids": (
@@ -1328,6 +1429,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "market-activity",
         "notebook_name": "gas_sttm_capacity_settlement",
         "backing_assets": (
             "silver.gas_model.silver_gas_fact_sttm_capacity_settlement",
@@ -1363,6 +1465,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "market-activity",
         "notebook_name": "gas_sttm_mos_allocation",
         "backing_assets": (
             "silver.gas_model.silver_gas_fact_sttm_mos_stack",
@@ -1401,6 +1504,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "gas-operations",
         "notebook_name": "capacity_outlook",
         "backing_assets": ("silver.gas_model.silver_gas_fact_capacity_outlook",),
         "market_context_ids": ("glossary:capacity",),
@@ -1422,6 +1526,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "market-activity",
         "notebook_name": "capacity_auction",
         "backing_assets": ("silver.gas_model.silver_gas_fact_capacity_auction",),
         "market_context_ids": (
@@ -1446,6 +1551,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "market-activity",
         "notebook_name": "capacity_transactions",
         "backing_assets": ("silver.gas_model.silver_gas_fact_capacity_transaction",),
         "market_context_ids": ("glossary:capacity",),
@@ -1463,6 +1569,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("analyst", "stakeholder"),
         "status": "planned",
+        "task_group": "market-activity",
         "backing_assets": (
             "silver.gas_model.silver_gas_fact_sttm_mos_stack",
             "silver.gas_model.silver_gas_fact_sttm_capacity_settlement",
@@ -1484,6 +1591,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "gas-operations",
         "notebook_name": "linepack_adequacy",
         "backing_assets": (
             "silver.gas_model.silver_gas_fact_linepack",
@@ -1504,6 +1612,7 @@ DASHBOARD_REGISTRY_RECORDS: tuple[DashboardRegistryRecord, ...] = (
         ),
         "audiences": ("operator", "analyst", "stakeholder"),
         "status": "available",
+        "task_group": "gas-operations",
         "notebook_name": "flow_operations",
         "backing_assets": (
             "silver.gas_model.silver_gas_fact_connection_point_flow",
@@ -1530,8 +1639,9 @@ def dashboard_registry() -> tuple[DashboardRegistryEntry, ...]:
 def dashboard_registry_payload() -> dict[str, object]:
     """Return a JSON-serializable registry payload for Marimo clients."""
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "audiences": [audience.value for audience in ROADMAP_AUDIENCES],
+        "task_groups": [task_group.to_dict() for task_group in TASK_GROUPS],
         "entries": [entry.to_dict() for entry in dashboard_registry()],
     }
 
@@ -1567,6 +1677,10 @@ def _entry_from_record(
     title = _required_str(record, "title", index)
     description = _required_str(record, "description", index)
     status = _status_from_value(_required_str(record, "status", index), index)
+    task_group = _task_group_from_value(
+        _required_str(record, "task_group", index),
+        index,
+    )
     audiences = _audiences_from_values(
         _required_str_tuple(record, "audiences", index),
         index,
@@ -1594,6 +1708,7 @@ def _entry_from_record(
         title=title,
         description=description,
         audiences=audiences,
+        task_group=task_group,
         status=status,
         notebook_name=notebook_name,
         backing_assets=backing_assets,
@@ -1679,6 +1794,17 @@ def _validate_registry(entries: Sequence[DashboardRegistryEntry]) -> None:
             f"dashboard registry missing audience coverage: {missing}"
         )
 
+    task_groups = {entry.task_group for entry in entries}
+    missing_task_groups = [
+        task_group.value
+        for task_group in _task_group_values()
+        if task_group not in task_groups
+    ]
+    if missing_task_groups:
+        raise DashboardRegistryError(
+            f"dashboard registry missing task-group coverage: {missing_task_groups}"
+        )
+
     for entry in entries:
         _validate_entry(entry)
 
@@ -1717,6 +1843,19 @@ def _status_from_value(value: str, index: int) -> DashboardStatus:
     except ValueError as error:
         raise DashboardRegistryError(
             f"dashboard registry record {index} has unknown status: {value}"
+        ) from error
+
+
+def _task_group_values() -> tuple[DashboardTaskGroup, ...]:
+    return tuple(task_group.value for task_group in TASK_GROUPS)
+
+
+def _task_group_from_value(value: str, index: int) -> DashboardTaskGroup:
+    try:
+        return DashboardTaskGroup(value)
+    except ValueError as error:
+        raise DashboardRegistryError(
+            f"dashboard registry record {index} has unknown task_group: {value}"
         ) from error
 
 

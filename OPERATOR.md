@@ -118,6 +118,26 @@ Codex should launch Operator runs detached, then stop polling child logs:
 python3 scripts/ralph.py --drain-promote-all --detach
 ```
 
+Ralph runs spawned Codex subprocesses with its hermetic command shape. The
+default model is selected by the Ralph loop, and operators can override it with
+`--codex-model` on drain, targeted issue, Promotion intents that spawn agents,
+or checkpointed Operator commands:
+
+```bash
+python3 scripts/ralph.py --drain-promote-all --detach --codex-model gpt-5.5
+```
+
+Before a long unattended run, `--doctor` validates local command prerequisites,
+GitHub auth, **Sandboxed issue access**, push dry-runs for the selected
+**Integration target**, and the Codex subprocess smoke when the selected intent
+will spawn Codex. A failed Codex subprocess smoke is an operator environment
+problem; fix the local Codex tool, selected model, auth, or sandbox setup before
+claiming more work:
+
+```bash
+python3 scripts/ralph.py --doctor --drain-promote-all
+```
+
 For a queue that intentionally includes ready `.agents/` workflow issues, the
 operator must opt into the **Full-access implementation pass**:
 
@@ -142,12 +162,19 @@ status calls that out as stale Operator status and points to the detached logs,
 child manifests, and live queue labels before another Operator run is started.
 When recorded or live queue state includes open `agent-failed` issues, status
 also classifies whether each failed issue is eligible for Ralph-owned pre-push
-requeue recovery, post-push metadata recovery, manual Gitflow recovery,
-malformed issue-contract repair, or normal implementation repair. For
-**Review package** failures, status and rollups show the package generator log,
-validation reason, media failure evidence, and the next safe action before an
-operator inspects raw Codex JSONL or browser media logs. A foreground run is
-also available for human terminals:
+requeue recovery, no-change pre-implementation Codex environment requeue,
+post-push metadata recovery, manual Gitflow recovery, malformed issue-contract
+repair, or normal implementation repair. The no-change environment subcase is
+only for failed implementation manifests with no changed files, no QA, no
+**Issue completion review**, no **Review package**, no **Local integration**,
+no push state, and a recognized Codex subprocess environment signal. Status and
+rollups show it as requeue recovery because live handling restores
+`ready-for-agent`, but the evidence should be read as an operator environment
+failure rather than an incomplete implementation. For **Review package**
+failures, status and rollups show the package generator log, validation reason,
+media failure evidence, and the next safe action before an operator inspects raw
+Codex JSONL or browser media logs. A foreground run is also available for human
+terminals:
 
 ```bash
 python3 scripts/ralph.py --drain-promote-all --max-cycles 10
@@ -447,6 +474,16 @@ which requires proof that the recorded **Local integration** commit reached the
 expected **Integration target**, and from manual Gitflow recovery, which is
 resolved before normal drain or **Promotion** continues.
 
+If the dry run is titled `Ralph environment requeue recovery`, treat it as the
+no-change pre-implementation Codex environment subcase. Live recovery comments
+`Ralph environment requeue completed.`, removes only Ralph-owned worktrees and
+the local issue branch, restores `ready-for-agent`, and does not create a
+backup ref because there is no accepted implementation commit to preserve. The
+operator should fix or verify the Codex subprocess environment, often with
+`--doctor` and the same `--codex-model`, before letting the Operator reclaim the
+issue. Do not treat this path as post-push metadata recovery and do not create a
+manual **Local integration** commit.
+
 For a **Review package** failure, inspect the `Review package status` and
 `Review package failure` blocks from `--inspect-run`, Operator status, or the
 rollup before opening raw logs. Generation failures point to
@@ -499,12 +536,16 @@ surfaces, **Post-promotion review** follow-ups, deployment execution,
 deploy-repair issue creation, final queue state, and the stop or failure
 reason. The rollup also includes a requeue-recovery section for open
 `agent-failed` issues, including the dry-run `--recover-run` command when
-pre-push requeue is available. Failed **Review package** entries include the
-same generator log, validation reason, media failure, and next safe action
-reported by `--inspect-run`. Operator checkpoints also record automatic
-pre-push requeue start, success, limit, and failure events so operators can see
-whether Ralph recovered the issue or stopped at the per-issue limit. Runs that
-stop for **Exploratory acceptance review** also write
+pre-push requeue is available. For no-change Codex subprocess environment
+failures, the same section identifies environment requeue and records whether
+automatic or manual recovery restored `ready-for-agent`; that status means the
+queue was made claimable again, not that implementation work completed. Failed
+**Review package** entries include the same generator log, validation reason,
+media failure, and next safe action reported by `--inspect-run`. Operator
+checkpoints also record automatic pre-push requeue start, success, limit, and
+failure events so operators can see whether Ralph recovered the issue or stopped
+at the per-issue limit. Runs that stop for **Exploratory acceptance review**
+also write
 `exploratory-acceptance-review.md` and
 `exploratory-acceptance-review.json` beside the rollup. Use the JSON rollup for
 tooling or status-oriented review without tailing child Codex JSONL or rich

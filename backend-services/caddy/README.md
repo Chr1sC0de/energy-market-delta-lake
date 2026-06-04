@@ -19,10 +19,13 @@ Dagster, auth, and Marimo.
 - [Caddyfile](Caddyfile) keeps Caddy as the public entrypoint.
 - [Dockerfile](Dockerfile) builds the Vite app, copies `dist/` into
   `/var/www/html`, and then runs the Caddy runtime image.
-- The generated public workspace provides a single React Router route at `/`
-  with direct links ordered as public Dagster source map, private Dagster admin
-  tools, and restricted dashboards.
+- The generated public workspace provides React Router routes for `/` and
+  `/login`, with direct root links ordered as public Dagster source map, private
+  Dagster admin tools, and restricted dashboards.
   Unknown public portfolio paths redirect back to `/`.
+- `/login` posts credentials only to `POST /auth/login`, passes the optional
+  `next` query value as the requested return path, and follows only the
+  API-returned `redirect_to` path.
 - The generated `/theme.css` asset is served from Caddy's static root so Marimo
   pages can use the shared light, readability-safe palette.
 - [Caddyfile](Caddyfile) uses a static SPA fallback for public portfolio routes
@@ -39,9 +42,9 @@ The portfolio source lives under [src/](src/):
 
 - [index.html](index.html), [vite.config.ts](vite.config.ts), and
   [src/main.tsx](src/main.tsx) form the Vite + React Router entrypoint.
-- [src/App.tsx](src/App.tsx) owns the single-page public workspace, route
-  cards, and reactive preview panel for public source map, private admin tools,
-  and restricted dashboards.
+- [src/App.tsx](src/App.tsx) owns the public workspace, login page, route cards,
+  and reactive preview panel for public source map, private admin tools, and
+  restricted dashboards.
 - [src/data.ts](src/data.ts) keeps legacy public labels and dashboard story
   summaries available for future route expansion.
 - [src/styles/site.css](src/styles/site.css) owns the bold single-page visual
@@ -106,6 +109,14 @@ For portfolio-only edits, run:
 npm run build
 ```
 
+For login-route edits, run the Caddy frontend build check and Playwright login
+smoke:
+
+```bash
+npm run build
+npm run login-smoke
+```
+
 For screenshot-based browser review, this Subproject includes Playwright as a
 development dependency. Install the Chromium browser once, then review the local
 Vite preview route:
@@ -136,6 +147,7 @@ check** surface from the changed Subproject or root, as described in
   - `backend-services/caddy/index.html`
   - `backend-services/caddy/vite.config.ts`
   - `backend-services/caddy/tsconfig.json`
+  - `backend-services/caddy/scripts/login-smoke.mjs`
   - `backend-services/caddy/public/theme.css`
   - `backend-services/caddy/src/App.tsx`
   - `backend-services/caddy/src/data.ts`

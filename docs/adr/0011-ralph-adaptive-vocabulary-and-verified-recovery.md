@@ -56,6 +56,17 @@ Adaptive events have these boundaries:
 - `residual_update`: Ralph has verified the crossed boundary and can update the
   remaining queue or GitHub Issue metadata without changing code.
 
+Codex subprocess environment failures are `hard_stop` events for the failed
+attempt: Ralph does not automatically retry Codex and does not spend more of
+the issue attempt budget while the local tool, model, auth, or sandbox
+configuration is suspect. A no-change pre-implementation environment failure may
+still be returned to `ready-for-agent` through Ralph-owned requeue when the
+manifest proves that no changed files, QA, **Issue completion review**, Review
+package, **Local integration**, or **Integration target** push state exists.
+That requeue only repairs queue state after an operator environment failure; it
+does not create code, verify a pushed boundary, or weaken post-push metadata
+recovery.
+
 Post-push metadata recovery is verified-only. Ralph may repair comments, labels,
 body text, or issue closure only after it verifies that the recorded **Local
 integration**, Exploratory handoff, accepted Exploratory commit, or
@@ -113,6 +124,10 @@ only applies before a pushed boundary. `hard_stop` remains an outer-loop stop
 that preserves evidence, records no automatic retry and no attempt-budget
 consumption, and requires inspection. `residual_update` keeps verified
 follow-on metadata changes separate from unverified code repair.
+The no-change Codex environment requeue path is compatible with that boundary:
+it may restore labels and clean Ralph-owned local artifacts only because the
+manifest proves no implementation or published boundary exists. It is not a
+`gated_retry`, and it is not post-push metadata recovery.
 
 Verified-only post-push recovery prevents Ralph from hiding a partial publish.
 If code reached the expected branch and QA evidence is still recorded, Ralph can

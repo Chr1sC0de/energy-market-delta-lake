@@ -15,13 +15,17 @@ from urllib.parse import urljoin, urlparse
 
 import anyio
 import httpx
+import pytest
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 # conftest.py sets MARIMO_NOTEBOOKS_DIR before this import.
+import marimoserver.main as main_module
 from marimoserver.dashboard_registry import (
+    TASK_GROUPS,
     DashboardAudience,
     DashboardRegistryEntry,
     DashboardStatus,
+    DashboardTaskGroup,
     dashboard_registry,
 )
 from marimoserver.main import (
@@ -30,7 +34,6 @@ from marimoserver.main import (
     StaticAssetHeadersMiddleware,
     _inline_icon,
     _render_index_html,
-    _story_group,
     app,
     app_names,
 )
@@ -62,6 +65,7 @@ class _ConceptCardParser(HTMLParser):
             "tag": tag,
             "href": attributes.get("href"),
             "status": attributes.get("data-status"),
+            "task_group": attributes.get("data-task-group"),
         }
 
 
@@ -215,11 +219,15 @@ class TestDashboardRegistryEndpoint:
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("application/json")
         payload = response.json()
-        assert payload["schema_version"] == 1
+        assert payload["schema_version"] == 2
         assert "operator" in payload["audiences"]
+        assert [task_group["value"] for task_group in payload["task_groups"]] == [
+            task_group.value.value for task_group in TASK_GROUPS
+        ]
         assert any(
             entry["concept_id"] == "gas-market-overview"
             and entry["notebook_route"] == "/marimo/sample_energy_market/"
+            and entry["task_group"] == DashboardTaskGroup.MARKET_ACTIVITY.value
             for entry in payload["entries"]
         )
 
@@ -338,6 +346,7 @@ class TestIndexPage:
                 "tag": "a",
                 "href": entry.notebook_route,
                 "status": "available",
+                "task_group": entry.task_group.value,
             }
 
     def test_index_renders_planned_cards_without_notebook_links(self) -> None:
@@ -353,6 +362,7 @@ class TestIndexPage:
                 "tag": "article",
                 "href": None,
                 "status": "planned",
+                "task_group": entry.task_group.value,
             }
 
         assert "Planned dashboard" in response.text
@@ -374,6 +384,7 @@ class TestIndexPage:
             "tag": "article",
             "href": None,
             "status": "available",
+            "task_group": overview.task_group.value,
         }
         assert f'href="{overview.notebook_route}"' not in html
         assert "Not mounted" in html
@@ -411,10 +422,43 @@ class TestIndexPage:
         assert 'for="audience-all"' in response.text
         assert 'for="audience-operator"' in response.text
         assert 'id="route-spotlight"' in response.text
-        assert 'data-story="market"' in response.text
-        assert 'data-story="operations"' in response.text
-        assert 'data-story="trust"' in response.text
-        assert 'data-story="concepts"' in response.text
+        assert 'data-task-group="data-health"' in response.text
+        assert 'data-task-group="market-activity"' in response.text
+        assert 'data-task-group="gas-operations"' in response.text
+        assert 'data-task-group="concept-evidence"' in response.text
+
+    def test_index_renders_available_task_sections_before_roadmap(self) -> None:
+        response = _get("/marimo")
+        html = response.text
+
+        task_section_positions = [
+            html.index(f'id="task-{task_group.value.value}"')
+            for task_group in TASK_GROUPS
+        ]
+        roadmap_position = html.index('id="roadmap"')
+
+        assert task_section_positions == sorted(task_section_positions)
+        assert all(position < roadmap_position for position in task_section_positions)
+        assert html.index('id="concept-data-readiness-overview"') < roadmap_position
+        assert html.index('id="concept-gas-market-prices"') < roadmap_position
+        assert html.index('id="concept-flow-context"') < roadmap_position
+        assert html.index('id="concept-glossary-explorer"') < roadmap_position
+        assert html.index('id="concept-schedule-context"') > roadmap_position
+
+    def test_index_uses_task_groups_instead_of_story_group_attributes(self) -> None:
+        response = _get("/marimo")
+
+        assert "Data Health" in response.text
+        assert "Market Activity" in response.text
+        assert "Gas Operations" in response.text
+        assert "Concept Evidence" in response.text
+        assert "Roadmap" in response.text
+        assert "task-data-health" in response.text
+        assert "task-market-activity" in response.text
+        assert "task-gas-operations" in response.text
+        assert "task-concept-evidence" in response.text
+        assert "data-story" not in response.text
+        assert "story-" not in response.text
 
     def test_index_omits_story_filter_controls(self) -> None:
         response = _get("/marimo")
@@ -426,18 +470,29 @@ class TestIndexPage:
         assert 'name="story-filter"' not in response.text
         assert "story-filter" not in response.text
 
-    def test_story_group_falls_back_to_market_for_market_entries(self) -> None:
+    def test_entry_fixture_requires_registry_task_group(self) -> None:
         entry = DashboardRegistryEntry(
             concept_id="daily-position",
             title="Balancing Position",
             description="Daily commercial position without a narrower route hint.",
             audiences=(DashboardAudience.ANALYST,),
+            task_group=DashboardTaskGroup.MARKET_ACTIVITY,
             status=DashboardStatus.PLANNED,
             notebook_name=None,
             backing_assets=(),
         )
 
-        assert _story_group(entry) == "market"
+        assert entry.task_group is DashboardTaskGroup.MARKET_ACTIVITY
+
+    def test_task_group_metadata_rejects_unknown_registry_value(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        entry = next(iter(dashboard_registry()))
+        monkeypatch.setattr(main_module, "TASK_GROUPS", ())
+
+        with pytest.raises(ValueError, match="unknown task group"):
+            main_module._task_group_metadata(entry)
 
     def test_inline_icon_unknown_name_returns_empty_string(self) -> None:
         assert _inline_icon("unknown") == ""
