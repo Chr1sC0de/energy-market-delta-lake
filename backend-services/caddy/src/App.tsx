@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useId, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Outlet, useLocation } from "react-router";
+import { Outlet, useLocation, useSearchParams } from "react-router";
 import {
   ArrowUpRight,
   BarChart3,
@@ -9,6 +9,7 @@ import {
   KeyRound,
   LockKeyhole,
   Map,
+  Shield,
   ShieldCheck,
 } from "lucide-react";
 
@@ -195,6 +196,153 @@ export function HomePage() {
             />
           ))}
         </div>
+      </div>
+    </section>
+  );
+}
+
+const genericLoginFailure = "Sign in failed. Check your details and try again.";
+
+function apiRedirectPath(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  if (!value.startsWith("/") || value.startsWith("//")) {
+    return null;
+  }
+
+  return value;
+}
+
+export function LoginPage() {
+  const reduceMotion = useReducedMotion();
+  const [searchParams] = useSearchParams();
+  const identifierId = useId();
+  const passwordId = useId();
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [failure, setFailure] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const requestedNext = searchParams.get("next") ?? "/";
+
+  async function submitLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFailure("");
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch("/auth/login", {
+        body: JSON.stringify({
+          identifier,
+          next: requestedNext,
+          password,
+        }),
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        setFailure(genericLoginFailure);
+        return;
+      }
+
+      const payload: unknown = await response.json();
+      const redirectTo = apiRedirectPath(
+        payload && typeof payload === "object" && "redirect_to" in payload
+          ? payload.redirect_to
+          : null,
+      );
+
+      if (!redirectTo) {
+        setFailure(genericLoginFailure);
+        return;
+      }
+
+      window.location.assign(redirectTo);
+    } catch {
+      setFailure(genericLoginFailure);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <section
+      className="workspace-page workspace-page--login"
+      aria-labelledby="login-title"
+    >
+      <div className="workspace-atmosphere" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
+      <div className="login-layout">
+        <motion.div
+          animate={{ opacity: 1, y: 0 }}
+          className="login-copy"
+          initial={{ opacity: 0, y: 18 }}
+          transition={{ duration: reduceMotion ? 0 : 0.42 }}
+        >
+          <p className="eyebrow">Maintainer access</p>
+          <h1 id="login-title">Sign in to continue.</h1>
+          <p className="workspace-lede">
+            Use your Energy Market Delta Lake account to open protected market
+            tooling.
+          </p>
+        </motion.div>
+
+        <motion.form
+          animate={{ opacity: 1, y: 0 }}
+          aria-describedby={failure ? "login-error" : undefined}
+          className="login-panel"
+          initial={{ opacity: 0, y: 20 }}
+          onSubmit={submitLogin}
+          transition={{ delay: reduceMotion ? 0 : 0.08, duration: 0.38 }}
+        >
+          <div className="login-panel-topline">
+            <span className="preview-icon">
+              <Shield aria-hidden="true" />
+            </span>
+            <span>Protected workspace</span>
+          </div>
+          <div className="login-field">
+            <label htmlFor={identifierId}>Email or username</label>
+            <input
+              autoComplete="username"
+              id={identifierId}
+              name="identifier"
+              onChange={(event) => setIdentifier(event.target.value)}
+              required
+              type="text"
+              value={identifier}
+            />
+          </div>
+          <div className="login-field">
+            <label htmlFor={passwordId}>Password</label>
+            <input
+              autoComplete="current-password"
+              id={passwordId}
+              name="password"
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              type="password"
+              value={password}
+            />
+          </div>
+          {failure ? (
+            <p className="login-error" id="login-error" role="alert">
+              {failure}
+            </p>
+          ) : null}
+          <button className="preview-action login-submit" disabled={isSubmitting}>
+            {isSubmitting ? "Signing in" : "Sign in"}
+            <ArrowUpRight aria-hidden="true" />
+          </button>
+        </motion.form>
       </div>
     </section>
   );
