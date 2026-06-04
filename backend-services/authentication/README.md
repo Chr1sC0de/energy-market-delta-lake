@@ -1,7 +1,7 @@
 # Authentication Service
 
 FastAPI service used behind Caddy to protect the admin Dagster UI and
-`marimo-dashboard` notebook routes with an OIDC-backed browser session.
+`marimo-dashboard` notebook routes with a Cognito-backed browser session.
 
 ## Table of contents
 
@@ -17,7 +17,6 @@ FastAPI service used behind Caddy to protect the admin Dagster UI and
 - stores only an opaque auth session id in the Starlette
   `SessionMiddleware` browser cookie
 - keeps Cognito user and access-token state server-side behind that session id
-- redirects users to the configured OIDC provider for login
 - accepts same-origin custom login posts at `/auth/login`, authenticates
   username/password credentials with Cognito password auth, and returns a safe
   local redirect target
@@ -31,12 +30,8 @@ FastAPI service used behind Caddy to protect the admin Dagster UI and
 Current route groups implemented in [main.py](main.py):
 
 - Dagster admin:
-  - `/dagster-webserver/admin/login`
-  - `/oauth2/dagster-webserver/admin/authorize`
   - `/oauth2/dagster-webserver/admin/validate`
 - Marimo dashboard:
-  - `/marimo/login`
-  - `/oauth2/marimo/authorize`
   - `/oauth2/marimo/validate`
 - Custom browser auth:
   - `POST /auth/login`
@@ -51,7 +46,9 @@ and optional `next`. It rejects cross-origin `Origin` or `Referer` headers,
 computes Cognito `SECRET_HASH` server-side, and stores only server-side auth
 state behind the opaque browser session id. `next` must resolve to `/`,
 `/dagster-webserver/admin`, `/dagster-webserver/admin/...`, `/marimo`, or
-`/marimo/...`.
+`/marimo/...`. Successful login and logout responses return the safe local
+redirect path in `redirect_to`, which is the public contract consumed by the
+Caddy `/login` page.
 
 The local-only `marimo-codex-workspace` service is not routed through this auth
 service. It binds to `127.0.0.1:2719` for local research and remains outside
@@ -69,24 +66,15 @@ The service reads these environment variables:
 - `AWS_DEFAULT_REGION`
 
 `WEBSITE_ROOT_URL` is normalized to an HTTPS, slash-free base URL before the
-service redirects the browser back to `/dagster-webserver/admin` or `/marimo`.
+service compares browser origin headers for login requests.
 `AWS_DEFAULT_REGION` configures the regional Cognito IDP client used by the
 username/password login endpoint.
 
-The configured Cognito app client must allow callback URLs that match the
-external auth callback routes for each protected surface:
-
-- `<WEBSITE_ROOT_URL>/oauth2/dagster-webserver/admin/authorize`
-- `<WEBSITE_ROOT_URL>/oauth2/marimo/authorize`
-
-For local browser auth testing, also allow the same two callback paths under
-`https://localhost`. If the Marimo callback is missing, Cognito returns
-`redirect_mismatch` when users open `/marimo` without an existing admin session.
-
-The same Cognito app client must allow username/password auth for the custom
-login endpoint. The service uses `COGNITO_DAGSTER_AUTH_CLIENT_SECRET` to compute
-the Cognito `SECRET_HASH`; the secret hash, password, raw Cognito response, ID
-token, and refresh token are not written to browser cookies or responses.
+The configured Cognito app client must allow username/password auth for the
+custom login endpoint. The service uses `COGNITO_DAGSTER_AUTH_CLIENT_SECRET` to
+compute the Cognito `SECRET_HASH`; the secret hash, password, raw Cognito
+response, ID token, and refresh token are not written to browser cookies or
+responses.
 
 ## Local usage
 

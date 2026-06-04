@@ -238,7 +238,7 @@ services:
       retries: 10
       start_period: 10s
   # -------------------------------------------------------------------------
-  # authentication — FastAPI OIDC proxy (Cognito → Dagster webserver)
+  # authentication — FastAPI Cognito session service
   # -------------------------------------------------------------------------
   authentication:
     build:

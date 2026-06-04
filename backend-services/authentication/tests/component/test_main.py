@@ -7,33 +7,17 @@ Achieves 100% coverage of every branch:
   - verify_jwt()                 (valid / exception path)
   - clear_session()
   - _validate_session()          (shared helper)
-  - _build_redirect_uri()        (shared helper)
-  - _authorize_callback()        (shared helper)
   - GET /oauth2/dagster-webserver/admin/validate
       missing fields → 401
       expired token  → 401
       verify_jwt True  → 200
       verify_jwt False → 401
-      localhost URL (no rewrite)
-      non-localhost URL (http→https rewrite)
-  - GET /dagster-webserver/admin/login
-      localhost (no rewrite)
-      non-localhost (http→https rewrite)
-  - GET /oauth2/dagster-webserver/admin/authorize
-      success (sets session, redirects)
-      exception (clears session, 401)
   - GET /oauth2/marimo/validate
       missing fields → 401
       expired token  → 401
       verify_jwt True  → 200
       verify_jwt False → 401
       verify_jwt raises HTTPException → 401
-  - GET /marimo/login
-      non-localhost (http→https rewrite)
-      localhost (no rewrite)
-  - GET /oauth2/marimo/authorize
-      success (sets session, redirects to /marimo)
-      exception (clears session, 401)
 
 Session injection strategy: build a signed Starlette session cookie using
 itsdangerous with the fixed TEST_SESSION_SECRET set in conftest.py before
@@ -45,15 +29,13 @@ import json
 from http.cookies import SimpleCookie
 from time import time
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import itsdangerous
 import pytest
 from fastapi.testclient import TestClient
 from httpx import Response as HttpxResponse
 from pytest_mock import MockerFixture
-from starlette.requests import Request
-from starlette.responses import RedirectResponse
 
 # conftest.py has already set env vars + patched token_urlsafe before this
 # import runs.
@@ -510,120 +492,6 @@ class TestValidateEndpoint:
 
 
 # ---------------------------------------------------------------------------
-# TestLoginEndpoint
-# ---------------------------------------------------------------------------
-
-
-class TestLoginEndpoint:
-    URL = "/dagster-webserver/admin/login"
-
-    def test_login_redirects_with_authorize_redirect(
-        self, mocker: MockerFixture
-    ) -> None:
-        # oidc.authorize_redirect is called and its return value is returned.
-        fake_redirect = RedirectResponse(url="https://cognito.example.com/login")
-        mock_authorize = AsyncMock(return_value=fake_redirect)
-        mocker.patch.object(main.oidc, "authorize_redirect", mock_authorize)
-
-        client = TestClient(app, raise_server_exceptions=False)
-        # TestClient follows redirects by default; disable to inspect the 307.
-        client.follow_redirects = False
-        _ = client.get(self.URL)
-
-        assert mock_authorize.called
-        # The call_args[1] (kwargs) or [0] (positional) should include a redirect_uri.
-        _, kwargs = mock_authorize.call_args
-        redirect_uri = kwargs.get("redirect_uri") or mock_authorize.call_args[0][1]
-        # For localhost test server the URI stays http.
-        assert "http" in redirect_uri
-
-    def test_login_localhost_url_not_rewritten(self, mocker: MockerFixture) -> None:
-        captured: list[str] = []
-
-        async def capture_redirect(
-            request: Request, redirect_uri: str
-        ) -> RedirectResponse:
-            captured.append(redirect_uri)
-            return RedirectResponse(url="https://cognito.example.com/login")
-
-        mocker.patch.object(main.oidc, "authorize_redirect", capture_redirect)
-
-        client = TestClient(app, raise_server_exceptions=False)
-        client.follow_redirects = False
-        client.get(self.URL)
-
-        assert len(captured) == 1
-        # TestClient uses testserver host which contains "testserver" (not localhost),
-        # but it IS a local test and the code checks for "localhost" literally.
-        # The authorize URL route produces http://testserver/...; "localhost" not in it
-        # so the rewrite WOULD fire. We test this in the next test instead.
-        # Here we just assert the captured URI is a string.
-        assert isinstance(captured[0], str)
-
-    def test_login_non_localhost_redirect_uri_is_rewritten_to_https(
-        self, mocker: MockerFixture
-    ) -> None:
-        """
-        When the redirect_uri does NOT contain 'localhost', the code rewrites
-        http → https. The TestClient host is 'testserver', not 'localhost',
-        so this branch fires naturally.
-        """
-        captured: list[str] = []
-
-        async def capture_redirect(
-            request: Request, redirect_uri: str
-        ) -> RedirectResponse:
-            captured.append(redirect_uri)
-            return RedirectResponse(url="https://cognito.example.com/login")
-
-        mocker.patch.object(main.oidc, "authorize_redirect", capture_redirect)
-
-        client = TestClient(app, raise_server_exceptions=False)
-        client.follow_redirects = False
-        client.get(self.URL)
-
-        assert len(captured) == 1
-        # 'testserver' is not 'localhost', so the rewrite fires → https
-        assert captured[0].startswith("https://")
-
-    def test_login_localhost_redirect_uri_not_rewritten(
-        self, mocker: MockerFixture
-    ) -> None:
-        """
-        Force the URL-for result to contain 'localhost' so the rewrite is skipped.
-        """
-        captured: list[str] = []
-
-        async def capture_redirect(
-            request: Request, redirect_uri: str
-        ) -> RedirectResponse:
-            captured.append(redirect_uri)
-            return RedirectResponse(url="https://cognito.example.com/login")
-
-        mocker.patch.object(main.oidc, "authorize_redirect", capture_redirect)
-
-        class FakeURL(str):
-            def __str__(self) -> str:
-                return "http://localhost:8000/oauth2/dagster-webserver/admin/authorize"
-
-        mocker.patch.object(
-            main.Request,
-            "url_for",
-            return_value=FakeURL(
-                "http://localhost:8000/oauth2/dagster-webserver/admin/authorize"
-            ),
-        )
-
-        client = TestClient(app, raise_server_exceptions=False)
-        client.follow_redirects = False
-        client.get(self.URL)
-
-        assert len(captured) == 1
-        # localhost → no rewrite, stays http
-        assert captured[0].startswith("http://")
-
-
-# ---------------------------------------------------------------------------
 # TestCustomLoginEndpoint
 # ---------------------------------------------------------------------------
 
@@ -662,7 +530,7 @@ class TestCustomLoginEndpoint:
         )
 
         assert response.status_code == 200
-        assert response.json() == {"redirect": "/marimo"}
+        assert response.json() == {"redirect_to": "/marimo"}
         expected_secret_hash = main.compute_secret_hash("user@example.com")
         authenticate.assert_called_once_with(
             identifier="user@example.com",
@@ -713,7 +581,7 @@ class TestCustomLoginEndpoint:
         )
 
         assert response.status_code == 200
-        assert response.json() == {"redirect": "/dagster-webserver/admin"}
+        assert response.json() == {"redirect_to": "/dagster-webserver/admin"}
 
     def test_failed_credentials_returns_generic_error_and_no_session(
         self, mocker: MockerFixture
@@ -897,7 +765,7 @@ class TestCustomLoginEndpoint:
         )
 
         assert response.status_code == 200
-        assert response.json() == {"redirect": next_path}
+        assert response.json() == {"redirect_to": next_path}
 
     @pytest.mark.parametrize(
         "next_path",
@@ -948,7 +816,7 @@ class TestCustomLogoutEndpoint:
         response = client.post(self.URL, headers=headers)
 
         assert response.status_code == 200
-        assert response.json() == {"redirect": "/"}
+        assert response.json() == {"redirect_to": "/"}
         assert session_id not in main.AUTH_SESSIONS
         cookie = SimpleCookie()
         cookie.load(response.headers["set-cookie"])
@@ -962,108 +830,22 @@ class TestCustomLogoutEndpoint:
         assert response.status_code == 405
 
 
-# ---------------------------------------------------------------------------
-# TestAuthorizeEndpoint
-# ---------------------------------------------------------------------------
-
-
-class TestAuthorizeEndpoint:
-    URL = "/oauth2/dagster-webserver/admin/authorize"
-
-    def test_authorize_success_redirects_to_website_root(
-        self, mocker: MockerFixture
-    ) -> None:
-        token = {
-            "userinfo": {"sub": "abc", "email": "a@b.com"},
-            "token_type": "Bearer",
-            "access_token": FAKE_TOKEN,
-            "expires_at": time() + 3600,
-        }
-        mock_authorize_token = AsyncMock(return_value=token)
-        mocker.patch.object(main.oidc, "authorize_access_token", mock_authorize_token)
-
+class TestRemovedHostedOidcEndpoints:
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "/dagster-webserver/admin/login",
+            "/oauth2/dagster-webserver/admin/authorize",
+            "/marimo/login",
+            "/oauth2/marimo/authorize",
+        ],
+    )
+    def test_hosted_oidc_routes_are_not_registered(self, url: str) -> None:
         client = TestClient(app, raise_server_exceptions=False)
-        client.follow_redirects = False
-        response = client.get(self.URL)
 
-        assert response.status_code == 307
-        assert (
-            response.headers["location"]
-            == "https://example.com/dagster-webserver/admin"
-        )
-        cookie_payload = _session_cookie_from_response(response)
-        assert set(cookie_payload) == {main.AUTH_SESSION_ID_FIELD}
-        session_id = cookie_payload[main.AUTH_SESSION_ID_FIELD]
-        assert session_id in main.AUTH_SESSIONS
-        assert main.AUTH_SESSIONS[session_id] == {
-            "user": {"sub": "abc", "email": "a@b.com"},
-            "token_type": "Bearer",
-            "access_token": FAKE_TOKEN,
-            "expires_at": token["expires_at"],
-        }
-        forbidden_cookie_fields = {
-            "access_token",
-            "id_token",
-            "refresh_token",
-            "password",
-            "secret_hash",
-            "userinfo",
-            "user",
-            "token_type",
-            "expires_at",
-        }
-        assert forbidden_cookie_fields.isdisjoint(cookie_payload)
+        response = client.get(url)
 
-    def test_authorize_exception_returns_401_and_clears_session(
-        self, mocker: MockerFixture
-    ) -> None:
-        mock_authorize_token = AsyncMock(side_effect=Exception("token exchange failed"))
-        mocker.patch.object(main.oidc, "authorize_access_token", mock_authorize_token)
-
-        client = TestClient(app, raise_server_exceptions=False)
-        response = client.get(self.URL)
-
-        assert response.status_code == 401
-        assert "token exchange failed" in response.json()["message"]
-
-    def test_authorize_redirect_uses_normalised_website_root_url(
-        self, mocker: MockerFixture
-    ) -> None:
-        """Redirect must be an absolute https:// URL regardless of how
-        WEBSITE_ROOT_URL was configured.
-
-        Regression guard for: WEBSITE_ROOT_URL set without the https:// scheme
-        (e.g. "ausenergymarketdata.com") causing Starlette to treat the redirect
-        as relative and produce:
-          /oauth2/…/ausenergymarketdata.com/dagster-webserver/admin
-        """
-        token = {
-            "userinfo": {"sub": "abc", "email": "a@b.com"},
-            "token_type": "Bearer",
-            "access_token": FAKE_TOKEN,
-            "expires_at": time() + 3600,
-        }
-        mock_authorize_token = AsyncMock(return_value=token)
-        mocker.patch.object(main.oidc, "authorize_access_token", mock_authorize_token)
-
-        # Confirm the live module value is already normalised (conftest sets
-        # WEBSITE_ROOT_URL="https://example.com", so this should pass as-is).
-        assert main._website_root_url.startswith("https://"), (
-            f"_website_root_url must start with 'https://', got {main._website_root_url!r}"
-        )
-        assert not main._website_root_url.endswith("/"), (
-            f"_website_root_url must not have a trailing slash, "
-            f"got {main._website_root_url!r}"
-        )
-
-        client = TestClient(app, raise_server_exceptions=False)
-        client.follow_redirects = False
-        response = client.get(self.URL)
-
-        location = response.headers["location"]
-        assert location.startswith("https://"), (
-            f"Redirect location must be absolute https://, got {location!r}"
-        )
+        assert response.status_code == 404
 
 
 class TestWebsiteRootUrlNormalisation:
@@ -1102,45 +884,6 @@ class TestWebsiteRootUrlNormalisation:
     def test_no_scheme_with_path_gets_https_prepended(self) -> None:
         result = main._normalise_website_root_url("example.com/some/path")
         assert result == "https://example.com/some/path"
-
-
-# ---------------------------------------------------------------------------
-# TestValidateEndpointLocalhostBranch (validate login_redirect_uri rewrite)
-# ---------------------------------------------------------------------------
-
-
-class TestValidateEndpointLoginRedirectRewrite:
-    """
-    The /validate handler builds a login_redirect_uri and rewrites http→https
-    when 'localhost' is NOT in the URL. Cover both branches explicitly by
-    patching Request.url_for.
-    """
-
-    URL = "/oauth2/dagster-webserver/admin/validate"
-
-    def test_validate_non_localhost_rewrites_login_redirect(
-        self, mocker: MockerFixture
-    ) -> None:
-        # With TestClient (host=testserver), 'localhost' is absent → rewrite fires.
-        # We just need to reach any branch past the URL rewrite; the missing
-        # session fields will cause an early 401 — which is fine, we just want
-        # the rewrite code path to execute.
-        client = TestClient(app, raise_server_exceptions=False)
-        response = client.get(self.URL)
-        # Missing session → 401; the rewrite branch has been exercised.
-        assert response.status_code == 401
-
-    def test_validate_localhost_skips_rewrite(self, mocker: MockerFixture) -> None:
-        class FakeURL(str):
-            def __str__(self) -> str:
-                return "http://localhost:8000/dagster-webserver/admin/login"
-
-        mocker.patch.object(main.Request, "url_for", return_value=FakeURL(""))
-
-        client = TestClient(app, raise_server_exceptions=False)
-        response = client.get(self.URL)
-        # Still 401 for missing session, but the non-rewrite path was exercised.
-        assert response.status_code == 401
 
 
 # ===========================================================================
@@ -1206,126 +949,3 @@ class TestMarimoValidateEndpoint:
         client, headers, _ = _client_with_auth_session(_auth_session_data())
         response = client.get(self.URL, headers=headers)
         assert response.status_code == 401
-
-
-# ---------------------------------------------------------------------------
-# TestMarimoLoginEndpoint
-# ---------------------------------------------------------------------------
-
-
-class TestMarimoLoginEndpoint:
-    URL = "/marimo/login"
-
-    def test_login_redirects_with_authorize_redirect(
-        self, mocker: MockerFixture
-    ) -> None:
-        fake_redirect = RedirectResponse(url="https://cognito.example.com/login")
-        mock_authorize = AsyncMock(return_value=fake_redirect)
-        mocker.patch.object(main.oidc, "authorize_redirect", mock_authorize)
-
-        client = TestClient(app, raise_server_exceptions=False)
-        client.follow_redirects = False
-        _ = client.get(self.URL)
-
-        assert mock_authorize.called
-        _, kwargs = mock_authorize.call_args
-        redirect_uri = kwargs.get("redirect_uri") or mock_authorize.call_args[0][1]
-        assert "http" in redirect_uri
-
-    def test_login_non_localhost_redirect_uri_is_rewritten_to_https(
-        self, mocker: MockerFixture
-    ) -> None:
-        """
-        TestClient host is 'testserver' (not 'localhost'), so the
-        http→https rewrite fires naturally via _build_redirect_uri.
-        """
-        captured: list[str] = []
-
-        async def capture_redirect(
-            request: Request, redirect_uri: str
-        ) -> RedirectResponse:
-            captured.append(redirect_uri)
-            return RedirectResponse(url="https://cognito.example.com/login")
-
-        mocker.patch.object(main.oidc, "authorize_redirect", capture_redirect)
-
-        client = TestClient(app, raise_server_exceptions=False)
-        client.follow_redirects = False
-        client.get(self.URL)
-
-        assert len(captured) == 1
-        assert captured[0].startswith("https://")
-
-    def test_login_localhost_redirect_uri_not_rewritten(
-        self, mocker: MockerFixture
-    ) -> None:
-        """
-        Force the URL-for result to contain 'localhost' so the rewrite is skipped.
-        """
-        captured: list[str] = []
-
-        async def capture_redirect(
-            request: Request, redirect_uri: str
-        ) -> RedirectResponse:
-            captured.append(redirect_uri)
-            return RedirectResponse(url="https://cognito.example.com/login")
-
-        mocker.patch.object(main.oidc, "authorize_redirect", capture_redirect)
-
-        class FakeURL(str):
-            def __str__(self) -> str:
-                return "http://localhost:8000/oauth2/marimo/authorize"
-
-        mocker.patch.object(
-            main.Request,
-            "url_for",
-            return_value=FakeURL("http://localhost:8000/oauth2/marimo/authorize"),
-        )
-
-        client = TestClient(app, raise_server_exceptions=False)
-        client.follow_redirects = False
-        client.get(self.URL)
-
-        assert len(captured) == 1
-        assert captured[0].startswith("http://")
-
-
-# ---------------------------------------------------------------------------
-# TestMarimoAuthorizeEndpoint
-# ---------------------------------------------------------------------------
-
-
-class TestMarimoAuthorizeEndpoint:
-    URL = "/oauth2/marimo/authorize"
-
-    def test_authorize_success_redirects_to_marimo(self, mocker: MockerFixture) -> None:
-        token = {
-            "userinfo": {"sub": "abc", "email": "a@b.com"},
-            "token_type": "Bearer",
-            "access_token": FAKE_TOKEN,
-            "expires_at": time() + 3600,
-        }
-        mock_authorize_token = AsyncMock(return_value=token)
-        mocker.patch.object(main.oidc, "authorize_access_token", mock_authorize_token)
-
-        client = TestClient(app, raise_server_exceptions=False)
-        client.follow_redirects = False
-        response = client.get(self.URL)
-
-        assert response.status_code == 307
-        assert response.headers["location"] == "https://example.com/marimo"
-        cookie_payload = _session_cookie_from_response(response)
-        assert set(cookie_payload) == {main.AUTH_SESSION_ID_FIELD}
-        assert cookie_payload[main.AUTH_SESSION_ID_FIELD] in main.AUTH_SESSIONS
-
-    def test_authorize_exception_returns_401_and_clears_session(
-        self, mocker: MockerFixture
-    ) -> None:
-        mock_authorize_token = AsyncMock(side_effect=Exception("token exchange failed"))
-        mocker.patch.object(main.oidc, "authorize_access_token", mock_authorize_token)
-
-        client = TestClient(app, raise_server_exceptions=False)
-        response = client.get(self.URL)
-
-        assert response.status_code == 401
-        assert "token exchange failed" in response.json()["message"]

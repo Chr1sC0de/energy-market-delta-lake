@@ -221,7 +221,7 @@ without making local development performance claims.
   - provides the Dagster runtime image, environment-specific configuration, and
     the AWS code-location manifest used to render the deployed workspace
 - `backend-services/authentication`
-  - implements the OIDC/session bridge used in front of protected routes
+  - implements the Cognito session validator used in front of protected routes
 - `backend-services/caddy`
   - provides the reverse-proxy image, root React Router portfolio, shared login
     page, and routing rules

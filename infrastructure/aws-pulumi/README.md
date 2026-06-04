@@ -263,10 +263,8 @@ This project reads a small set of important config values:
   - `aws-pulumi:developer_email`
 
   The Cognito app client referenced by those secrets is managed outside this
-  Pulumi stack. Its allowed callback URLs must include
-  `<website_root_url>/oauth2/dagster-webserver/admin/authorize` and
-  `<website_root_url>/oauth2/marimo/authorize`; keep the `https://localhost`
-  equivalents when local browser auth testing is required.
+  Pulumi stack. It must allow username/password auth for the custom login
+  endpoint used by the authentication service.
 - Optional Pulumi secret for Dagster failed-run alerts:
   - `aws-pulumi:dagster_failure_alert_topic_arn`
 - Dev-only Postgres password SSM parameter exception:
