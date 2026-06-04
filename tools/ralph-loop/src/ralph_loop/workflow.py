@@ -361,6 +361,10 @@ AEMO_ETL_PROMOTION_E2E_TIMEOUT_SECONDS = 30 * 60
 AEMO_ETL_PROMOTION_E2E_MAX_CONCURRENT_RUNS = 6
 CADDY_LOGIN_SMOKE_QA_NAME = "Caddy build/login smoke"
 CADDY_LOGIN_SMOKE_COMMAND_TEXT = "npm run build && npm run login-smoke"
+CADDY_LOGIN_SMOKE_READY_CONTRACT_REASON = (
+    "Caddy login-route issue contract is missing required QA: "
+    f"`{CADDY_LOGIN_SMOKE_COMMAND_TEXT}`."
+)
 MAINTAINED_DOC_PREFIXES = (
     "docs/",
     "backend-services/",
@@ -2430,6 +2434,12 @@ def validate_post_promotion_followup_draft(
     if unsupported_labels:
         reasons.append(f"Unsupported label(s): {', '.join(unsupported_labels)}.")
 
+    missing_caddy_login_smoke_reason = missing_caddy_login_smoke_ready_reason(
+        draft.body
+    )
+    if missing_caddy_login_smoke_reason is not None:
+        reasons.append(missing_caddy_login_smoke_reason)
+
     if reasons:
         return PostPromotionFollowupValidation(
             ready=False,
@@ -3230,6 +3240,12 @@ def validate_ready_issue_refresh_ready_contract(
         formatted = ", ".join(f"## {heading}" for heading in missing)
         raise ValueError(
             f"Ready issue refresh would leave issue #{issue_number} ready without {formatted}."
+        )
+    missing_caddy_login_smoke_reason = missing_caddy_login_smoke_ready_reason(body)
+    if missing_caddy_login_smoke_reason is not None:
+        raise ValueError(
+            "Ready issue refresh would leave issue "
+            f"#{issue_number} ready without {missing_caddy_login_smoke_reason}"
         )
 
 
@@ -4717,6 +4733,34 @@ def issue_declares_caddy_login_smoke(issue_body: str) -> bool:
         is_caddy_login_smoke_command_text(command_text)
         for command_text in qa_command_lines_from_issue_body(issue_body)
     )
+
+
+def issue_requires_caddy_login_smoke(issue_body: str) -> bool:
+    normalized = issue_body.lower()
+    if "/auth/login" in normalized:
+        return True
+    if "/login" not in normalized:
+        return False
+    return any(
+        cue in normalized
+        for cue in (
+            "backend-services/caddy",
+            "caddyfile",
+            "caddy",
+            "login route",
+            "login-route",
+            "login redirect",
+            "shared /login",
+        )
+    )
+
+
+def missing_caddy_login_smoke_ready_reason(issue_body: str) -> str | None:
+    if not issue_requires_caddy_login_smoke(issue_body):
+        return None
+    if issue_declares_caddy_login_smoke(issue_body):
+        return None
+    return CADDY_LOGIN_SMOKE_READY_CONTRACT_REASON
 
 
 def declared_aemo_etl_e2e_scenario(issue_body: str) -> str | None:

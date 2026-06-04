@@ -365,9 +365,12 @@ pulumi up
 
 Run the full deployed-test workflow against the default stack. The script runs
 local Pulumi **Unit test** and **Component test** validation plus the
-**Commit check** before applying the stack. After `pulumi up`, it waits for
-the required ECS services to stabilize and for each primary deployment rollout
-to reach `COMPLETED` before starting the Deployed tests:
+**Commit check**, then checks the externally managed Cognito app client for
+`ALLOW_USER_PASSWORD_AUTH` before applying the stack. That preflight catches the
+custom `/auth/login` requirement before a long EC2/ECS deploy starts. After
+`pulumi up`, it waits for the required ECS services to stabilize and for each
+primary deployment rollout to reach `COMPLETED` before starting the Deployed
+tests:
 
 ```bash
 AWS_DEFAULT_REGION=ap-southeast-2 scripts/run-integration-tests --with-idempotency
@@ -378,7 +381,9 @@ credential checks, `scripts/run-integration-tests` rejects non-empty
 `AWS_ENDPOINT_URL` or `AWS_ENDPOINT_URL_*` variables so LocalStack endpoint
 overrides from local **Integration test** shells cannot leak into the deployed
 AWS **Deployed test** command. The error lists only variable names, not endpoint
-values or credentials.
+values or credentials. The Cognito auth-flow preflight also avoids printing the
+configured app client ID, secret, or credential values; failures identify the
+SSM parameter names and the missing auth flow.
 
 The rollout-completion poll is bounded by `ECS_ROLLOUT_TIMEOUT_SECONDS`
 (default `900`) and `ECS_ROLLOUT_POLL_SECONDS` (default `15`). Timeout or
@@ -440,6 +445,7 @@ system's services and Dagster workflows.
   - `backend-services/caddy/src/main.tsx`
   - `backend-services/caddy/public/theme.css`
   - `infrastructure/aws-pulumi/configs.py`
+  - `infrastructure/aws-pulumi/cognito_auth_flow_preflight.py`
   - `infrastructure/aws-pulumi/code_locations.py`
   - `infrastructure/aws-pulumi/components/bastion_host.py`
   - `infrastructure/aws-pulumi/components/caddy.py`
@@ -514,6 +520,7 @@ system's services and Dagster workflows.
   - `infrastructure/aws-pulumi/tests/deployed/test_integration.py`
   - `infrastructure/aws-pulumi/tests/unit/test_dagster_core_deployment.py`
   - `infrastructure/aws-pulumi/tests/unit/test_ecs_rollouts.py`
+  - `infrastructure/aws-pulumi/tests/unit/test_cognito_auth_flow_preflight.py`
   - `infrastructure/aws-pulumi/tests/unit/test_run_integration_tests_script.py`
   - `infrastructure/aws-pulumi/Pulumi.dev-ausenergymarket.yaml`
   - `backend-services/dagster-core/Dockerfile`

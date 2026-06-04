@@ -44,6 +44,40 @@ E2E_IMPLEMENTATION_BODY = (
 """
 )
 
+CADDY_LOGIN_ROUTE_BODY = """## What to build
+Update `backend-services/caddy/Caddyfile` so protected routes redirect to `/login?next=...`.
+
+## Acceptance criteria
+- [ ] Shared `/login` keeps the requested next URL.
+- [ ] `/auth/login` proxy behavior still serves the login form.
+
+## Blocked by
+None
+"""
+
+CADDY_LOGIN_ROUTE_BODY_WITH_SMOKE = (
+    CADDY_LOGIN_ROUTE_BODY
+    + """
+## QA/deploy verification plan
+
+- QA: `npm run build && npm run login-smoke`
+"""
+)
+
+CADDY_PORTFOLIO_BODY = """## What to build
+Update the Caddy portfolio root page copy under `backend-services/caddy/src/App.tsx`.
+
+## Acceptance criteria
+- [ ] The portfolio route builds successfully.
+
+## Blocked by
+None
+
+## QA/deploy verification plan
+
+- QA: `npm run build`
+"""
+
 AGENTS_IMPLEMENTATION_BODY = """## What to build
 Update the agent workflow.
 
@@ -5002,6 +5036,96 @@ Build it.
             any("category label" in reason for reason in invalid_result.reasons)
         )
 
+    def test_post_promotion_followup_validation_requires_caddy_login_smoke(
+        self,
+    ) -> None:
+        missing_smoke = ralph.PostPromotionFollowupDraft(
+            title="Require login redirect",
+            body=CADDY_LOGIN_ROUTE_BODY,
+            labels=("enhancement", "delivery-gitflow"),
+            finding_id="require-login-redirect",
+        )
+        with_smoke = ralph.PostPromotionFollowupDraft(
+            title="Require login redirect",
+            body=CADDY_LOGIN_ROUTE_BODY_WITH_SMOKE,
+            labels=("enhancement", "delivery-gitflow"),
+            finding_id="require-login-redirect",
+        )
+        portfolio_only = ralph.PostPromotionFollowupDraft(
+            title="Update Caddy portfolio",
+            body=CADDY_PORTFOLIO_BODY,
+            labels=("enhancement", "delivery-trunk"),
+            finding_id="update-caddy-portfolio",
+        )
+
+        missing_result = ralph.validate_post_promotion_followup_draft(missing_smoke)
+        smoke_result = ralph.validate_post_promotion_followup_draft(with_smoke)
+        portfolio_result = ralph.validate_post_promotion_followup_draft(portfolio_only)
+
+        self.assertFalse(missing_result.ready)
+        self.assertEqual(missing_result.labels, ("needs-triage",))
+        self.assertTrue(
+            any(
+                "npm run build && npm run login-smoke" in reason
+                for reason in missing_result.reasons
+            )
+        )
+        self.assertTrue(smoke_result.ready)
+        self.assertEqual(
+            smoke_result.labels,
+            ("delivery-gitflow", "enhancement", "ready-for-agent"),
+        )
+        self.assertTrue(portfolio_result.ready)
+        self.assertEqual(
+            portfolio_result.labels,
+            ("delivery-trunk", "enhancement", "ready-for-agent"),
+        )
+
+    def test_ready_issue_refresh_salvages_missing_caddy_login_smoke(
+        self,
+    ) -> None:
+        issue = make_issue({ralph.READY_LABEL}, CADDY_LOGIN_ROUTE_BODY)
+        mutation = ralph.ReadyIssueRefreshMutation(
+            issue_number=issue.number,
+            action="no_change",
+            comment=None,
+            body=None,
+            section_updates=(),
+            add_labels=(),
+            remove_labels=(),
+            close_as_completed=False,
+        )
+
+        with self.assertRaises(ValueError) as context:
+            ralph.validate_ready_issue_refresh_ready_contract(
+                issue_number=issue.number,
+                labels=frozenset(issue.labels),
+                body=issue.body,
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(Path(tmp), FakeRunner())
+            salvage = loop._salvage_ready_issue_refresh_mutation(
+                issue,
+                mutation,
+                validation_error=context.exception,
+            )
+
+        self.assertEqual(salvage.status, "quarantined_needs_triage")
+        self.assertIsNotNone(salvage.mutation)
+        assert salvage.mutation is not None
+        self.assertEqual(salvage.mutation.add_labels, ("needs-triage",))
+        self.assertEqual(salvage.mutation.remove_labels, ("ready-for-agent",))
+        self.assertIsNotNone(salvage.mutation.comment)
+        assert salvage.mutation.comment is not None
+        self.assertTrue(
+            salvage.mutation.comment.startswith(ralph.AI_READY_ISSUE_REFRESH_DISCLAIMER)
+        )
+        self.assertIn(
+            "npm run build && npm run login-smoke",
+            salvage.mutation.comment,
+        )
+
     def test_post_promotion_followup_drafts_parse_structured_json_section(self) -> None:
         drafts = ralph.post_promotion_followup_drafts_from_markdown(
             POST_PROMOTION_REVIEW_MARKDOWN
@@ -5742,6 +5866,110 @@ Build it.
         self.assertIn("Do not edit repo", prompt)
         self.assertIn("Apply `delivery-exploratory` only when", prompt)
         self.assertIn("## Review focus", prompt)
+
+    def test_claim_ready_contract_downgrades_caddy_login_route_missing_smoke(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            runner = FakeRunner()
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({ralph.READY_LABEL}, CADDY_LOGIN_ROUTE_BODY)
+
+            downgraded = loop._downgrade_caddy_login_smoke_issue_if_needed(
+                issue,
+                run_dir=tmp_path / "triage-42",
+            )
+            comment_body = (tmp_path / "triage-42" / "issue-42-comment.md").read_text(
+                encoding="utf-8"
+            )
+
+        self.assertTrue(downgraded)
+        self.assertIn("npm run build && npm run login-smoke", comment_body)
+        commands = [call.args for call in runner.calls]
+        self.assertTrue(
+            any(command[:4] == ("gh", "issue", "comment", "42") for command in commands)
+        )
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "42",
+                "-R",
+                "example/repo",
+                "--add-label",
+                ralph.NEEDS_TRIAGE_LABEL,
+                "--remove-label",
+                ralph.READY_LABEL,
+            ),
+            commands,
+        )
+
+    def test_claim_ready_contract_allows_caddy_portfolio_build_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            runner = FakeRunner()
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue({ralph.READY_LABEL}, CADDY_PORTFOLIO_BODY)
+
+            downgraded = loop._downgrade_caddy_login_smoke_issue_if_needed(
+                issue,
+                run_dir=tmp_path / "issue-42",
+            )
+
+        self.assertFalse(downgraded)
+        commands = [call.args for call in runner.calls]
+        self.assertFalse(
+            any(command[:3] == ("gh", "issue", "edit") for command in commands)
+        )
+
+    def test_triage_downgrades_ready_caddy_login_route_missing_smoke(self) -> None:
+        issue = make_issue({ralph.NEEDS_TRIAGE_LABEL}, CADDY_LOGIN_ROUTE_BODY)
+        issue_view_command = (
+            "gh",
+            "issue",
+            "view",
+            "42",
+            "-R",
+            "example/repo",
+            "--json",
+            "number,title,body,labels,createdAt,updatedAt,url,comments,author",
+        )
+        runner = FakeRunner(
+            command_outputs={
+                issue_view_command: [
+                    json.dumps(
+                        issue_payload(
+                            42,
+                            [ralph.READY_LABEL, ralph.DELIVERY_GITFLOW_LABEL],
+                            CADDY_LOGIN_ROUTE_BODY,
+                        )
+                    )
+                ]
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = make_loop(Path(tmp), runner)
+            loop._run_triage(issue)
+
+        commands = [call.args for call in runner.calls]
+        self.assertIn(issue_view_command, commands)
+        self.assertIn(
+            (
+                "gh",
+                "issue",
+                "edit",
+                "42",
+                "-R",
+                "example/repo",
+                "--add-label",
+                ralph.NEEDS_TRIAGE_LABEL,
+                "--remove-label",
+                ralph.READY_LABEL,
+            ),
+            commands,
+        )
 
     def test_select_qa_commands_for_aemo_etl_runtime_only_changes(self) -> None:
         commands = ralph.select_qa_commands(

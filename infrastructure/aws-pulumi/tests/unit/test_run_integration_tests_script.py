@@ -92,6 +92,19 @@ def test_runs_deployed_workflow_with_fake_commands_when_no_endpoint_override(
         {"command": "prek", "argv": ["run", "-a"]},
         {
             "command": "uv",
+            "argv": [
+                "run",
+                "python",
+                "-m",
+                "cognito_auth_flow_preflight",
+                "--region",
+                "ap-southeast-2",
+                "--resource-name",
+                "test-energy-market",
+            ],
+        },
+        {
+            "command": "uv",
             "argv": ["run", "python", "-"],
         },
         {
