@@ -8500,6 +8500,39 @@ def render_kpi_cards_html(
 </section>"""
 
 
+@dataclass(frozen=True)
+class DashboardStatusCard:
+    """Escaped shared status card content for first-viewport dashboard summaries."""
+
+    label: str
+    state: str
+    value: str
+    detail: str
+    action: str | None = None
+    status: str | None = None
+    classes: tuple[str, ...] = ()
+
+
+def render_status_cards_html(
+    cards: Sequence[DashboardStatusCard],
+    *,
+    title: str,
+    grid_class: str,
+    card_class: str,
+) -> str:
+    """Render escaped status cards with shared structure and legacy hooks."""
+    rendered_cards = "\n".join(
+        _render_dashboard_status_card(card, card_class=card_class) for card in cards
+    )
+    return f"""\
+<style>
+{_dashboard_visual_primitives_css()}
+</style>
+<section class="dashboard-status-card-grid {escape(grid_class, quote=True)}" aria-label="{escape(title, quote=True)}">
+{rendered_cards}
+</section>"""
+
+
 def render_bounded_data_note_html(
     *,
     title: str,
@@ -21650,6 +21683,42 @@ def _render_kpi_card(row: Mapping[str, object]) -> str:
 </article>"""
 
 
+def _render_dashboard_status_card(
+    card: DashboardStatusCard,
+    *,
+    card_class: str,
+) -> str:
+    status = card.status or card.state
+    status_class = _dashboard_status_class(status)
+    classes = " ".join(
+        (
+            "dashboard-status-card",
+            f"dashboard-status-card--{status_class}",
+            card_class,
+            f"{card_class}--{status_class}",
+            *card.classes,
+        )
+    )
+    action_html = (
+        ""
+        if card.action is None
+        else f'    <p class="dashboard-status-card__action {card_class}__action">{escape(card.action)}</p>\n'
+    )
+    return f"""\
+<article class="{escape(classes, quote=True)}" data-status="{escape(status_class, quote=True)}">
+    <div class="dashboard-status-card__topline {card_class}__topline">
+        <span>{escape(card.label)}</span>
+        <strong>{escape(card.state)}</strong>
+    </div>
+    <p class="dashboard-status-card__value {card_class}__value">{escape(card.value)}</p>
+    <p>{escape(card.detail)}</p>
+{action_html}</article>"""
+
+
+def _dashboard_status_class(status: str) -> str:
+    return status.lower().replace(" ", "-")
+
+
 def _render_flow_source_status_row(
     row: Mapping[str, object],
     max_measure_rows: float,
@@ -21875,6 +21944,13 @@ def _dashboard_visual_primitives_css() -> str:
     width: 100%;
 }
 
+.dashboard-status-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+    gap: 0.9rem;
+    width: 100%;
+}
+
 .dashboard-kpi-card {
     min-height: 8.5rem;
     padding: 0.85rem;
@@ -21884,14 +21960,41 @@ def _dashboard_visual_primitives_css() -> str:
     box-shadow: 0 1px 2px rgb(31 42 46 / 8%);
 }
 
+.dashboard-status-card {
+    display: grid;
+    gap: 0.55rem;
+    min-width: 0;
+    padding: 0.9rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-left-width: 5px;
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+    color: var(--emdl-ink, #1b2324);
+    box-shadow: 0 1px 2px rgb(31 42 46 / 8%);
+}
+
 .dashboard-kpi-card__metric,
-.dashboard-bounded-note__label {
+.dashboard-bounded-note__label,
+.dashboard-status-card__topline {
     margin: 0;
     color: var(--emdl-muted, #566365);
     font-size: 0.74rem;
     font-weight: 720;
     letter-spacing: 0;
     text-transform: uppercase;
+}
+
+.dashboard-status-card__topline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.45rem;
+}
+
+.dashboard-status-card__topline strong,
+.dashboard-status-card__value {
+    color: var(--emdl-slate, #354348);
 }
 
 .dashboard-kpi-card strong {
@@ -21902,6 +22005,13 @@ def _dashboard_visual_primitives_css() -> str:
     line-height: 1.05;
 }
 
+.dashboard-status-card__value {
+    margin: 0;
+    font-size: 1.45rem;
+    font-weight: 760;
+    line-height: 1.1;
+}
+
 .dashboard-kpi-card__detail {
     margin: 0.6rem 0 0;
     color: var(--emdl-muted, #566365);
@@ -21909,8 +22019,34 @@ def _dashboard_visual_primitives_css() -> str:
     line-height: 1.35;
 }
 
+.dashboard-status-card p {
+    margin: 0;
+}
+
+.dashboard-status-card__action {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.9rem;
+}
+
 .dashboard-kpi-card--empty {
     min-height: 5rem;
+}
+
+.dashboard-status-card--ready,
+.dashboard-status-card--reachable,
+.dashboard-status-card--bounded-read {
+    border-left-color: var(--emdl-green, #3e7a54);
+}
+
+.dashboard-status-card--needs-attention,
+.dashboard-status-card--empty,
+.dashboard-status-card--truncated {
+    border-left-color: var(--emdl-amber, #b9822c);
+}
+
+.dashboard-status-card--unavailable,
+.dashboard-status-card--missing {
+    border-left-color: var(--emdl-red, #9e4839);
 }
 
 .dashboard-bounded-note,

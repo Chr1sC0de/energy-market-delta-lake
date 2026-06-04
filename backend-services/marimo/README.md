@@ -139,8 +139,9 @@ authoring contract for curated dashboards:
   visual, designed empty states, and drilldown tables below the visual summary
 - load `silver.gas_model` rows through bounded loader helpers such as
   `load_gas_model_tables()` or dashboard-specific cached wrappers
-- render registry context, load health, KPIs, bounded-scope copy, links, and
-  empty states through shared helpers under `src/marimoserver/`
+- render registry context, load health, KPIs, status-card grids,
+  bounded-scope copy, links, and empty states through shared helpers under
+  `src/marimoserver/`
 - summarize Playwright or browser review evidence in the handoff when local
   browser review is available
 

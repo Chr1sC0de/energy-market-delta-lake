@@ -5,11 +5,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from html import escape
 
 import polars as pl
 
 from marimoserver.dagster_graphql import DagsterAssetCatalogue
+from marimoserver.gas_dashboard import DashboardStatusCard, render_status_cards_html
 from marimoserver.gas_model_loader import bounded_row_limit
 from marimoserver.table_explorer import (
     CataloguedTable,
@@ -222,14 +222,12 @@ def readiness_action_markdown(overview: DataReadinessOverview) -> str:
 
 def render_readiness_cards(cards: Sequence[ReadinessCard]) -> str:
     """Render first-viewport readiness cards using repo theme tokens."""
-    rendered_cards = "\n".join(_render_readiness_card(card) for card in cards)
-    return f"""\
-<style>
-{_readiness_cards_css()}
-</style>
-<section class="readiness-card-grid" aria-label="Data readiness summary">
-{rendered_cards}
-</section>"""
+    return render_status_cards_html(
+        tuple(_readiness_status_card(card) for card in cards),
+        title="Data readiness summary",
+        grid_class="readiness-card-grid",
+        card_class="readiness-card",
+    )
 
 
 def _s3_readiness_card(
@@ -476,86 +474,11 @@ def _latest_materialization_label(catalogue: DagsterAssetCatalogue) -> str:
     )
 
 
-def _render_readiness_card(card: ReadinessCard) -> str:
-    state_class = _state_css_class(card.state)
-    return f"""\
-    <article class="readiness-card readiness-card--{state_class}">
-        <div class="readiness-card__topline">
-            <span>{escape(card.area)}</span>
-            <strong>{escape(card.state.value)}</strong>
-        </div>
-        <p class="readiness-card__value">{escape(card.value)}</p>
-        <p>{escape(card.detail)}</p>
-        <p class="readiness-card__action">{escape(card.action)}</p>
-    </article>"""
-
-
-def _state_css_class(state: ReadinessState) -> str:
-    return state.value.lower().replace(" ", "-")
-
-
-def _readiness_cards_css() -> str:
-    return """\
-.readiness-card-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
-    gap: 0.9rem;
-}
-
-.readiness-card {
-    display: grid;
-    gap: 0.55rem;
-    min-width: 0;
-    border: 1px solid var(--emdl-line, #cfdbd6);
-    border-left-width: 5px;
-    border-radius: 8px;
-    padding: 0.9rem;
-    background: var(--emdl-panel, #ffffff);
-    color: var(--emdl-ink, #1b2324);
-}
-
-.readiness-card--ready {
-    border-left-color: var(--emdl-green, #3e7a54);
-}
-
-.readiness-card--needs-attention,
-.readiness-card--empty {
-    border-left-color: var(--emdl-amber, #b2682a);
-}
-
-.readiness-card--unavailable {
-    border-left-color: var(--emdl-red, #9e4839);
-}
-
-.readiness-card__topline {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.45rem;
-    color: var(--emdl-muted, #566365);
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
-}
-
-.readiness-card__topline strong {
-    color: var(--emdl-slate, #354348);
-}
-
-.readiness-card__value {
-    margin: 0;
-    color: var(--emdl-slate, #354348);
-    font-size: 1.45rem;
-    font-weight: 760;
-    line-height: 1.1;
-}
-
-.readiness-card p {
-    margin: 0;
-}
-
-.readiness-card__action {
-    color: var(--emdl-muted, #566365);
-    font-size: 0.9rem;
-}"""
+def _readiness_status_card(card: ReadinessCard) -> DashboardStatusCard:
+    return DashboardStatusCard(
+        label=card.area,
+        state=card.state.value,
+        value=card.value,
+        detail=card.detail,
+        action=card.action,
+    )

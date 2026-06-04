@@ -302,6 +302,9 @@ def test_bounded_read_diagnostics_render_local_runtime_configuration() -> None:
     assert runtime_rows["Active gas dashboard policy"]["value"] == "Full table scan"
     assert state_rows["Bounded preview"]["active"] == "False"
     assert state_rows["Full table scan"]["active"] == "True"
+    assert "dashboard-status-card-grid bounded-read-card-grid" in summary_html
+    assert "dashboard-status-card--bounded-read" in summary_html
+    assert "bounded-read-card--bounded-read" in summary_html
     assert "local" in summary_html
     assert "Full table scan" in summary_html
     assert "S3-compatible endpoint override" in summary_html
@@ -347,6 +350,9 @@ def test_bounded_read_diagnostics_render_aws_runtime_configuration() -> None:
     )
     assert state_rows["Bounded preview"]["active"] == "True"
     assert state_rows["Full table scan"]["active"] == "False"
+    assert "dashboard-status-card-grid bounded-read-card-grid" in summary_html
+    assert "dashboard-status-card--bounded-read" in summary_html
+    assert "bounded-read-card--bounded-read" in summary_html
     assert "AWS service endpoints" in summary_html
     assert "Bounded preview: 125 rows max" in summary_html
 
@@ -538,7 +544,9 @@ def test_asset_catalogue_dashboard_helpers_report_graphql_success() -> None:
     assert summary.executable_asset_count == 2
     assert summary.latest_materialization_label == "2024-04-24T23:08:20+00:00"
     assert "Missing tables" in action_markdown
-    assert 'class="asset-catalogue-card asset-catalogue-card--ready"' in card_html
+    assert "dashboard-status-card-grid asset-catalogue-card-grid" in card_html
+    assert "dashboard-status-card--ready" in card_html
+    assert "asset-catalogue-card--ready" in card_html
     assert "Dagster GraphQL" in card_html
     assert catalogue_frame["group"].to_list() == ["gas_model", "gas_model"]
     assert catalogue_frame["kinds"].to_list() == ["parquet, table", "table"]
@@ -957,6 +965,9 @@ def test_materialization_freshness_handles_unavailable_graphql() -> None:
     assert "restore `DAGSTER_GRAPHQL_URL`" in action_markdown
     assert "GraphQL-unavailable rows" in action_markdown
     assert "Materialization freshness summary" in cards_html
+    assert "dashboard-status-card-grid asset-catalogue-card-grid" in cards_html
+    assert "dashboard-status-card--unavailable" in cards_html
+    assert "asset-catalogue-card--unavailable" in cards_html
     assert frame.row(0, named=True)["state"] == "GraphQL unavailable"
     assert frame.row(0, named=True)["latest materialization"] == ""
 
@@ -1807,7 +1818,9 @@ def test_s3_bucket_health_dashboard_helpers_cover_bucket_states() -> None:
     assert filtered_prefixes == (delta_table,)
     assert "Missing buckets" in action_markdown
     assert "Truncated buckets" in action_markdown
-    assert 'class="storage-health-card storage-health-card--truncated"' in html
+    assert "dashboard-status-card-grid storage-health-card-grid" in html
+    assert "dashboard-status-card--truncated" in html
+    assert "storage-health-card--truncated" in html
     assert summary.degraded_bucket_count == 4
 
 
