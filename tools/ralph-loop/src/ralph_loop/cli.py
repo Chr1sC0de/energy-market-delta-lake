@@ -2505,6 +2505,34 @@ class RalphLoop:
         *,
         validation_error: ValueError,
     ) -> ReadyIssueRefreshSalvage:
+        final_body = body_after_ready_issue_refresh_mutation(issue, mutation)
+        missing_caddy_login_smoke_reason = missing_caddy_login_smoke_ready_reason(
+            final_body
+        )
+        if missing_caddy_login_smoke_reason is not None:
+            comment = ready_issue_refresh_comment_body(
+                "Ready issue refresh found this issue would be "
+                f"`{READY_LABEL}` for Caddy login-route behavior without the "
+                f"required Test lane. Ralph moved it to `{NEEDS_TRIAGE_LABEL}` "
+                "before continuing the Operator drain.\n\n"
+                f"- {missing_caddy_login_smoke_reason}"
+            )
+            return ReadyIssueRefreshSalvage(
+                mutation=ReadyIssueRefreshMutation(
+                    issue_number=issue.number,
+                    action="needs_triage",
+                    comment=comment,
+                    body=None,
+                    section_updates=(),
+                    add_labels=(NEEDS_TRIAGE_LABEL,),
+                    remove_labels=(READY_LABEL,),
+                    close_as_completed=False,
+                    adaptive_metadata=mutation.adaptive_metadata,
+                ),
+                status="quarantined_needs_triage",
+                error=str(validation_error),
+            )
+
         required_sections = (
             required_issue_sections_for_delivery_mode(EXPLORATORY_MODE)
             if DELIVERY_EXPLORATORY_LABEL in issue.labels
@@ -5599,6 +5627,14 @@ class RalphLoop:
                         recovery_guidance=guidance,
                     )
             preclaim_branch_sync = self._uses_preclaim_branch_sync(delivery_plan)
+            if self._downgrade_caddy_login_smoke_issue_if_needed(
+                issue,
+                run_dir=run_dir,
+            ):
+                manifest.record_failure(
+                    IssueFailure("Issue was moved back to needs-triage before claim.")
+                )
+                return manifest
             if preclaim_branch_sync:
                 manifest.record_event("preclaim_branch_sync_check")
                 self._ensure_preclaim_branch_sync(delivery_plan, run_dir, manifest)
@@ -6413,7 +6449,57 @@ class RalphLoop:
             raise IssueFailure(
                 f"Missing required issue section(s): {', '.join(missing)}"
             )
+        missing_caddy_login_smoke_reason = missing_caddy_login_smoke_ready_reason(
+            issue.body
+        )
+        if missing_caddy_login_smoke_reason is not None:
+            raise IssueFailure(missing_caddy_login_smoke_reason)
         return validate_operator_smoke_request(issue, delivery_plan=delivery_plan)
+
+    def _downgrade_incomplete_ready_issue(
+        self,
+        issue: Issue,
+        *,
+        reason: str,
+        run_dir: Path,
+    ) -> None:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        emit(
+            f"#{issue.number}: moving incomplete {READY_LABEL} contract to "
+            f"{NEEDS_TRIAGE_LABEL}"
+        )
+        self.github.comment_issue(
+            issue.number,
+            (
+                "Ralph found this issue was `ready-for-agent` without the "
+                "required Test lane evidence. Ralph moved it back to "
+                f"`{NEEDS_TRIAGE_LABEL}` before implementation.\n\n"
+                f"- {reason}\n\n"
+                f"Run logs: `{run_dir}`"
+            ),
+            run_dir=run_dir,
+        )
+        self.github.edit_issue_labels(
+            issue.number,
+            add=[NEEDS_TRIAGE_LABEL],
+            remove=[READY_LABEL],
+        )
+
+    def _downgrade_caddy_login_smoke_issue_if_needed(
+        self,
+        issue: Issue,
+        *,
+        run_dir: Path,
+    ) -> bool:
+        reason = missing_caddy_login_smoke_ready_reason(issue.body)
+        if reason is not None:
+            self._downgrade_incomplete_ready_issue(
+                issue,
+                reason=reason,
+                run_dir=run_dir,
+            )
+            return True
+        return False
 
     def _uses_preclaim_branch_sync(self, delivery_plan: DeliveryPlan) -> bool:
         return (
@@ -8291,6 +8377,12 @@ class RalphLoop:
             run_dir / "codex-triage.jsonl",
             phase=f"#{issue.number}: triage",
         )
+        refreshed_issue = self.github.view_issue(issue.number)
+        if READY_LABEL in refreshed_issue.labels:
+            self._downgrade_caddy_login_smoke_issue_if_needed(
+                refreshed_issue,
+                run_dir=run_dir,
+            )
         emit(f"Triage pass completed for #{issue.number}.")
 
     def _run_dir(self, issue: Issue, *, prefix: str = "issue") -> Path:
@@ -13466,6 +13558,13 @@ def ready_issue_refresh_analysis_prompt(
         of putting prose instructions in `body`. `section_updates` may only
         update `Blocked by` and `Current context`, and must not be combined with
         `body`.
+        A candidate issue that would remain or become `ready-for-agent` for
+        Caddy login-route behavior must declare
+        `- QA: npm run build && npm run login-smoke`. This covers
+        `backend-services/caddy/Caddyfile` login redirects to `/login?next=...`,
+        shared `/login` route behavior, and `/auth/login` proxy/login form
+        behavior. Existing portfolio-only Caddy edits may use `npm run build`
+        without `login-smoke`.
         Comments may omit the Ready issue refresh audit prefix because Ralph
         will add it before applying metadata.
         The adaptive fields are queue-local evidence only. Use them for blocker
@@ -13806,6 +13905,13 @@ def post_promotion_ready_issue_refresh_analysis_prompt(
         of putting prose instructions in `body`. `section_updates` may only
         update `Blocked by` and `Current context`, and must not be combined with
         `body`.
+        A candidate issue that would remain or become `ready-for-agent` for
+        Caddy login-route behavior must declare
+        `- QA: npm run build && npm run login-smoke`. This covers
+        `backend-services/caddy/Caddyfile` login redirects to `/login?next=...`,
+        shared `/login` route behavior, and `/auth/login` proxy/login form
+        behavior. Existing portfolio-only Caddy edits may use `npm run build`
+        without `login-smoke`.
         Comments may omit the Ready issue refresh audit prefix because Ralph
         will add it before applying metadata.
 
@@ -14554,6 +14660,13 @@ def triage_prompt(issue: Issue, repo: str) -> str:
         human judgment the branch needs. Vague exploratory intent should stay
         Gitflow or move to needs-info instead of being labeled exploratory.
 
+        A ready issue that touches Caddy login-route behavior must declare
+        `- QA: npm run build && npm run login-smoke`. This covers
+        `backend-services/caddy/Caddyfile` login redirects to `/login?next=...`,
+        shared `/login` route behavior, and `/auth/login` proxy/login form
+        behavior. Existing portfolio-only Caddy edits may use `npm run build`
+        without `login-smoke`.
+
         Issue URL: {issue.url}
 
         Issue body:
@@ -14744,6 +14857,13 @@ def post_promotion_review_prompt(
         - `labels`: exactly one category label (`bug` or `enhancement`) and
           exactly one Delivery mode label (`delivery-gitflow`,
           `delivery-trunk`, or `delivery-exploratory`).
+
+        If a draft touches Caddy login-route behavior, its body must declare
+        `- QA: npm run build && npm run login-smoke`. This covers
+        `backend-services/caddy/Caddyfile` login redirects to `/login?next=...`,
+        shared `/login` route behavior, and `/auth/login` proxy/login form
+        behavior. Existing portfolio-only Caddy edits may use `npm run build`
+        without `login-smoke`.
 
         Do not create the follow-up issues yourself. Draft them in the report
         only; Ralph owns validated creation after review.

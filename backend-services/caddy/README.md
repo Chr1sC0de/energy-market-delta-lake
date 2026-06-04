@@ -126,6 +126,11 @@ path in the issue run manifest and Review package evidence. Manual smoke
 commands run only inside the implementation pass remain Codex implementation
 logs.
 
+Ralph treats this declaration as required before `ready-for-agent` for issue
+contracts that change `Caddyfile` redirects to `/login?next=...`, shared
+`/login` route behavior, or `/auth/login` proxy/login form behavior.
+Portfolio-only Caddy edits can still declare and run only `npm run build`.
+
 For screenshot-based browser review, this Subproject includes Playwright as a
 development dependency. Install the Chromium browser once, then review the local
 Vite preview route:

@@ -175,12 +175,16 @@ labels conflict, Ralph normalizes them using the policy in
 preclaim `main` into `dev` branch sync so the `dev` **Integration target** is
 not behind trunk.
 
+Before Ralph claims the issue, it checks the Caddy login-route ready contract.
+If a `ready-for-agent` issue would change Caddy login-route behavior without
+the `npm run build && npm run login-smoke` **Test lane**, Ralph comments
+evidence, moves it back to `needs-triage`, and stops before implementation.
 When Ralph claims the issue, it removes `ready-for-agent` and stale success or
 failure runtime labels, then adds `agent-running`. That is the point where the
 attempt starts. If an issue needs an operator-approved **Full-access
 implementation pass** and the operator did not provide the required flag, Ralph
-stops before claim. If the issue contract is malformed after claim, Ralph
-comments failure evidence, marks `agent-failed`, and does not create a
+stops before claim. If another issue contract problem is found after claim,
+Ralph comments failure evidence, marks `agent-failed`, and does not create a
 successful publication boundary.
 
 During implementation, Ralph creates a per-issue branch and worktree, then runs
@@ -1424,6 +1428,12 @@ login-smoke'`, status, and a `qa-*` log path. The root **Commit check** remains
 selected independently for Caddy file changes. Caddy commands run manually by
 Codex during implementation remain implementation logs only unless the issue
 declares this supported QA command and Ralph runs it in the formal QA phase.
+Ready issue preparation must require that declaration for Caddy login-route
+contracts, including `backend-services/caddy/Caddyfile` redirects to
+`/login?next=...`, shared `/login` route behavior, and `/auth/login` proxy or
+login form behavior. If a candidate issue would be `ready-for-agent` without
+that Test lane, Ralph downgrades it to `needs-triage` with evidence. Caddy
+portfolio-only changes may still declare only `- QA: npm run build`.
 
 Ralph then generates a **Review package** at `review-package.html` in the run
 directory and links recorded sibling media from that package. The generator
@@ -1932,6 +1942,10 @@ When no unblocked `ready-for-agent` issue exists, Ralph asks Codex to run the
 `$shape-issues` published issues intentionally arrive here as `needs-triage`;
 the triage pass remains the step that applies category, state, and
 **Delivery mode** labels before any issue becomes drainable.
+After automated triage returns, Ralph re-reads the issue and validates any new
+`ready-for-agent` state before the next claim. If Codex left a Caddy login-route
+issue ready without `- QA: npm run build && npm run login-smoke`, Ralph comments
+evidence and moves the issue back to `needs-triage`.
 In the live drain scheduler, serial Gitflow and Trunk ready issues keep
 priority over triage. If no serial ready issue is claimable, Ralph may run a
 triage pass while already active Exploratory workers continue in their
