@@ -28,7 +28,9 @@ def _():
         heating_value_pressure_source_system_options,
         heating_value_pressure_source_table_options,
         render_dashboard_context_panel,
+        render_heating_value_pressure_summary_html,
         render_heating_value_pressure_context_links,
+        render_kpi_cards_html,
         scada_pressure_observation_frame,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
@@ -55,7 +57,9 @@ def _():
         pl,
         refresh_token_from_control,
         render_dashboard_context_panel,
+        render_heating_value_pressure_summary_html,
         render_heating_value_pressure_context_links,
+        render_kpi_cards_html,
         scada_pressure_observation_frame,
     )
 
@@ -233,10 +237,13 @@ def _(
 @app.cell
 def _(
     heating_value_pressure_empty_state_markdown,
+    heating_value_pressure_field_summary_frame,
     heating_value_pressure_kpi_frame,
     heating_value_pressure_loads,
     identifier_filter,
     mo,
+    render_heating_value_pressure_summary_html,
+    render_kpi_cards_html,
     source_system_filter,
     source_table_filter,
 ):
@@ -250,13 +257,30 @@ def _(
         kpi_view = mo.md(
             heating_value_pressure_empty_state_markdown(heating_value_pressure_loads)
         )
+        summary_view = kpi_view
     else:
-        kpi_view = mo.ui.table(kpis, selection=None)
+        kpi_view = mo.Html(
+            render_kpi_cards_html(kpis, title="Heating value and pressure metrics")
+        )
+        heating_value_pressure_visual_summary = (
+            heating_value_pressure_field_summary_frame(
+                heating_value_pressure_loads,
+                source_system_filter.value,
+                source_table_filter.value,
+                identifier_filter.value,
+            )
+        )
+        summary_view = mo.Html(
+            render_heating_value_pressure_summary_html(
+                heating_value_pressure_visual_summary
+            )
+        )
 
     mo.vstack(
         [
             mo.md("## Observation Summary"),
             kpi_view,
+            summary_view,
         ]
     )
     return

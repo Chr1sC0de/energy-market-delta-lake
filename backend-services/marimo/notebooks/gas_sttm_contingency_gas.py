@@ -19,6 +19,8 @@ def _():
         gas_table_load_status_frame,
         gas_table_load_status_message,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
+        render_sttm_contingency_gas_summary_html,
         render_sttm_contingency_gas_context_links,
         sttm_contingency_gas_bid_offer_summary_frame,
         sttm_contingency_gas_empty_state_markdown,
@@ -46,6 +48,8 @@ def _():
         pl,
         refresh_token_from_control,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
+        render_sttm_contingency_gas_summary_html,
         render_sttm_contingency_gas_context_links,
         sttm_contingency_gas_bid_offer_summary_frame,
         sttm_contingency_gas_empty_state_markdown,
@@ -242,7 +246,10 @@ def _(
     quantity_type_filter,
     source_system_filter,
     sttm_contingency_gas_empty_state_markdown,
+    sttm_contingency_gas_grain_summary_frame,
     sttm_contingency_gas_kpi_frame,
+    render_kpi_cards_html,
+    render_sttm_contingency_gas_summary_html,
 ):
     kpis = sttm_contingency_gas_kpi_frame(
         contingency_gas_load,
@@ -255,13 +262,25 @@ def _(
         kpi_view = mo.md(
             sttm_contingency_gas_empty_state_markdown(contingency_gas_load)
         )
+        summary_view = kpi_view
     else:
-        kpi_view = mo.ui.table(kpis, selection=None)
+        kpi_view = mo.Html(render_kpi_cards_html(kpis, title="Contingency gas metrics"))
+        contingency_gas_visual_summary = sttm_contingency_gas_grain_summary_frame(
+            contingency_gas_load,
+            grain_filter.value,
+            quantity_type_filter.value,
+            hub_filter.value,
+            source_system_filter.value,
+        )
+        summary_view = mo.Html(
+            render_sttm_contingency_gas_summary_html(contingency_gas_visual_summary)
+        )
 
     mo.vstack(
         [
             mo.md("## STTM Contingency Gas Summary"),
             kpi_view,
+            summary_view,
         ]
     )
     return

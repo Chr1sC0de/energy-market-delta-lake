@@ -8767,6 +8767,116 @@ def render_facility_flow_storage_status_html(
 </section>"""
 
 
+def render_bid_stack_summary_html(
+    step_summary: pl.DataFrame,
+    *,
+    title: str = "Bid step quantity and price coverage",
+) -> str:
+    """Render an escaped Bid / Offer stack visual from step summary rows."""
+    return _render_summary_bar_status_html(
+        step_summary,
+        title=title,
+        eyebrow="Bid / Offer stack",
+        value_column="total bid quantity gj",
+        label_columns=("source system", "zone", "facility", "bid step"),
+        detail_columns=("rows", "participants", "bid ids", "avg bid price"),
+        empty_detail="No Bid / Offer stack step rows are available for this view.",
+    )
+
+
+def render_sttm_contingency_gas_summary_html(
+    grain_summary: pl.DataFrame,
+    *,
+    title: str = "Contingency quantity by grain and hub",
+) -> str:
+    """Render an escaped STTM contingency gas visual from grain summary rows."""
+    return _render_summary_bar_status_html(
+        grain_summary,
+        title=title,
+        eyebrow="Contingency gas",
+        value_column="total quantity gj",
+        label_columns=("contingency grain", "quantity type", "hub"),
+        detail_columns=("rows", "gas days", "facilities", "bid/offer ids"),
+        empty_detail=(
+            "No STTM contingency gas grain rows are available for this view."
+        ),
+    )
+
+
+def render_system_notice_window_status_html(
+    notices: pl.DataFrame,
+    *,
+    title: str = "Notice criticality and window status",
+) -> str:
+    """Render an escaped notice-window visual from filtered notice rows."""
+    if notices.is_empty():
+        return render_visual_empty_state_html(
+            title=title,
+            detail="No system notices are available for the current filters.",
+            compact=True,
+        )
+
+    summary = (
+        notices.with_columns(
+            pl.when(pl.col("critical").fill_null(False))
+            .then(pl.lit("Critical"))
+            .otherwise(pl.lit("Non-critical"))
+            .alias("criticality")
+        )
+        .group_by("criticality", "window")
+        .agg(
+            pl.len().alias("notices"),
+            pl.col("source table").drop_nulls().n_unique().alias("source tables"),
+        )
+        .sort(["criticality", "window"])
+    )
+    return _render_summary_bar_status_html(
+        summary,
+        title=title,
+        eyebrow="Notice status",
+        value_column="notices",
+        label_columns=("criticality", "window"),
+        detail_columns=("source tables",),
+        empty_detail="No system notice status rows are available for this view.",
+    )
+
+
+def render_gas_quality_summary_html(
+    type_summary: pl.DataFrame,
+    *,
+    title: str = "Quality observations by type and unit",
+) -> str:
+    """Render an escaped gas quality visual from type summary rows."""
+    return _render_summary_bar_status_html(
+        type_summary,
+        title=title,
+        eyebrow="Gas quality",
+        value_column="observations",
+        label_columns=("quality type", "unit"),
+        detail_columns=("source points", "avg quantity", "latest gas date"),
+        empty_detail="No gas quality type rows are available for this view.",
+    )
+
+
+def render_heating_value_pressure_summary_html(
+    field_summary: pl.DataFrame,
+    *,
+    title: str = "Heating value and pressure field coverage",
+) -> str:
+    """Render an escaped heating value and pressure visual from field rows."""
+    return _render_summary_bar_status_html(
+        field_summary,
+        title=title,
+        eyebrow="Field coverage",
+        value_column="available rows",
+        label_columns=("field group", "field"),
+        detail_columns=("source-qualified identifiers", "latest value"),
+        empty_detail=(
+            "No heating value or SCADA pressure field rows are available for this view."
+        ),
+    )
+
+
 def plotly_theme_defaults(*, height: int = 360) -> dict[str, object]:
     """Return Plotly layout defaults compatible with the repo dashboard theme."""
     return {
@@ -21879,6 +21989,112 @@ def _render_facility_flow_storage_status_row(
     </div>
     <p>Latest source update {latest_update}</p>
 </article>"""
+
+
+def _render_summary_bar_status_html(
+    summary: pl.DataFrame,
+    *,
+    title: str,
+    eyebrow: str,
+    value_column: str,
+    label_columns: Sequence[str],
+    detail_columns: Sequence[str],
+    empty_detail: str,
+) -> str:
+    if summary.is_empty():
+        return render_visual_empty_state_html(
+            title=title,
+            detail=empty_detail,
+            compact=True,
+        )
+
+    rows = summary.to_dicts()
+    max_value = max(
+        (_number_value(row.get(value_column)) for row in rows),
+        default=0.0,
+    )
+    items = "\n".join(
+        _render_summary_bar_status_row(
+            row,
+            max_value,
+            value_column=value_column,
+            label_columns=label_columns,
+            detail_columns=detail_columns,
+        )
+        for row in rows
+    )
+    return f"""\
+<style>
+{_dashboard_visual_primitives_css()}
+</style>
+<section class="dashboard-status-visual" aria-label="{escape(title, quote=True)}">
+    <header>
+        <p class="dashboard-status-visual__eyebrow">{escape(eyebrow)}</p>
+        <h3>{escape(title)}</h3>
+    </header>
+    <div class="dashboard-status-list dashboard-status-list--dense">
+        {items}
+    </div>
+</section>"""
+
+
+def _render_summary_bar_status_row(
+    row: Mapping[str, object],
+    max_value: float,
+    *,
+    value_column: str,
+    label_columns: Sequence[str],
+    detail_columns: Sequence[str],
+) -> str:
+    label = escape(_summary_row_label(row, label_columns))
+    value = _number_value(row.get(value_column))
+    value_label = escape(_summary_row_metric_label(value_column, row.get(value_column)))
+    width = _status_bar_width(value, max_value)
+    detail = escape(_summary_row_detail(row, detail_columns))
+    return f"""\
+<article class="dashboard-status-row dashboard-status-row--coverage">
+    <div class="dashboard-status-row__heading">
+        <strong>{label}</strong>
+        <span>{value_label}</span>
+    </div>
+    <div class="dashboard-status-row__bar" aria-hidden="true">
+        <span style="width: {width:.1f}%"></span>
+    </div>
+    <p>{detail}</p>
+</article>"""
+
+
+def _summary_row_label(
+    row: Mapping[str, object],
+    label_columns: Sequence[str],
+) -> str:
+    values = [
+        _format_cell_value(row.get(column))
+        for column in label_columns
+        if _format_cell_value(row.get(column)) != ""
+    ]
+    if len(values) == 0:
+        return "Unspecified"
+    return " | ".join(values)
+
+
+def _summary_row_detail(
+    row: Mapping[str, object],
+    detail_columns: Sequence[str],
+) -> str:
+    values = [
+        f"{column}: {_format_cell_value(row.get(column))}"
+        for column in detail_columns
+        if _format_cell_value(row.get(column)) != ""
+    ]
+    if len(values) == 0:
+        return "No additional detail reported."
+    return "; ".join(values)
+
+
+def _summary_row_metric_label(column: str, value: object) -> str:
+    formatted_value = _format_cell_value(value)
+    return column if formatted_value == "" else f"{formatted_value} {column}"
 
 
 def _render_measure_status_bar(

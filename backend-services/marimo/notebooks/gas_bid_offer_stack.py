@@ -28,7 +28,9 @@ def _():
         gas_table_load_status_frame,
         gas_table_load_status_message,
         render_bid_stack_context_links,
+        render_bid_stack_summary_html,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
 
@@ -54,7 +56,9 @@ def _():
         pl,
         refresh_token_from_control,
         render_bid_stack_context_links,
+        render_bid_stack_summary_html,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
     )
 
 
@@ -230,9 +234,12 @@ def _(
     bid_stack_empty_state_markdown,
     bid_stack_kpi_frame,
     bid_stack_load,
+    bid_stack_step_summary_frame,
     facility_filter,
     mo,
     participant_filter,
+    render_bid_stack_summary_html,
+    render_kpi_cards_html,
     source_system_filter,
     zone_filter,
 ):
@@ -245,13 +252,23 @@ def _(
     )
     if kpis.is_empty():
         kpi_view = mo.md(bid_stack_empty_state_markdown(bid_stack_load))
+        summary_view = kpi_view
     else:
-        kpi_view = mo.ui.table(kpis, selection=None)
+        kpi_view = mo.Html(render_kpi_cards_html(kpis, title="Bid stack metrics"))
+        bid_stack_visual_summary = bid_stack_step_summary_frame(
+            bid_stack_load,
+            participant_filter.value,
+            facility_filter.value,
+            zone_filter.value,
+            source_system_filter.value,
+        )
+        summary_view = mo.Html(render_bid_stack_summary_html(bid_stack_visual_summary))
 
     mo.vstack(
         [
             mo.md("## Bid / Offer Stack Summary"),
             kpi_view,
+            summary_view,
         ]
     )
     return

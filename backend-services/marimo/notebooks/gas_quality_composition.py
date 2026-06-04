@@ -24,6 +24,8 @@ def _():
         gas_table_load_status_frame,
         gas_table_load_status_message,
         render_dashboard_context_panel,
+        render_gas_quality_summary_html,
+        render_kpi_cards_html,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
 
@@ -45,6 +47,8 @@ def _():
         pl,
         refresh_token_from_control,
         render_dashboard_context_panel,
+        render_gas_quality_summary_html,
+        render_kpi_cards_html,
     )
 
 
@@ -189,8 +193,11 @@ def _(
     gas_quality_empty_state_markdown,
     gas_quality_kpi_frame,
     gas_quality_load,
+    gas_quality_type_summary_frame,
     mo,
     quality_type_filter,
+    render_gas_quality_summary_html,
+    render_kpi_cards_html,
     source_point_filter,
 ):
     kpis = gas_quality_kpi_frame(
@@ -200,13 +207,23 @@ def _(
     )
     if kpis.is_empty():
         kpi_view = mo.md(gas_quality_empty_state_markdown(gas_quality_load))
+        summary_view = kpi_view
     else:
-        kpi_view = mo.ui.table(kpis, selection=None)
+        kpi_view = mo.Html(render_kpi_cards_html(kpis, title="Gas quality metrics"))
+        gas_quality_visual_summary = gas_quality_type_summary_frame(
+            gas_quality_load,
+            quality_type_filter.value,
+            source_point_filter.value,
+        )
+        summary_view = mo.Html(
+            render_gas_quality_summary_html(gas_quality_visual_summary)
+        )
 
     mo.vstack(
         [
             mo.md("## Observation Summary"),
             kpi_view,
+            summary_view,
         ]
     )
     return
