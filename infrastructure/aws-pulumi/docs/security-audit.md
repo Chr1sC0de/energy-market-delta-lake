@@ -121,6 +121,11 @@ live proof for that parameter-type change.
 - Mounted filesystem capacity on the Postgres root EBS volume remains an
   operator-verified boundary after root-volume resize. The deployed tests check
   EBS metadata only until a read-only host-level check is added.
+- `scripts/run-integration-tests` treats the full deployed AWS workflow as a
+  real-AWS boundary. It rejects non-empty `AWS_ENDPOINT_URL` and
+  `AWS_ENDPOINT_URL_*` variables before command discovery or credential checks,
+  and the failure lists only variable names so LocalStack endpoint values and
+  credentials are not printed.
 
 ## Related docs
 
@@ -170,6 +175,7 @@ live proof for that parameter-type change.
   - `infrastructure/aws-pulumi/tests/deployed/test_integration.py`
   - `infrastructure/aws-pulumi/tests/unit/test_configs.py`
   - `infrastructure/aws-pulumi/tests/unit/test_ecs_rollouts.py`
+  - `infrastructure/aws-pulumi/tests/unit/test_run_integration_tests_script.py`
 - `sync.scope`: `security, deployment`
 - `sync.qa`:
   - `git diff --name-only`
