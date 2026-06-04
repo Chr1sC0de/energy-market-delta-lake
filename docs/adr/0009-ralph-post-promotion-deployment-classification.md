@@ -79,7 +79,10 @@ manifest. `no_deployment` skips command execution. `user_code_redeploy` runs
 `full_deployed_workflow` tier runs
 `infrastructure/aws-pulumi/scripts/run-integration-tests --with-idempotency` so
 the log carries both **Deployed test** evidence and full-tier idempotency
-evidence.
+evidence. That command is a real-AWS boundary: it rejects non-empty
+`AWS_ENDPOINT_URL` and `AWS_ENDPOINT_URL_*` environment variables before any
+AWS CLI, Pulumi, `uv`, `prek`, ECS rollout, deployed pytest, or idempotency
+preview step can inherit a LocalStack endpoint override.
 
 The **AWS/Pulumi credential boundary** remains in the operator/Ralph outer loop:
 deployment commands may run only when the checkpointed Operator path or another

@@ -375,6 +375,13 @@ to reach `COMPLETED` before starting the Deployed tests:
 AWS_DEFAULT_REGION=ap-southeast-2 scripts/run-integration-tests --with-idempotency
 ```
 
+The full deployed workflow always targets real AWS. Before command discovery or
+credential checks, `scripts/run-integration-tests` rejects non-empty
+`AWS_ENDPOINT_URL` or `AWS_ENDPOINT_URL_*` variables so LocalStack endpoint
+overrides from local **Integration test** shells cannot leak into the deployed
+AWS **Deployed test** command. The error lists only variable names, not endpoint
+values or credentials.
+
 The rollout-completion poll is bounded by `ECS_ROLLOUT_TIMEOUT_SECONDS`
 (default `900`) and `ECS_ROLLOUT_POLL_SECONDS` (default `15`). Timeout or
 failed-rollout diagnostics print each required service name, primary rollout
@@ -509,6 +516,7 @@ system's services and Dagster workflows.
   - `infrastructure/aws-pulumi/tests/deployed/test_integration.py`
   - `infrastructure/aws-pulumi/tests/unit/test_dagster_core_deployment.py`
   - `infrastructure/aws-pulumi/tests/unit/test_ecs_rollouts.py`
+  - `infrastructure/aws-pulumi/tests/unit/test_run_integration_tests_script.py`
   - `infrastructure/aws-pulumi/Pulumi.dev-ausenergymarket.yaml`
   - `backend-services/dagster-core/Dockerfile`
   - `backend-services/dagster-core/dagster.aws.ec2-run-workers.prototype.yaml`

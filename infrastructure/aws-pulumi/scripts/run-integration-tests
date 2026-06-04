@@ -9,6 +9,29 @@ RUN_UP=1
 RUN_IDEMPOTENCY=0
 HAS_AWS_CLI=0
 
+reject_aws_endpoint_overrides() {
+	local -a override_names=()
+	local name
+
+	for name in "${!AWS_ENDPOINT_URL@}"; do
+		if [[ -n "${!name}" ]]; then
+			override_names+=("$name")
+		fi
+	done
+
+	if [[ "${#override_names[@]}" -eq 0 ]]; then
+		return
+	fi
+
+	mapfile -t override_names < <(printf '%s\n' "${override_names[@]}" | sort)
+
+	printf 'ERROR: deployed AWS workflow requires real AWS endpoints.\n' >&2
+	printf 'ERROR: remove AWS endpoint override environment variables before retrying this Deployed test command.\n' >&2
+	printf 'ERROR: rejected AWS endpoint override variables:\n' >&2
+	printf '  %s\n' "${override_names[@]}" >&2
+	exit 2
+}
+
 usage() {
 	printf 'Usage: %s [--skip-up] [--with-idempotency] [--stack STACK]\n' "$0"
 	printf '\n'
@@ -50,6 +73,8 @@ while [[ $# -gt 0 ]]; do
 		;;
 	esac
 done
+
+reject_aws_endpoint_overrides
 
 require_command() {
 	if ! command -v "$1" >/dev/null 2>&1; then
