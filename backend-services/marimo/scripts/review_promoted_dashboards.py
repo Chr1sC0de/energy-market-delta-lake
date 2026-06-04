@@ -294,6 +294,18 @@ VIEWPORTS: tuple[ViewportSpec, ...] = (
 
 REVIEW_SPECS: tuple[DashboardReviewSpec, ...] = (
     DashboardReviewSpec(
+        route="/marimo/sample_energy_market/",
+        required_texts=(
+            "Local Gas Market Overview",
+            "Dashboard brief",
+            "Dashboard intent",
+            "Gas Model Outputs",
+            "Prices",
+            "Source Coverage",
+        ),
+        control_probes=(),
+    ),
+    DashboardReviewSpec(
         route="/marimo/data_readiness_overview/",
         required_texts=(
             "Data Readiness Overview",

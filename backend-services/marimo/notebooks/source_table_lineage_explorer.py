@@ -18,6 +18,7 @@ def _():
         gas_table_load_status_frame,
         gas_table_load_status_message,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         source_coverage_table_specs_from_catalogue,
         source_coverage_table_specs,
     )
@@ -51,6 +52,7 @@ def _():
         pl,
         refresh_token_from_control,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_source_lineage_explorer_html,
         source_coverage_table_specs_from_catalogue,
         source_coverage_table_specs,
@@ -211,11 +213,16 @@ def _(
 
 
 @app.cell
-def _(lineage_kpis, mo):
+def _(lineage_kpis, mo, render_kpi_cards_html):
     mo.vstack(
         [
             mo.md("## Lineage Health"),
-            mo.ui.table(lineage_kpis, selection=None),
+            mo.Html(
+                render_kpi_cards_html(
+                    lineage_kpis,
+                    title="Source lineage health KPIs",
+                )
+            ),
         ]
     )
     return

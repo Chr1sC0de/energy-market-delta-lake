@@ -15,6 +15,7 @@ def _():
         gas_table_load_status_frame,
         gas_table_load_status_message,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         table_load_by_name,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
@@ -27,6 +28,7 @@ def _():
         mo,
         pl,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         refresh_token_from_control,
         table_load_by_name,
     )
@@ -229,6 +231,43 @@ def _(pl):  # noqa: C901
             )
         return pl.DataFrame(rows)
 
+    def sample_summary_kpi_frame(summary):
+        if summary.is_empty():
+            return pl.DataFrame(
+                schema={"metric": pl.String, "value": pl.String, "detail": pl.String}
+            )
+
+        available = summary.filter(pl.col("status") == "Available")
+        latest_ingests = [
+            value
+            for value in summary.get_column("latest ingest").drop_nulls().to_list()
+            if str(value)
+        ]
+        return pl.DataFrame(
+            [
+                {
+                    "metric": "Available gas_model outputs",
+                    "value": f"{available.height:,}",
+                    "detail": f"{summary.height:,} configured dashboard input tables checked",
+                },
+                {
+                    "metric": "Loaded rows",
+                    "value": f"{int(summary.get_column('rows').sum() or 0):,}",
+                    "detail": "Rows available across the loaded sample tables",
+                },
+                {
+                    "metric": "Represented source tables",
+                    "value": f"{int(summary.get_column('source tables').sum() or 0):,}",
+                    "detail": "Source-table references across loaded dashboard inputs",
+                },
+                {
+                    "metric": "Latest ingest",
+                    "value": max(latest_ingests) if latest_ingests else "unknown",
+                    "detail": "Maximum ingested_timestamp across loaded tables",
+                },
+            ]
+        )
+
     def select_preview(load, limit=50):
         dataframe = load.dataframe
         if dataframe is None or dataframe.is_empty():
@@ -263,28 +302,29 @@ def _(pl):  # noqa: C901
         then refresh this notebook.
         """
 
-    def section_stack(mo, title, load, description):
+    def section_stack(mo, title, load, description, summary_view=None):
         if load is None or not load.available:
             table_names = [] if load is None else [load.spec.table_name]
             return mo.md(empty_state(title, table_names))
 
-        return mo.vstack(
-            [
-                mo.md(
-                    f"""
-                    ## {title}
+        elements = [
+            mo.md(
+                f"""
+                ## {title}
 
-                    {description}
+                {description}
 
-                    - Rows: `{load.dataframe.height}`
-                    - Source tables: `{source_count(load)}`
-                    - Date range: `{date_range(load)}`
-                    - Latest ingest: `{latest_ingest(load) or "unknown"}`
-                    """
-                ),
-                mo.ui.table(select_preview(load)),
-            ]
-        )
+                - Rows: `{load.dataframe.height}`
+                - Source tables: `{source_count(load)}`
+                - Date range: `{date_range(load)}`
+                - Latest ingest: `{latest_ingest(load) or "unknown"}`
+                """
+            )
+        ]
+        if summary_view is not None:
+            elements.append(summary_view)
+        elements.append(mo.ui.table(select_preview(load)))
+        return mo.vstack(elements)
 
     def price_summary_frame(load):
         if load is None:
@@ -320,6 +360,47 @@ def _(pl):  # noqa: C901
             dataframe.group_by(groups).agg(aggregations).sort("rows", descending=True)
         )
 
+    def price_kpi_frame(summary):
+        if summary.is_empty():
+            return pl.DataFrame(
+                schema={"metric": pl.String, "value": pl.String, "detail": pl.String}
+            )
+
+        price_measure_columns = [
+            column for column in summary.columns if column.startswith("avg ")
+        ]
+        rows = [
+            {
+                "metric": "Price groups",
+                "value": f"{summary.height:,}",
+                "detail": "Source-system and price-type groups in the loaded sample",
+            },
+            {
+                "metric": "Loaded price rows",
+                "value": f"{int(summary.get_column('rows').sum() or 0):,}",
+                "detail": "Market-price rows represented by grouped summaries",
+            },
+        ]
+        if "latest gas date" in summary.columns:
+            rows.append(
+                {
+                    "metric": "Latest gas date",
+                    "value": str(summary.get_column("latest gas date").max()),
+                    "detail": "Maximum gas_date across loaded market-price rows",
+                }
+            )
+        rows.append(
+            {
+                "metric": "Price measures",
+                "value": f"{len(price_measure_columns):,}",
+                "detail": ", ".join(
+                    column.removeprefix("avg ") for column in price_measure_columns
+                )
+                or "No price measure columns",
+            }
+        )
+        return pl.DataFrame(rows)
+
     def scheduled_quantity_summary_frame(load):
         if load is None:
             return pl.DataFrame()
@@ -345,6 +426,43 @@ def _(pl):  # noqa: C901
         return (
             dataframe.group_by(groups).agg(aggregations).sort("rows", descending=True)
         )
+
+    def scheduled_quantity_kpi_frame(summary):
+        if summary.is_empty():
+            return pl.DataFrame(
+                schema={"metric": pl.String, "value": pl.String, "detail": pl.String}
+            )
+
+        rows = [
+            {
+                "metric": "Quantity groups",
+                "value": f"{summary.height:,}",
+                "detail": "Source-system and quantity-type groups in the loaded sample",
+            },
+            {
+                "metric": "Loaded quantity rows",
+                "value": f"{int(summary.get_column('rows').sum() or 0):,}",
+                "detail": "Scheduled-quantity rows represented by grouped summaries",
+            },
+        ]
+        if "total GJ" in summary.columns:
+            total_gj = summary.get_column("total GJ").sum()
+            rows.append(
+                {
+                    "metric": "Total scheduled quantity",
+                    "value": f"{float(total_gj or 0):,.2f}",
+                    "detail": "Sum of quantity_gj in loaded sample rows",
+                }
+            )
+        if "latest gas date" in summary.columns:
+            rows.append(
+                {
+                    "metric": "Latest gas date",
+                    "value": str(summary.get_column("latest gas date").max()),
+                    "detail": "Maximum gas_date across loaded scheduled quantities",
+                }
+            )
+        return pl.DataFrame(rows)
 
     def metric_total(dataframe, column):
         if dataframe is None or column not in dataframe.columns:
@@ -383,6 +501,39 @@ def _(pl):  # noqa: C901
 
         return pl.DataFrame(rows)
 
+    def flow_capacity_kpi_frame(summary):
+        if summary.is_empty():
+            return pl.DataFrame(
+                schema={"metric": pl.String, "value": pl.String, "detail": pl.String}
+            )
+
+        available = summary.filter(pl.col("status") == "Available")
+        totals = summary.get_column("total").drop_nulls()
+        return pl.DataFrame(
+            [
+                {
+                    "metric": "Available flow/capacity assets",
+                    "value": f"{available.height:,}",
+                    "detail": f"{summary.height:,} configured flow and capacity summary assets checked",
+                },
+                {
+                    "metric": "Loaded flow/capacity rows",
+                    "value": f"{int(summary.get_column('rows').sum() or 0):,}",
+                    "detail": "Rows available across flow, storage, linepack, and capacity tables",
+                },
+                {
+                    "metric": "Metric totals available",
+                    "value": f"{totals.len():,}",
+                    "detail": "Assets with a non-null operational metric total",
+                },
+                {
+                    "metric": "Metric columns",
+                    "value": f"{summary.get_column('metric').n_unique():,}",
+                    "detail": "Distinct flow, storage, linepack, and capacity measures inspected",
+                },
+            ]
+        )
+
     def source_coverage_frame(loads):
         rows = []
         for load in loads:
@@ -407,9 +558,13 @@ def _(pl):  # noqa: C901
 
     return (
         empty_state,
+        flow_capacity_kpi_frame,
         flow_capacity_summary_frame,
+        price_kpi_frame,
         price_summary_frame,
+        sample_summary_kpi_frame,
         scheduled_quantity_summary_frame,
+        scheduled_quantity_kpi_frame,
         section_stack,
         select_preview,
         source_coverage_frame,
@@ -418,8 +573,11 @@ def _(pl):  # noqa: C901
 
 
 @app.cell
-def _(loaded_tables, mo, summary_frame):
+def _(
+    loaded_tables, mo, render_kpi_cards_html, sample_summary_kpi_frame, summary_frame
+):
     table_summary = summary_frame(loaded_tables)
+    table_summary_kpis = sample_summary_kpi_frame(table_summary)
 
     mo.vstack(
         [
@@ -431,19 +589,45 @@ def _(loaded_tables, mo, summary_frame):
                 `silver/gas_model`.
                 """
             ),
-            mo.ui.table(table_summary),
+            mo.Html(
+                render_kpi_cards_html(
+                    table_summary_kpis,
+                    title="Gas model output KPIs",
+                )
+            ),
         ]
     )
     return
 
 
 @app.cell
-def _(loaded_tables, mo, price_summary_frame, section_stack, table_load_by_name):
+def _(
+    loaded_tables,
+    mo,
+    price_kpi_frame,
+    price_summary_frame,
+    render_kpi_cards_html,
+    section_stack,
+    table_load_by_name,
+):
     price_load = table_load_by_name(
         loaded_tables,
         "silver_gas_fact_market_price",
     )
     price_summary = price_summary_frame(price_load)
+    price_summary_view = None
+    if not price_summary.is_empty():
+        price_summary_view = mo.vstack(
+            [
+                mo.md("### Price Summary"),
+                mo.Html(
+                    render_kpi_cards_html(
+                        price_kpi_frame(price_summary),
+                        title="Price summary KPIs",
+                    )
+                ),
+            ]
+        )
 
     elements = [
         section_stack(
@@ -451,11 +635,9 @@ def _(loaded_tables, mo, price_summary_frame, section_stack, table_load_by_name)
             "Prices",
             price_load,
             "Latest market-price rows across VICGAS and STTM sources.",
+            summary_view=price_summary_view,
         )
     ]
-    if not price_summary.is_empty():
-        elements.append(mo.md("### Price Summary"))
-        elements.append(mo.ui.table(price_summary))
 
     mo.vstack(elements)
     return
@@ -466,6 +648,8 @@ def _(
     empty_state,
     loaded_tables,
     mo,
+    render_kpi_cards_html,
+    scheduled_quantity_kpi_frame,
     scheduled_quantity_summary_frame,
     select_preview,
     table_load_by_name,
@@ -486,10 +670,17 @@ def _(
     if scheduled_quantity_load is not None and scheduled_quantity_load.available:
         quantity_summary = scheduled_quantity_summary_frame(scheduled_quantity_load)
         schedule_elements.append(mo.md("### Scheduled Quantities"))
-        schedule_elements.append(mo.ui.table(select_preview(scheduled_quantity_load)))
         if not quantity_summary.is_empty():
             schedule_elements.append(mo.md("### Quantity Summary"))
-            schedule_elements.append(mo.ui.table(quantity_summary))
+            schedule_elements.append(
+                mo.Html(
+                    render_kpi_cards_html(
+                        scheduled_quantity_kpi_frame(quantity_summary),
+                        title="Scheduled quantity summary KPIs",
+                    )
+                )
+            )
+        schedule_elements.append(mo.ui.table(select_preview(scheduled_quantity_load)))
 
     if len(schedule_elements) == 1:
         schedule_elements = [
@@ -509,7 +700,15 @@ def _(
 
 
 @app.cell
-def _(empty_state, flow_capacity_summary_frame, loaded_tables, mo, select_preview):
+def _(
+    empty_state,
+    flow_capacity_kpi_frame,
+    flow_capacity_summary_frame,
+    loaded_tables,
+    mo,
+    render_kpi_cards_html,
+    select_preview,
+):
     flow_capacity_loads = [
         load for load in loaded_tables if load.spec.section == "Flow and capacity"
     ]
@@ -526,7 +725,14 @@ def _(empty_state, flow_capacity_summary_frame, loaded_tables, mo, select_previe
     ]
 
     if not flow_capacity_summary.is_empty():
-        flow_capacity_elements.append(mo.ui.table(flow_capacity_summary))
+        flow_capacity_elements.append(
+            mo.Html(
+                render_kpi_cards_html(
+                    flow_capacity_kpi_frame(flow_capacity_summary),
+                    title="Flow and capacity summary KPIs",
+                )
+            )
+        )
 
     for load in flow_capacity_loads:
         if load.available:
