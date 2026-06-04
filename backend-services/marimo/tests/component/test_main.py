@@ -26,6 +26,7 @@ from marimoserver.dashboard_registry import (
     DashboardRegistryEntry,
     DashboardStatus,
     DashboardTaskGroup,
+    SourceChunkReference,
     dashboard_registry,
 )
 from marimoserver.main import (
@@ -66,6 +67,13 @@ class _ConceptCardParser(HTMLParser):
             "href": attributes.get("href"),
             "status": attributes.get("data-status"),
             "task_group": attributes.get("data-task-group"),
+            "route": attributes.get("data-route"),
+            "audiences": attributes.get("data-audiences"),
+            "backing_assets": attributes.get("data-backing-assets"),
+            "market_context_ids": attributes.get("data-market-context-ids"),
+            "source_chunk_ids": attributes.get("data-source-chunk-ids"),
+            "evidence_counts": attributes.get("data-evidence-counts"),
+            "tabindex": attributes.get("tabindex"),
         }
 
 
@@ -342,12 +350,11 @@ class TestIndexPage:
 
             assert entry.notebook_name in app_names
             assert entry.notebook_route is not None
-            assert cards[entry.concept_id] == {
-                "tag": "a",
-                "href": entry.notebook_route,
-                "status": "available",
-                "task_group": entry.task_group.value,
-            }
+            card = cards[entry.concept_id]
+            assert card["tag"] == "a"
+            assert card["href"] == entry.notebook_route
+            assert card["status"] == "available"
+            assert card["task_group"] == entry.task_group.value
 
     def test_index_renders_planned_cards_without_notebook_links(self) -> None:
         response = _get("/marimo")
@@ -358,12 +365,12 @@ class TestIndexPage:
                 continue
 
             assert entry.notebook_route is None
-            assert cards[entry.concept_id] == {
-                "tag": "article",
-                "href": None,
-                "status": "planned",
-                "task_group": entry.task_group.value,
-            }
+            card = cards[entry.concept_id]
+            assert card["tag"] == "article"
+            assert card["href"] is None
+            assert card["status"] == "planned"
+            assert card["task_group"] == entry.task_group.value
+            assert card["tabindex"] == "0"
 
         assert "Planned dashboard" in response.text
         assert 'href="/marimo/capacity-context/"' not in response.text
@@ -380,12 +387,12 @@ class TestIndexPage:
         )
 
         assert overview.notebook_route is not None
-        assert cards[overview.concept_id] == {
-            "tag": "article",
-            "href": None,
-            "status": "available",
-            "task_group": overview.task_group.value,
-        }
+        card = cards[overview.concept_id]
+        assert card["tag"] == "article"
+        assert card["href"] is None
+        assert card["status"] == "available"
+        assert card["task_group"] == overview.task_group.value
+        assert card["tabindex"] == "0"
         assert f'href="{overview.notebook_route}"' not in html
         assert "Not mounted" in html
         assert "Notebook not present in this image" in html
@@ -426,6 +433,65 @@ class TestIndexPage:
         assert 'data-task-group="market-activity"' in response.text
         assert 'data-task-group="gas-operations"' in response.text
         assert 'data-task-group="concept-evidence"' in response.text
+
+    def test_index_cards_show_compact_operational_evidence_counts(self) -> None:
+        response = _get("/marimo")
+
+        assert 'aria-label="Evidence counts"' in response.text
+        assert "backing assets</li>" in response.text
+        assert "Market context ID" in response.text
+        assert "source chunk" in response.text
+        assert 'class="audience-tag"' not in response.text
+        assert 'class="asset-list"' not in response.text
+        assert 'class="asset-pill"' not in response.text
+        assert "Open notebook" in response.text
+        assert "Planned dashboard" in response.text
+
+    def test_index_cards_embed_details_panel_metadata(self) -> None:
+        response = _get("/marimo")
+        cards = _concept_cards(response.text)
+        card = cards["gas-market-overview"]
+
+        assert card["route"] == "/marimo/sample_energy_market/"
+        assert "Operator" in (card["audiences"] or "")
+        assert "silver.gas_model" in (card["backing_assets"] or "")
+        assert "glossary:index" in (card["market_context_ids"] or "")
+        assert "chunk-" in (card["source_chunk_ids"] or "")
+        assert "backing asset" in (card["evidence_counts"] or "")
+        assert "Market context ID" in (card["evidence_counts"] or "")
+        assert "source chunk" in (card["evidence_counts"] or "")
+
+    def test_index_spotlight_escapes_card_metadata_before_inner_html(self) -> None:
+        entry = DashboardRegistryEntry(
+            concept_id="unsafe-concept",
+            title="<script>alert('title')</script>",
+            description="Use <b>unsafe</b> registry text.",
+            audiences=(DashboardAudience.OPERATOR,),
+            task_group=DashboardTaskGroup.CONCEPT_EVIDENCE,
+            status=DashboardStatus.AVAILABLE,
+            notebook_name="unsafe_notebook",
+            backing_assets=("silver.gas_model.<unsafe_asset>&name",),
+            market_context_ids=("glossary:<unsafe>&context",),
+            source_chunks=(SourceChunkReference("chunk-<unsafe>&id"),),
+        )
+
+        card_html = main_module._render_dashboard_card(
+            entry,
+            mounted_notebook_names={"unsafe_notebook"},
+        )
+
+        assert "<script>" not in card_html
+        assert "<b>" not in card_html
+        assert "silver.gas_model.<unsafe_asset>&name" not in card_html
+        assert "&lt;script&gt;alert(&#x27;title&#x27;)&lt;/script&gt;" in card_html
+        assert "silver.gas_model.&lt;unsafe_asset&gt;&amp;name" in card_html
+        assert "glossary:&lt;unsafe&gt;&amp;context" in card_html
+        assert "chunk-&lt;unsafe&gt;&amp;id" in card_html
+
+        response_text = _get("/marimo").text
+        assert "const escapeHtml = " in response_text
+        assert "<h2>${escapeHtml(title)}</h2>" in response_text
+        assert 'card.querySelectorAll(".asset-pill")' not in response_text
 
     def test_index_renders_available_task_sections_before_roadmap(self) -> None:
         response = _get("/marimo")

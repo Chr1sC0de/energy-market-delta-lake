@@ -63,7 +63,10 @@ The dashboard app in [src/marimoserver/main.py](src/marimoserver/main.py):
 - serves a concept gallery hub at `/marimo` for registry concepts, with
   available dashboards grouped first by registry task group, a compact Roadmap
   section for planned concepts, search, audience filters, summary counts, and
-  route spotlight context
+  route spotlight context. Gallery cards stay operational: title, concise job
+  text, status/action, section label, and compact evidence counts remain on
+  the card, while route, audience, backing asset, Market context ID, and source
+  chunk details move into the focus and hover details panel.
 - serves the code-local dashboard roadmap registry at
   `/marimo/dashboard-registry.json`
 - links the Caddy-served shared light theme at `/theme.css` for the index and
@@ -168,6 +171,14 @@ come from each entry's explicit `task_group` registry field rather than keyword
 inference. Available entries link only when their backing notebook is mounted in
 the current image. Planned entries move below those sections into a compact
 Roadmap section and do not emit notebook links.
+
+Each gallery card keeps its visible surface compact: dashboard title, short job
+text, status/action, task-section label, and counts for backing assets, Market
+context IDs, and source chunks. Detailed registry metadata is embedded as
+escaped static HTML attributes and rendered into the route spotlight/details
+panel on card focus or hover. That panel shows the route, section label,
+status, audiences, backing assets, Market context IDs, source chunk IDs, and
+evidence counts without adding runtime registry reads or auto-refresh timers.
 
 The same registry is served as payload version 2 JSON from
 `/marimo/dashboard-registry.json`. The payload includes top-level ordered
@@ -1267,7 +1278,9 @@ Interactive Map `Summary` Plotly iframe output without changing the notebook
 controls, data reads, Plotly traces, or dashboard routes.
 
 With the local backend stack running, open the Marimo concept gallery through
-Caddy and choose an available card such as `data_readiness_overview`,
+Caddy, exercise search and audience filters, focus or hover several cards to
+review the route spotlight/details panel, and choose an available card such as
+`data_readiness_overview`.
 `dagster_asset_catalogue_status`, `materialization_freshness`,
 `s3_bucket_health`, `glossary_explorer`, `concept_to_asset_explorer`,
 `citation_chain_explorer`, `table_explorer`, `source_coverage_matrix`,

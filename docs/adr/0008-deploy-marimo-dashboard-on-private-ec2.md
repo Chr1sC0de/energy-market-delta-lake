@@ -43,7 +43,11 @@ The `/marimo` entry route renders the same registry as a concept gallery hub.
 Available dashboard cards render first in the ordered Data Health, Market
 Activity, Gas Operations, and Concept Evidence task sections, using each
 entry's explicit registry task group. Planned dashboard cards stay visible
-below those sections in a compact Roadmap section without notebook links.
+below those sections in a compact Roadmap section without notebook links. Card
+content is intentionally compact: title, job text, status/action, section
+label, and evidence counts stay visible, while route, audience, backing asset,
+Market context ID, and source chunk details render in the route
+spotlight/details panel on focus or hover.
 Registry-only notebooks such as the glossary explorer can browse Marimo-local
 Market context metadata without adding generated-file reads at runtime.
 
