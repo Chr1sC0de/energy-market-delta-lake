@@ -530,7 +530,7 @@ class TestCustomLoginEndpoint:
         )
 
         assert response.status_code == 200
-        assert response.json() == {"redirect": "/marimo"}
+        assert response.json() == {"redirect_to": "/marimo"}
         expected_secret_hash = main.compute_secret_hash("user@example.com")
         authenticate.assert_called_once_with(
             identifier="user@example.com",
@@ -581,7 +581,7 @@ class TestCustomLoginEndpoint:
         )
 
         assert response.status_code == 200
-        assert response.json() == {"redirect": "/dagster-webserver/admin"}
+        assert response.json() == {"redirect_to": "/dagster-webserver/admin"}
 
     def test_failed_credentials_returns_generic_error_and_no_session(
         self, mocker: MockerFixture
@@ -765,7 +765,7 @@ class TestCustomLoginEndpoint:
         )
 
         assert response.status_code == 200
-        assert response.json() == {"redirect": next_path}
+        assert response.json() == {"redirect_to": next_path}
 
     @pytest.mark.parametrize(
         "next_path",
@@ -816,7 +816,7 @@ class TestCustomLogoutEndpoint:
         response = client.post(self.URL, headers=headers)
 
         assert response.status_code == 200
-        assert response.json() == {"redirect": "/"}
+        assert response.json() == {"redirect_to": "/"}
         assert session_id not in main.AUTH_SESSIONS
         cookie = SimpleCookie()
         cookie.load(response.headers["set-cookie"])

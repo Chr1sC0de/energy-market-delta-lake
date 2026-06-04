@@ -46,7 +46,9 @@ and optional `next`. It rejects cross-origin `Origin` or `Referer` headers,
 computes Cognito `SECRET_HASH` server-side, and stores only server-side auth
 state behind the opaque browser session id. `next` must resolve to `/`,
 `/dagster-webserver/admin`, `/dagster-webserver/admin/...`, `/marimo`, or
-`/marimo/...`.
+`/marimo/...`. Successful login and logout responses return the safe local
+redirect path in `redirect_to`, which is the public contract consumed by the
+Caddy `/login` page.
 
 The local-only `marimo-codex-workspace` service is not routed through this auth
 service. It binds to `127.0.0.1:2719` for local research and remains outside

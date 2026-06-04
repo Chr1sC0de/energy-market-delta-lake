@@ -474,14 +474,14 @@ async def auth_login(request: Request) -> JSONResponse:
         identifier=identifier,
         authentication_result=authentication_result,
     )
-    return JSONResponse(status_code=HTTP_200_OK, content={"redirect": redirect_path})
+    return JSONResponse(status_code=HTTP_200_OK, content={"redirect_to": redirect_path})
 
 
 @router.post("/logout")
 async def logout(request: Request) -> JSONResponse:
     """Clear the opaque auth session and return the default local redirect."""
     clear_session(request.session)
-    return JSONResponse(status_code=HTTP_200_OK, content={"redirect": "/"})
+    return JSONResponse(status_code=HTTP_200_OK, content={"redirect_to": "/"})
 
 
 # ---------------------------------------------------------------------------
