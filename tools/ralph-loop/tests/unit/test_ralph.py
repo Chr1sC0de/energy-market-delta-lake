@@ -204,6 +204,109 @@ No blocking functional findings.
 Credential exposure remains until the repair removes the echo.
 """
 
+ISSUE_COMPLETION_REVIEW_DEPLOYMENT_EVIDENCE_FAIL_MARKDOWN = """# Issue completion review
+
+## Review result
+
+fail
+
+## Findings
+
+- Insufficient QA evidence for the deployable-path review trigger. The deployment
+  classifier recommends the full deployed AWS workflow from the AWS Pulumi
+  Subproject: `infrastructure/aws-pulumi/scripts/run-integration-tests
+  --with-idempotency`. The provided QA evidence includes Marimo Component test,
+  Marimo Commit check, and root Commit check only; no full deployed workflow log
+  is present in the run directory.
+
+## Security review
+
+No blocking security findings.
+
+## Residual risk
+
+The implementation appears to satisfy the functional acceptance criteria. The
+remaining evidence belongs to the post-Promotion deployed workflow.
+"""
+
+ISSUE_COMPLETION_REVIEW_OUT_OF_SCOPE_FAIL_MARKDOWN = """# Issue completion review
+
+## Review result
+
+fail
+
+## Findings
+
+- Follow-up outside the current issue: add another dashboard polish pass for
+  a neighbouring route.
+
+## Security review
+
+No blocking security findings.
+
+## Residual risk
+
+The current issue acceptance criteria are satisfied.
+"""
+
+ISSUE_COMPLETION_REVIEW_MIXED_DEPLOYMENT_FAIL_MARKDOWN = """# Issue completion review
+
+## Review result
+
+fail
+
+## Findings
+
+- Insufficient QA evidence for the deployable-path review trigger because no
+  full deployed AWS workflow log is present.
+- `backend-services/marimo/notebooks/source_coverage_matrix.py` does not satisfy
+  the requested KPI card acceptance criteria.
+
+## Security review
+
+No blocking security findings.
+
+## Residual risk
+
+The issue would be integrated incomplete.
+"""
+
+ISSUE_COMPLETION_REVIEW_BROWSER_EVIDENCE_FAIL_MARKDOWN = """# Issue completion review
+
+## Review result
+
+fail
+
+## Findings
+
+- Missing required Playwright/browser development-review evidence for curated
+  Marimo dashboard changes. The handoff must record pages opened, desktop and
+  narrow viewports reviewed, controls exercised, and visual/interaction fixes
+  when local browser review is available.
+
+## Security review
+
+No blocking security findings.
+
+## Residual risk
+
+The code changes appear to satisfy the functional acceptance criteria.
+"""
+
+ISSUE_COMPLETION_REVIEW_BROWSER_REPAIR_EVIDENCE = """
+Repaired the completion-review finding by running the required Marimo browser review.
+
+Browser evidence:
+- Ran `uv run --with playwright python scripts/review_promoted_dashboards.py`
+- Reviewed `/marimo/source_coverage_matrix/`,
+  `/marimo/source_table_lineage_explorer/`, and
+  `/marimo/sample_energy_market/`
+- Covered both desktop `1440x1100` and narrow `390x900`
+- Exercised controls: refresh data run button, source-system filter, coverage-state filter
+- Verified no visible traceback text
+- Visual check found no interaction or layout fixes needed
+"""
+
 REVIEW_PACKAGE_HTML = """<!doctype html>
 <html>
 <head><meta charset="utf-8"><title>Review package for issue #42</title></head>
@@ -622,6 +725,7 @@ class FakeRunner:
         | None = None,
         fail_post_promotion_review: bool = False,
         issue_completion_review_markdowns: list[str] | None = None,
+        issue_completion_review_repair_outputs: list[str] | None = None,
         review_package_html: str = REVIEW_PACKAGE_HTML,
         fail_review_package: bool = False,
         fail_marimo_review_media: bool = False,
@@ -644,6 +748,9 @@ class FakeRunner:
         self.fail_command_attempts = fail_command_attempts or {}
         self.fail_post_promotion_review = fail_post_promotion_review
         self.issue_completion_review_markdowns = issue_completion_review_markdowns or []
+        self.issue_completion_review_repair_outputs = (
+            issue_completion_review_repair_outputs or []
+        )
         self.review_package_html = review_package_html
         self.fail_review_package = fail_review_package
         self.fail_marimo_review_media = fail_marimo_review_media
@@ -917,7 +1024,14 @@ class FakeRunner:
                 "Repair GitHub issue" in input_text
                 and "Issue completion review" in input_text
             ):
-                return ralph.CompletedCommand(stdout="", stderr="")
+                output = (
+                    self.issue_completion_review_repair_outputs.pop(0)
+                    if self.issue_completion_review_repair_outputs
+                    else ""
+                )
+                if log_path is not None and output:
+                    log_path.write_text(output, encoding="utf-8")
+                return ralph.CompletedCommand(stdout=output, stderr="")
             if "Generate a Review package" in input_text:
                 if self.fail_review_package:
                     raise ralph.CommandFailure(
@@ -1256,6 +1370,17 @@ def implementation_attempt_context(
     )
     access_plan = ralph.issue_implementation_access_plan(issue)
     return worktree_path, run_dir, manifest, access_plan
+
+
+def passed_qa_result(tmp_path: Path) -> ralph.QAResult:
+    return ralph.QAResult(
+        command=ralph.QACommand(
+            args=("prek", "run", "-a"),
+            cwd=tmp_path,
+            name="root Commit check",
+        ),
+        log_path=tmp_path / "qa.log",
+    )
 
 
 def deploy_repair_test_context(
@@ -3444,6 +3569,9 @@ class RalphHelperTests(unittest.TestCase):
 
         self.assertIn("- `README.md`\n- `docs/agents/ralph-loop.md`", prompt)
         self.assertNotIn("Total changed files", prompt)
+        self.assertIn("Deployment evidence boundary", prompt)
+        self.assertIn("post-Promotion deployment logs", prompt)
+        self.assertIn("Scope boundary", prompt)
 
     def test_issue_completion_review_prompt_includes_redacted_diff_evidence(
         self,
@@ -14417,6 +14545,268 @@ Build it.
         self.assertEqual(
             [attempt["attempt"] for attempt in manifest["codex_attempts"]],
             [1, 2],
+        )
+
+    def test_deployment_evidence_only_review_failure_is_deferred(self) -> None:
+        changed_file = "backend-services/marimo/notebooks/source_coverage_matrix.py"
+        runner = FakeRunner(
+            issue_completion_review_markdowns=[
+                ISSUE_COMPLETION_REVIEW_DEPLOYMENT_EVIDENCE_FAIL_MARKDOWN
+            ],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            worktree_path, run_dir, manifest, access_plan = (
+                implementation_attempt_context(tmp_path, loop, issue)
+            )
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+
+            changed_files, qa_results = loop._run_issue_completion_review_with_repair(
+                issue,
+                delivery_plan=delivery_plan,
+                changed_files=[changed_file],
+                qa_results=[passed_qa_result(tmp_path)],
+                worktree_path=worktree_path,
+                run_dir=run_dir,
+                manifest=manifest,
+                access_plan=access_plan,
+                base_ref="origin/dev",
+            )
+
+            manifest_data = json.loads(
+                (run_dir / ralph.MANIFEST_NAME).read_text(encoding="utf-8")
+            )
+
+        repair_calls = [
+            call
+            for call in runner.calls
+            if call.input_text is not None
+            and "Repair GitHub issue #42 after Issue completion review findings"
+            in call.input_text
+        ]
+        review = manifest_data["issue_completion_review"]
+
+        self.assertEqual(changed_files, [changed_file])
+        self.assertEqual(len(qa_results), 1)
+        self.assertEqual(repair_calls, [])
+        self.assertEqual(review["status"], "passed")
+        self.assertEqual(review["result"], "pass")
+        self.assertEqual(
+            review["finding_classification"]["outcome"],
+            ralph.ISSUE_COMPLETION_FINDING_DEFER_EVIDENCE,
+        )
+        self.assertEqual(
+            review["deferred_deployment_evidence"]["original_review_result"],
+            "fail",
+        )
+        self.assertIn(
+            "run-integration-tests",
+            review["deferred_deployment_evidence"]["recommended_action"],
+        )
+        self.assertEqual(review["repair_attempts"], [])
+
+    def test_browser_evidence_only_repair_reruns_review_without_code_diff(
+        self,
+    ) -> None:
+        changed_file = "backend-services/marimo/notebooks/source_coverage_matrix.py"
+        runner = FakeRunner(
+            issue_completion_review_markdowns=[
+                ISSUE_COMPLETION_REVIEW_BROWSER_EVIDENCE_FAIL_MARKDOWN,
+                ISSUE_COMPLETION_REVIEW_PASS_MARKDOWN,
+            ],
+            issue_completion_review_repair_outputs=[
+                ISSUE_COMPLETION_REVIEW_BROWSER_REPAIR_EVIDENCE
+            ],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            worktree_path, run_dir, manifest, access_plan = (
+                implementation_attempt_context(tmp_path, loop, issue)
+            )
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+
+            changed_files, qa_results = loop._run_issue_completion_review_with_repair(
+                issue,
+                delivery_plan=delivery_plan,
+                changed_files=[changed_file],
+                qa_results=[passed_qa_result(tmp_path)],
+                worktree_path=worktree_path,
+                run_dir=run_dir,
+                manifest=manifest,
+                access_plan=access_plan,
+                base_ref="origin/dev",
+            )
+
+            manifest_data = json.loads(
+                (run_dir / ralph.MANIFEST_NAME).read_text(encoding="utf-8")
+            )
+
+        review_calls = [
+            call
+            for call in runner.calls
+            if call.input_text is not None
+            and "Run an Issue completion review" in call.input_text
+        ]
+        repair_calls = [
+            call
+            for call in runner.calls
+            if call.input_text is not None
+            and "Repair GitHub issue #42 after Issue completion review findings"
+            in call.input_text
+        ]
+        review = manifest_data["issue_completion_review"]
+
+        self.assertEqual(changed_files, [changed_file])
+        self.assertEqual(len(qa_results), 1)
+        self.assertEqual(len(review_calls), 2)
+        self.assertEqual(len(repair_calls), 1)
+        self.assertIn("Evidence-only repair boundary", review_calls[1].input_text)
+        self.assertIn(
+            "artificial code diff",
+            repair_calls[0].input_text,
+        )
+        self.assertEqual(review["status"], "passed")
+        self.assertEqual(
+            [attempt["result"] for attempt in review["attempts"]],
+            ["fail", "pass"],
+        )
+        self.assertEqual(
+            review["repair_attempts"][0]["status"],
+            "repair_evidence_recorded",
+        )
+        self.assertIn(
+            "issue_completion_review_evidence_only_repair_recorded",
+            [event["stage"] for event in manifest_data["events"]],
+        )
+
+    def test_out_of_scope_review_failure_records_followup_without_repair(self) -> None:
+        runner = FakeRunner(
+            issue_completion_review_markdowns=[
+                ISSUE_COMPLETION_REVIEW_OUT_OF_SCOPE_FAIL_MARKDOWN
+            ],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner, delivery_mode=ralph.GITFLOW_MODE)
+            issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+            worktree_path, run_dir, manifest, access_plan = (
+                implementation_attempt_context(tmp_path, loop, issue)
+            )
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+
+            loop._run_issue_completion_review_with_repair(
+                issue,
+                delivery_plan=delivery_plan,
+                changed_files=["scripts/ralph.py"],
+                qa_results=[passed_qa_result(tmp_path)],
+                worktree_path=worktree_path,
+                run_dir=run_dir,
+                manifest=manifest,
+                access_plan=access_plan,
+                base_ref="origin/dev",
+            )
+
+            manifest_data = json.loads(
+                (run_dir / ralph.MANIFEST_NAME).read_text(encoding="utf-8")
+            )
+
+        review = manifest_data["issue_completion_review"]
+
+        self.assertEqual(review["status"], "passed")
+        self.assertEqual(
+            review["finding_classification"]["outcome"],
+            ralph.ISSUE_COMPLETION_FINDING_OUT_OF_SCOPE_FOLLOWUP,
+        )
+        self.assertEqual(
+            review["out_of_scope_followups"][0]["next_owner"],
+            "ready_issue_refresh",
+        )
+        self.assertIn(
+            "neighbouring route",
+            review["out_of_scope_followups"][0]["finding"],
+        )
+        self.assertEqual(review["repair_attempts"], [])
+
+    def test_mixed_deployment_and_functional_findings_still_require_repair(
+        self,
+    ) -> None:
+        issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+        delivery_plan = ralph.DeliveryPlan(
+            mode=ralph.GITFLOW_MODE,
+            target_branch=ralph.DEFAULT_GITFLOW_BRANCH,
+            label=ralph.DELIVERY_GITFLOW_LABEL,
+            add_labels=(),
+            remove_labels=(),
+        )
+        trigger = ralph.issue_completion_review_trigger(
+            issue=issue,
+            delivery_plan=delivery_plan,
+            changed_files=[
+                "backend-services/marimo/notebooks/source_coverage_matrix.py"
+            ],
+            security_diff_evidence=(),
+        )
+        classification = ralph.classify_issue_completion_review_findings(
+            review_result="fail",
+            review_markdown=ISSUE_COMPLETION_REVIEW_MIXED_DEPLOYMENT_FAIL_MARKDOWN,
+            findings=ralph.issue_completion_review_findings(
+                ISSUE_COMPLETION_REVIEW_MIXED_DEPLOYMENT_FAIL_MARKDOWN
+            ),
+            qa_results=[passed_qa_result(Path("/tmp"))],
+            trigger=trigger,
+        )
+
+        self.assertFalse(classification.allows_delivery)
+        self.assertEqual(
+            classification.outcome,
+            ralph.ISSUE_COMPLETION_FINDING_REPAIR_NOW,
+        )
+
+    def test_security_finding_still_requires_repair_classification(self) -> None:
+        issue = make_issue({"ready-for-agent"}, IMPLEMENTATION_BODY)
+        delivery_plan = ralph.DeliveryPlan(
+            mode=ralph.GITFLOW_MODE,
+            target_branch=ralph.DEFAULT_GITFLOW_BRANCH,
+            label=ralph.DELIVERY_GITFLOW_LABEL,
+            add_labels=(),
+            remove_labels=(),
+        )
+        trigger = ralph.issue_completion_review_trigger(
+            issue=issue,
+            delivery_plan=delivery_plan,
+            changed_files=["scripts/ralph.py"],
+            security_diff_evidence=(),
+        )
+        classification = ralph.classify_issue_completion_review_findings(
+            review_result="fail",
+            review_markdown=ISSUE_COMPLETION_REVIEW_SECURITY_FAIL_MARKDOWN,
+            findings=ralph.issue_completion_review_findings(
+                ISSUE_COMPLETION_REVIEW_SECURITY_FAIL_MARKDOWN
+            ),
+            qa_results=[passed_qa_result(Path("/tmp"))],
+            trigger=trigger,
+        )
+
+        self.assertFalse(classification.allows_delivery)
+        self.assertEqual(
+            classification.reason,
+            "Issue completion review reported a security blocker.",
         )
 
     def test_security_review_failure_repairs_reruns_qa_refreshes_evidence_then_integrates(

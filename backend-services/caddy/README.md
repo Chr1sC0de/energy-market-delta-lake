@@ -26,8 +26,12 @@ Dagster, auth, and Marimo.
 - The generated `/theme.css` asset is served from Caddy's static root so Marimo
   pages can use the shared light, readability-safe palette.
 - [Caddyfile](Caddyfile) uses a static SPA fallback for public portfolio routes
-  while excluding `/marimo*`, `/dagster-webserver*`, `/oauth2*`, `/_next*`,
-  `/graphql*`, Dagster favicon paths, and manifest paths from that fallback.
+  while excluding `/marimo*`, `/dagster-webserver*`, `/oauth2*`, `/auth*`,
+  `/logout*`, `/_next*`, `/graphql*`, Dagster favicon paths, and manifest paths
+  from that fallback.
+- [Caddyfile](Caddyfile) proxies the custom FastAPI auth API at `/auth*` and
+  `POST /logout` to `DAGSTER_AUTHSERVER` alongside the hosted-OIDC routes used
+  by `forward_auth`.
 
 ## React Router portfolio
 

@@ -224,6 +224,7 @@ class FastAPIAuthComponentResource(pulumi.ComponentResource):
                     -e COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL="$COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL" \\
                     -e COGNITO_TOKEN_SIGNING_KEY_URL="$COGNITO_TOKEN_SIGNING_KEY_URL" \\
                     -e COGNITO_DAGSTER_AUTH_CLIENT_SECRET="$COGNITO_DAGSTER_AUTH_CLIENT_SECRET" \\
+                    -e AWS_DEFAULT_REGION={a["region"]} \\
                     -e WEBSITE_ROOT_URL={a["website_root_url"]} \\
                     "$IMAGE_URI" \\
                     uvicorn main:app --host 0.0.0.0 --port 8000

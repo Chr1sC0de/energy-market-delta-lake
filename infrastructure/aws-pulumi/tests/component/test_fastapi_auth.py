@@ -85,6 +85,7 @@ class TestFastAPIAuthComponent:
         def check(user_data: str) -> None:
             assert "test-cognito-client-id" not in user_data
             assert "test-cognito-client-secret" not in user_data
+            assert "AWS_DEFAULT_REGION=ap-southeast-2" in user_data
             assert "aws ssm get-parameter" in user_data
             for parameter_name in auth.cognito_parameter_names.values():
                 assert parameter_name in user_data

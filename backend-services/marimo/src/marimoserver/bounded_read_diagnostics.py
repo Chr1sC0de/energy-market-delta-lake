@@ -2,7 +2,6 @@
 
 from collections.abc import Sequence
 from dataclasses import replace
-from html import escape
 
 import polars as pl
 
@@ -12,6 +11,7 @@ from marimoserver.dashboard_registry import (
     dashboard_registry,
 )
 from marimoserver.gas_dashboard import (
+    DashboardStatusCard,
     GAS_MODEL_TABLES,
     GasDashboardConfig,
     connection_point_table_specs,
@@ -20,6 +20,7 @@ from marimoserver.gas_dashboard import (
     hub_zone_table_specs,
     participant_table_specs,
     source_coverage_table_specs,
+    render_status_cards_html,
 )
 from marimoserver.gas_model_loader import (
     bounded_row_limit,
@@ -191,50 +192,50 @@ def render_bounded_read_summary_cards(
     """Render first-viewport bounded-read diagnostic cards."""
     table_row_limit = bounded_row_limit(table_config)
     cards = (
-        (
-            "Runtime",
-            table_config.runtime_location,
-            "AWS mode applies the deployed bounded-read policy."
+        DashboardStatusCard(
+            label="Runtime",
+            state="Bounded read",
+            status="bounded-read",
+            value=table_config.runtime_location,
+            detail="AWS mode applies the deployed bounded-read policy."
             if table_config.aws_runtime
             else "Local mode keeps full scans enabled unless overridden.",
         ),
-        (
-            "Endpoint mode",
-            endpoint_mode_label(table_config),
-            endpoint_mode_detail(table_config),
+        DashboardStatusCard(
+            label="Endpoint mode",
+            state="Bounded read",
+            status="bounded-read",
+            value=endpoint_mode_label(table_config),
+            detail=endpoint_mode_detail(table_config),
         ),
-        (
-            "Table preview",
-            format_row_limit(table_row_limit),
-            row_limit_message(table_row_limit),
+        DashboardStatusCard(
+            label="Table preview",
+            state="Bounded read",
+            status="bounded-read",
+            value=format_row_limit(table_row_limit),
+            detail=row_limit_message(table_row_limit),
         ),
-        (
-            "Buckets",
-            str(len(table_config.default_buckets)),
-            _join_values(table_config.default_buckets),
+        DashboardStatusCard(
+            label="Buckets",
+            state="Bounded read",
+            status="bounded-read",
+            value=str(len(table_config.default_buckets)),
+            detail=_join_values(table_config.default_buckets),
         ),
-        (
-            "Gas bucket",
-            gas_config.aemo_bucket,
-            "silver.gas_model table helpers read this configured AEMO bucket.",
+        DashboardStatusCard(
+            label="Gas bucket",
+            state="Bounded read",
+            status="bounded-read",
+            value=gas_config.aemo_bucket,
+            detail="silver.gas_model table helpers read this configured AEMO bucket.",
         ),
     )
-    items = "\n".join(
-        f"""
-        <article class="bounded-read-card">
-            <span class="bounded-read-card__label">{escape(label)}</span>
-            <strong>{escape(value)}</strong>
-            <span>{escape(detail)}</span>
-        </article>
-        """
-        for label, value, detail in cards
+    return render_status_cards_html(
+        cards,
+        title="Bounded-read runtime summary",
+        grid_class="bounded-read-card-grid",
+        card_class="bounded-read-card",
     )
-    return f"""
-{_bounded_read_summary_css()}
-<section class="bounded-read-card-grid" aria-label="Bounded-read runtime summary">
-    {items}
-</section>
-"""
 
 
 def endpoint_mode_label(config: TableExplorerConfig) -> str:
@@ -421,45 +422,3 @@ def _join_values(values: Sequence[str]) -> str:
     if len(values) == 0:
         return "(none configured)"
     return ", ".join(values)
-
-
-def _bounded_read_summary_css() -> str:
-    return """
-<style>
-.bounded-read-card-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
-    gap: 12px;
-    margin: 0 0 18px;
-}
-
-.bounded-read-card {
-    display: grid;
-    gap: 6px;
-    min-height: 132px;
-    padding: 14px;
-    border: 1px solid var(--emdl-line, #cfdbd6);
-    border-radius: 8px;
-    background: var(--emdl-panel, #ffffff);
-    box-shadow: var(--emdl-soft-shadow, 0 8px 28px rgb(27 35 36 / 0.08));
-}
-
-.bounded-read-card__label {
-    color: var(--emdl-green, #3e7a54);
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
-}
-
-.bounded-read-card strong {
-    color: var(--emdl-slate, #354348);
-    font-size: 1.05rem;
-    line-height: 1.2;
-}
-
-.bounded-read-card span:last-child {
-    color: var(--emdl-muted, #566365);
-    font-size: 0.9rem;
-}
-</style>
-"""

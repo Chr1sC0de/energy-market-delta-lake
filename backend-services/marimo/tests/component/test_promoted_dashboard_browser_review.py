@@ -9,6 +9,15 @@ from types import ModuleType
 
 REVIEW_SCRIPT = Path(__file__).parents[2] / "scripts" / "review_promoted_dashboards.py"
 
+SAMPLE_ENERGY_MARKET_REQUIRED_TEXTS = (
+    "Local Gas Market Overview",
+    "Dashboard brief",
+    "Dashboard intent",
+    "Gas Model Outputs",
+    "Prices",
+    "Source Coverage",
+)
+
 
 class _FakeBrowserPage:
     def __init__(self) -> None:
@@ -107,8 +116,8 @@ def test_review_plan_can_plan_webm_videos_for_registry_route(tmp_path: Path) -> 
     )
 
     assert [(run.viewport.name, run.required_texts) for run in runs] == [
-        ("desktop", ()),
-        ("narrow", ()),
+        ("desktop", SAMPLE_ENERGY_MARKET_REQUIRED_TEXTS),
+        ("narrow", SAMPLE_ENERGY_MARKET_REQUIRED_TEXTS),
     ]
     assert [run.video_path for run in runs] == [
         tmp_path / "marimo__sample_energy_market__desktop.webm",
@@ -204,6 +213,37 @@ def test_print_plan_cli_outputs_json_without_playwright_dependency() -> None:
     assert len(payload["runs"]) == 72
     assert all(run["screenshot_path"] is None for run in payload["runs"])
     assert all(run["video_path"] is None for run in payload["runs"])
+
+
+def test_issue_341_routes_declare_browser_review_surface(tmp_path: Path) -> None:
+    review = _load_review_script()
+
+    runs = review.build_review_plan(
+        "http://example.test:8000",
+        tmp_path,
+        routes=(
+            "/marimo/source_coverage_matrix/",
+            "/marimo/source_table_lineage_explorer/",
+            "/marimo/sample_energy_market/",
+        ),
+    )
+    route_payloads = {
+        run["route"]: run
+        for run in review.review_plan_payload(runs)["runs"]
+        if run["viewport"] == "desktop"
+    }
+
+    assert (
+        "Coverage Health"
+        in route_payloads["/marimo/source_coverage_matrix/"]["required_texts"]
+    )
+    assert (
+        "Lineage Health"
+        in route_payloads["/marimo/source_table_lineage_explorer/"]["required_texts"]
+    )
+    sample_payload = route_payloads["/marimo/sample_energy_market/"]
+    assert sample_payload["required_texts"] == list(SAMPLE_ENERGY_MARKET_REQUIRED_TEXTS)
+    assert sample_payload["control_probes"] == []
 
 
 def test_issue_256_batch_declares_browser_review_surface(tmp_path: Path) -> None:

@@ -14,6 +14,7 @@ def _():
         CUSTOMER_TRANSFER_MARKET_CODE_FILTER_ALL,
         CUSTOMER_TRANSFER_SOURCE_SYSTEM_FILTER_ALL,
         cached_load_customer_transfer_table,
+        customer_transfer_activity_figure,
         customer_transfer_daily_frame,
         customer_transfer_empty_state_markdown,
         customer_transfer_gas_date_options,
@@ -28,6 +29,8 @@ def _():
         gas_table_load_status_message,
         render_customer_transfer_context_links,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
+        render_visual_empty_state_html,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
 
@@ -36,6 +39,7 @@ def _():
         CUSTOMER_TRANSFER_MARKET_CODE_FILTER_ALL,
         CUSTOMER_TRANSFER_SOURCE_SYSTEM_FILTER_ALL,
         cached_load_customer_transfer_table,
+        customer_transfer_activity_figure,
         customer_transfer_daily_frame,
         customer_transfer_empty_state_markdown,
         customer_transfer_gas_date_options,
@@ -53,6 +57,8 @@ def _():
         refresh_token_from_control,
         render_customer_transfer_context_links,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
+        render_visual_empty_state_html,
     )
 
 
@@ -178,12 +184,15 @@ def _(
 
 @app.cell
 def _(
+    customer_transfer_activity_figure,
     customer_transfer_empty_state_markdown,
     customer_transfer_kpi_frame,
     customer_transfer_load,
     gas_date_filter,
     market_code_filter,
     mo,
+    render_kpi_cards_html,
+    render_visual_empty_state_html,
     source_system_filter,
 ):
     kpis = customer_transfer_kpi_frame(
@@ -194,13 +203,33 @@ def _(
     )
     if kpis.is_empty():
         kpi_view = mo.md(customer_transfer_empty_state_markdown(customer_transfer_load))
+        activity_visual = mo.Html(
+            render_visual_empty_state_html(
+                title="No customer transfer activity to chart",
+                detail=(
+                    "The current filters do not match loaded bounded customer "
+                    "transfer rows."
+                ),
+            )
+        )
     else:
-        kpi_view = mo.ui.table(kpis, selection=None)
+        kpi_view = mo.Html(
+            render_kpi_cards_html(kpis, title="Customer transfer health KPIs")
+        )
+        activity_visual = mo.ui.plotly(
+            customer_transfer_activity_figure(
+                customer_transfer_load,
+                gas_date_filter.value,
+                market_code_filter.value,
+                source_system_filter.value,
+            )
+        )
 
     mo.vstack(
         [
             mo.md("## Customer Transfer Health"),
             kpi_view,
+            activity_visual,
         ]
     )
     return

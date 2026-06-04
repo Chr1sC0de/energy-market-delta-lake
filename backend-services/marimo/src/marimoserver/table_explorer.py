@@ -29,6 +29,7 @@ from marimoserver.dagster_graphql import (
     GraphQLExecutorProtocol,
     fetch_dagster_asset_catalogue,
 )
+from marimoserver.gas_dashboard import DashboardStatusCard, render_status_cards_html
 from marimoserver.gas_model_loader import (
     SILVER_GAS_MODEL_PREFIX,
     bounded_row_limit,
@@ -862,49 +863,47 @@ def render_storage_health_cards(summary: BucketHealthSummary) -> str:
     )
     error_count = summary.missing_bucket_count + summary.unavailable_bucket_count
     cards = (
-        _render_storage_health_card(
-            "Bucket reachability",
-            _summary_reachability_state(summary),
-            f"{summary.reachable_bucket_count}/{summary.checked_bucket_count}",
-            (f"{summary.configured_bucket_count} configured buckets. {listing_policy}"),
+        _storage_health_status_card(
+            label="Bucket reachability",
+            state=_summary_reachability_state(summary),
+            value=f"{summary.reachable_bucket_count}/{summary.checked_bucket_count}",
+            detail=f"{summary.configured_bucket_count} configured buckets. {listing_policy}",
         ),
-        _render_storage_health_card(
-            "Objects scanned",
-            _summary_object_state(summary),
-            _format_int(summary.object_count),
-            (
+        _storage_health_status_card(
+            label="Objects scanned",
+            state=_summary_object_state(summary),
+            value=_format_int(summary.object_count),
+            detail=(
                 f"{summary.populated_bucket_count} populated, "
                 f"{summary.empty_bucket_count} empty, "
                 f"{summary.truncated_bucket_count} truncated."
             ),
         ),
-        _render_storage_health_card(
-            "Table prefixes",
-            _summary_table_state(summary),
-            _format_int(summary.table_prefix_count),
-            (
+        _storage_health_status_card(
+            label="Table prefixes",
+            state=_summary_table_state(summary),
+            value=_format_int(summary.table_prefix_count),
+            detail=(
                 f"{summary.delta_table_prefix_count} Delta and "
                 f"{summary.parquet_table_prefix_count} Parquet prefixes."
             ),
         ),
-        _render_storage_health_card(
-            "Bucket errors",
-            _summary_error_state(summary),
-            _format_int(error_count),
-            (
+        _storage_health_status_card(
+            label="Bucket errors",
+            state=_summary_error_state(summary),
+            value=_format_int(error_count),
+            detail=(
                 f"{summary.missing_bucket_count} missing, "
                 f"{summary.unavailable_bucket_count} unavailable."
             ),
         ),
     )
-    rendered_cards = "\n".join(cards)
-    return f"""\
-<style>
-{_storage_health_cards_css()}
-</style>
-<section class="storage-health-card-grid" aria-label="S3 bucket health summary">
-{rendered_cards}
-</section>"""
+    return render_status_cards_html(
+        cards,
+        title="S3 bucket health summary",
+        grid_class="storage-health-card-grid",
+        card_class="storage-health-card",
+    )
 
 
 def build_asset_catalogue_summary(
@@ -1002,14 +1001,12 @@ def render_asset_catalogue_status_cards(
 ) -> str:
     """Render first-viewport Dagster catalogue status cards."""
     cards = asset_catalogue_status_cards(summary)
-    rendered_cards = "\n".join(_render_asset_catalogue_card(card) for card in cards)
-    return f"""\
-<style>
-{_asset_catalogue_cards_css()}
-</style>
-<section class="asset-catalogue-card-grid" aria-label="Dagster asset catalogue summary">
-{rendered_cards}
-</section>"""
+    return render_status_cards_html(
+        tuple(_asset_catalogue_status_card(card) for card in cards),
+        title="Dagster asset catalogue summary",
+        grid_class="asset-catalogue-card-grid",
+        card_class="asset-catalogue-card",
+    )
 
 
 def table_asset_catalogue_frame(
@@ -1326,17 +1323,15 @@ def render_materialization_freshness_status_cards(
     summary: MaterializationFreshnessSummary,
 ) -> str:
     """Render first-viewport materialization freshness cards."""
-    rendered_cards = "\n".join(
-        _render_asset_catalogue_card(card)
-        for card in materialization_freshness_status_cards(summary)
+    return render_status_cards_html(
+        tuple(
+            _asset_catalogue_status_card(card)
+            for card in materialization_freshness_status_cards(summary)
+        ),
+        title="Materialization freshness summary",
+        grid_class="asset-catalogue-card-grid",
+        card_class="asset-catalogue-card",
     )
-    return f"""\
-<style>
-{_asset_catalogue_cards_css()}
-</style>
-<section class="asset-catalogue-card-grid" aria-label="Materialization freshness summary">
-{rendered_cards}
-</section>"""
 
 
 def materialization_freshness_action_markdown(
@@ -2195,93 +2190,23 @@ def _summary_error_state(summary: BucketHealthSummary) -> BucketHealthState:
     return BucketHealthState.REACHABLE
 
 
-def _render_storage_health_card(
+def _storage_health_status_card(
+    *,
     label: str,
     state: BucketHealthState,
     value: str,
     detail: str,
-) -> str:
-    state_class = _bucket_state_css_class(state)
-    return f"""\
-    <article class="storage-health-card storage-health-card--{state_class}">
-        <div class="storage-health-card__topline">
-            <span>{escape(label)}</span>
-            <strong>{escape(state.value)}</strong>
-        </div>
-        <p class="storage-health-card__value">{escape(value)}</p>
-        <p>{escape(detail)}</p>
-    </article>"""
-
-
-def _bucket_state_css_class(state: BucketHealthState) -> str:
-    return state.value.lower().replace(" ", "-")
+) -> DashboardStatusCard:
+    return DashboardStatusCard(
+        label=label,
+        state=state.value,
+        value=value,
+        detail=detail,
+    )
 
 
 def _format_int(value: int) -> str:
     return f"{value:,}"
-
-
-def _storage_health_cards_css() -> str:
-    return """\
-.storage-health-card-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
-    gap: 0.9rem;
-}
-
-.storage-health-card {
-    display: grid;
-    gap: 0.55rem;
-    min-width: 0;
-    border: 1px solid var(--emdl-line, #cfdbd6);
-    border-left-width: 5px;
-    border-radius: 8px;
-    padding: 0.9rem;
-    background: var(--emdl-panel, #ffffff);
-    color: var(--emdl-ink, #1b2324);
-}
-
-.storage-health-card--reachable {
-    border-left-color: var(--emdl-green, #3e7a54);
-}
-
-.storage-health-card--empty,
-.storage-health-card--truncated {
-    border-left-color: var(--emdl-amber, #b2682a);
-}
-
-.storage-health-card--missing,
-.storage-health-card--unavailable {
-    border-left-color: var(--emdl-red, #9e4839);
-}
-
-.storage-health-card__topline {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.45rem;
-    color: var(--emdl-muted, #566365);
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
-}
-
-.storage-health-card__topline strong {
-    color: var(--emdl-slate, #354348);
-}
-
-.storage-health-card__value {
-    margin: 0;
-    color: var(--emdl-slate, #354348);
-    font-size: 1.45rem;
-    font-weight: 760;
-    line-height: 1.1;
-}
-
-.storage-health-card p {
-    margin: 0;
-}"""
 
 
 def _graphql_status_card(summary: AssetCatalogueSummary) -> AssetCatalogueStatusCard:
@@ -2585,89 +2510,16 @@ def _freshness_storage_card(
     )
 
 
-def _render_asset_catalogue_card(card: AssetCatalogueStatusCard) -> str:
-    state_class = _asset_catalogue_state_css_class(card.state)
-    return f"""\
-    <article class="asset-catalogue-card asset-catalogue-card--{state_class}">
-        <div class="asset-catalogue-card__topline">
-            <span>{escape(card.area)}</span>
-            <strong>{escape(card.state.value)}</strong>
-        </div>
-        <p class="asset-catalogue-card__value">{escape(card.value)}</p>
-        <p>{escape(card.detail)}</p>
-        <p class="asset-catalogue-card__action">{escape(card.action)}</p>
-    </article>"""
-
-
-def _asset_catalogue_state_css_class(state: AssetCatalogueState) -> str:
-    return state.value.lower().replace(" ", "-")
-
-
-def _asset_catalogue_cards_css() -> str:
-    return """\
-.asset-catalogue-card-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
-    gap: 0.9rem;
-}
-
-.asset-catalogue-card {
-    display: grid;
-    gap: 0.55rem;
-    min-width: 0;
-    border: 1px solid var(--emdl-line, #cfdbd6);
-    border-left-width: 5px;
-    border-radius: 8px;
-    padding: 0.9rem;
-    background: var(--emdl-panel, #ffffff);
-    color: var(--emdl-ink, #1b2324);
-}
-
-.asset-catalogue-card--ready {
-    border-left-color: var(--emdl-green, #3e7a54);
-}
-
-.asset-catalogue-card--needs-attention,
-.asset-catalogue-card--empty {
-    border-left-color: var(--emdl-amber, #b2682a);
-}
-
-.asset-catalogue-card--unavailable {
-    border-left-color: var(--emdl-red, #9e4839);
-}
-
-.asset-catalogue-card__topline {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.45rem;
-    color: var(--emdl-muted, #566365);
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
-}
-
-.asset-catalogue-card__topline strong {
-    color: var(--emdl-slate, #354348);
-}
-
-.asset-catalogue-card__value {
-    margin: 0;
-    color: var(--emdl-slate, #354348);
-    font-size: 1.45rem;
-    font-weight: 760;
-    line-height: 1.1;
-}
-
-.asset-catalogue-card p {
-    margin: 0;
-}
-
-.asset-catalogue-card__action {
-    color: var(--emdl-muted, #566365);
-    font-size: 0.9rem;
-}"""
+def _asset_catalogue_status_card(
+    card: AssetCatalogueStatusCard,
+) -> DashboardStatusCard:
+    return DashboardStatusCard(
+        label=card.area,
+        state=card.state.value,
+        value=card.value,
+        detail=card.detail,
+        action=card.action,
+    )
 
 
 def _catalogued_status_counts(

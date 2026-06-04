@@ -16,6 +16,7 @@ def _():
         gas_table_load_status_frame,
         gas_table_load_status_message,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_source_coverage_matrix_html,
         source_coverage_empty_state_markdown,
         source_coverage_kpi_frame,
@@ -45,6 +46,7 @@ def _():
         pl,
         refresh_token_from_control,
         render_dashboard_context_panel,
+        render_kpi_cards_html,
         render_source_coverage_matrix_html,
         source_coverage_empty_state_markdown,
         source_coverage_kpi_frame,
@@ -209,11 +211,16 @@ def _(
 
 
 @app.cell
-def _(coverage_kpis, mo):
+def _(coverage_kpis, mo, render_kpi_cards_html):
     mo.vstack(
         [
             mo.md("## Coverage Health"),
-            mo.ui.table(coverage_kpis, selection=None),
+            mo.Html(
+                render_kpi_cards_html(
+                    coverage_kpis,
+                    title="Source coverage health KPIs",
+                )
+            ),
         ]
     )
     return

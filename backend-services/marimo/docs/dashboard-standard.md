@@ -173,7 +173,8 @@ Prefer existing helper surfaces before writing notebook-local HTML:
 - bounded read health: `gas_table_load_status_message()`,
   `gas_table_load_status_frame()`, bounded-scope Markdown helpers, and
   row-limit formatting from the loader
-- dashboard summaries: KPI-frame helpers, status-frame helpers, source-option
+- dashboard summaries: KPI-frame helpers, shared status-card grids through
+  `DashboardStatusCard` and `render_status_cards_html()`, source-option
   helpers, and chart/table input frames
 - degraded states: dashboard-specific `*_empty_state_markdown()` helpers and
   compact error messages from the bounded loader
@@ -214,10 +215,11 @@ The first viewport visual contract requires:
   for inspection, but they sit below the visual summary or inside appropriate
   accordions after the user can already judge data health and the main signal.
 
-Reusable primitives for KPI cards, bounded-data notes, visual empty states, and
-Plotly-compatible theme defaults belong under `src/marimoserver/` with focused
-**Component test** coverage. Notebook cells should compose those primitives
-with dashboard-specific frames rather than embedding one-off HTML or styling.
+Reusable primitives for KPI cards, status cards, bounded-data notes, visual
+empty states, and Plotly-compatible theme defaults belong under
+`src/marimoserver/` with focused **Component test** coverage. Notebook cells
+should compose those primitives with dashboard-specific frames rather than
+embedding one-off HTML or styling.
 
 ## Layout and interaction
 

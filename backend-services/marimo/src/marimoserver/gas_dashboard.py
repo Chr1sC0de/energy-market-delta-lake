@@ -8500,6 +8500,39 @@ def render_kpi_cards_html(
 </section>"""
 
 
+@dataclass(frozen=True)
+class DashboardStatusCard:
+    """Escaped shared status card content for first-viewport dashboard summaries."""
+
+    label: str
+    state: str
+    value: str
+    detail: str
+    action: str | None = None
+    status: str | None = None
+    classes: tuple[str, ...] = ()
+
+
+def render_status_cards_html(
+    cards: Sequence[DashboardStatusCard],
+    *,
+    title: str,
+    grid_class: str,
+    card_class: str,
+) -> str:
+    """Render escaped status cards with shared structure and legacy hooks."""
+    rendered_cards = "\n".join(
+        _render_dashboard_status_card(card, card_class=card_class) for card in cards
+    )
+    return f"""\
+<style>
+{_dashboard_visual_primitives_css()}
+</style>
+<section class="dashboard-status-card-grid {escape(grid_class, quote=True)}" aria-label="{escape(title, quote=True)}">
+{rendered_cards}
+</section>"""
+
+
 def render_bounded_data_note_html(
     *,
     title: str,
@@ -8538,6 +8571,78 @@ def render_visual_empty_state_html(
         <h3>{escape(title)}</h3>
         <p>{escape(detail)}</p>
         {action_html}
+    </div>
+</section>"""
+
+
+def render_dimension_coverage_diagram_html(
+    coverage: pl.DataFrame,
+    *,
+    title: str = "Dimension coverage",
+    empty_message: str = "No coverage rows are available in the loaded bounded reads.",
+) -> str:
+    """Render an escaped proportional coverage diagram from metric rows."""
+    if coverage.is_empty():
+        return render_visual_empty_state_html(
+            title=title,
+            detail=empty_message,
+            compact=True,
+        )
+
+    rows = coverage.select("metric", "value", "detail").to_dicts()
+    max_value = max(
+        (_number_value(row.get("value")) for row in rows),
+        default=0.0,
+    )
+    items = "\n".join(_render_dimension_coverage_row(row, max_value) for row in rows)
+    return f"""\
+<style>
+{_dashboard_visual_primitives_css()}
+</style>
+<section class="dashboard-status-visual" aria-label="{escape(title, quote=True)}">
+    <header>
+        <p class="dashboard-status-visual__eyebrow">Coverage diagram</p>
+        <h3>{escape(title)}</h3>
+    </header>
+    <div class="dashboard-status-list dashboard-status-list--dense">
+        {items}
+    </div>
+</section>"""
+
+
+def render_relationship_diagram_html(
+    relationships: pl.DataFrame,
+    *,
+    title: str = "Relationship coverage",
+    empty_message: str = "No relationship rows are available in the loaded bounded reads.",
+) -> str:
+    """Render an escaped relationship diagram from explainer relationship rows."""
+    if relationships.is_empty():
+        return render_visual_empty_state_html(
+            title=title,
+            detail=empty_message,
+            compact=True,
+        )
+
+    rows = relationships.to_dicts()
+    max_available_rows = max(
+        (_number_value(row.get("available rows")) for row in rows),
+        default=0.0,
+    )
+    items = "\n".join(
+        _render_explainer_relationship_row(row, max_available_rows) for row in rows
+    )
+    return f"""\
+<style>
+{_dashboard_visual_primitives_css()}
+</style>
+<section class="dashboard-status-visual" aria-label="{escape(title, quote=True)}">
+    <header>
+        <p class="dashboard-status-visual__eyebrow">Relationship diagram</p>
+        <h3>{escape(title)}</h3>
+    </header>
+    <div class="dashboard-relationship-diagram">
+        {items}
     </div>
 </section>"""
 
@@ -10377,6 +10482,81 @@ def settlement_activity_summary_frame(
     return summary.select([*list(_SETTLEMENT_ACTIVITY_SUMMARY_SCHEMA)])
 
 
+def settlement_activity_summary_figure(
+    load: GasTableLoad | None,
+    gas_date_filter: str = SETTLEMENT_ACTIVITY_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = SETTLEMENT_ACTIVITY_SOURCE_SYSTEM_FILTER_ALL,
+    activity_type_filter: str = SETTLEMENT_ACTIVITY_ACTIVITY_TYPE_FILTER_ALL,
+    *,
+    height: int = 320,
+) -> Figure:
+    """Return a first-viewport settlement activity component chart."""
+    summary = settlement_activity_summary_frame(
+        load,
+        gas_date_filter,
+        source_system_filter,
+        activity_type_filter,
+    )
+    figure = Figure()
+    layout = plotly_theme_defaults(height=height)
+    layout["yaxis"] = {
+        "gridcolor": "#d8e2de",
+        "title": "Rows",
+        "zeroline": False,
+    }
+    if summary.is_empty():
+        figure.update_layout(**layout)
+        return figure
+
+    chart_frame = (
+        summary.group_by("activity type", "source system")
+        .agg(
+            pl.col("rows").sum().alias("rows"),
+            pl.col("total amount gst ex").sum().alias("total amount gst ex"),
+            pl.col("total quantity gj").sum().alias("total quantity gj"),
+            pl.col("settlement version")
+            .drop_nulls()
+            .n_unique()
+            .alias("settlement versions"),
+        )
+        .sort(["rows", "activity type"], descending=[True, False])
+        .head(16)
+    )
+    for (source_system,), rows in chart_frame.group_by(
+        "source system",
+        maintain_order=True,
+    ):
+        figure.add_trace(
+            Bar(
+                x=rows.get_column("activity type").to_list(),
+                y=rows.get_column("rows").to_list(),
+                name=_format_optional_value(source_system),
+                customdata=[
+                    [
+                        row["source system"],
+                        row["total amount gst ex"],
+                        row["total quantity gj"],
+                        row["settlement versions"],
+                    ]
+                    for row in rows.to_dicts()
+                ],
+                hovertemplate=(
+                    "<b>%{x}</b><br>Rows: %{y:,}"
+                    "<br>Source system: %{customdata[0]}"
+                    "<br>Total amount GST ex: %{customdata[1]:,.4f}"
+                    "<br>Total quantity: %{customdata[2]:,.4f} GJ"
+                    "<br>Settlement versions: %{customdata[3]:,}<extra></extra>"
+                ),
+            )
+        )
+    figure.update_layout(
+        **layout,
+        barmode="group",
+        title={"text": "Settlement activity by type", "font": {"size": 16}},
+    )
+    return figure
+
+
 def settlement_activity_source_coverage_frame(
     load: GasTableLoad | None,
     gas_date_filter: str = SETTLEMENT_ACTIVITY_GAS_DATE_FILTER_ALL,
@@ -10851,6 +11031,83 @@ def sttm_market_settlement_summary_frame(
         .head(max(1, preview_rows))
     )
     return summary.select([*list(_STTM_MARKET_SETTLEMENT_SUMMARY_SCHEMA)])
+
+
+def sttm_market_settlement_summary_figure(
+    load: GasTableLoad | None,
+    gas_date_filter: str = STTM_MARKET_SETTLEMENT_GAS_DATE_FILTER_ALL,
+    period_filter: str = STTM_MARKET_SETTLEMENT_PERIOD_FILTER_ALL,
+    settlement_stage_filter: str = STTM_MARKET_SETTLEMENT_STAGE_FILTER_ALL,
+    settlement_component_filter: str = STTM_MARKET_SETTLEMENT_COMPONENT_FILTER_ALL,
+    *,
+    height: int = 320,
+) -> Figure:
+    """Return a first-viewport STTM market settlement component chart."""
+    summary = sttm_market_settlement_summary_frame(
+        load,
+        gas_date_filter,
+        period_filter,
+        settlement_stage_filter,
+        settlement_component_filter,
+    )
+    figure = Figure()
+    layout = plotly_theme_defaults(height=height)
+    layout["yaxis"] = {
+        "gridcolor": "#d8e2de",
+        "title": "Settlement amount",
+        "zeroline": False,
+    }
+    if summary.is_empty():
+        figure.update_layout(**layout)
+        return figure
+
+    chart_frame = (
+        summary.group_by("settlement stage", "component")
+        .agg(
+            pl.col("rows").sum().alias("rows"),
+            pl.col("total quantity gj").sum().alias("total quantity gj"),
+            pl.col("total amount").sum().alias("total amount"),
+            pl.col("hub").drop_nulls().n_unique().alias("hubs"),
+            pl.col("facility").drop_nulls().n_unique().alias("facilities"),
+        )
+        .sort(["total amount", "rows", "component"], descending=[True, True, False])
+        .head(16)
+    )
+    for (stage,), rows in chart_frame.group_by(
+        "settlement stage",
+        maintain_order=True,
+    ):
+        figure.add_trace(
+            Bar(
+                x=rows.get_column("component").to_list(),
+                y=rows.get_column("total amount").to_list(),
+                name=_format_optional_value(stage),
+                customdata=[
+                    [
+                        row["settlement stage"],
+                        row["rows"],
+                        row["total quantity gj"],
+                        row["hubs"],
+                        row["facilities"],
+                    ]
+                    for row in rows.to_dicts()
+                ],
+                hovertemplate=(
+                    "<b>%{x}</b><br>Total amount: %{y:,.4f}"
+                    "<br>Settlement stage: %{customdata[0]}"
+                    "<br>Rows: %{customdata[1]:,}"
+                    "<br>Total quantity: %{customdata[2]:,.4f} GJ"
+                    "<br>Hubs: %{customdata[3]:,}"
+                    "<br>Facilities: %{customdata[4]:,}<extra></extra>"
+                ),
+            )
+        )
+    figure.update_layout(
+        **layout,
+        barmode="group",
+        title={"text": "STTM market settlement by component", "font": {"size": 16}},
+    )
+    return figure
 
 
 def sttm_market_settlement_source_coverage_frame(
@@ -11332,6 +11589,85 @@ def sttm_capacity_settlement_summary_frame(
     return summary.select([*list(_STTM_CAPACITY_SETTLEMENT_SUMMARY_SCHEMA)])
 
 
+def sttm_capacity_settlement_summary_figure(
+    load: GasTableLoad | None,
+    gas_date_filter: str = STTM_CAPACITY_SETTLEMENT_GAS_DATE_FILTER_ALL,
+    settlement_stage_filter: str = STTM_CAPACITY_SETTLEMENT_STAGE_FILTER_ALL,
+    capacity_component_filter: str = STTM_CAPACITY_SETTLEMENT_COMPONENT_FILTER_ALL,
+    hub_filter: str = STTM_CAPACITY_SETTLEMENT_HUB_FILTER_ALL,
+    facility_filter: str = STTM_CAPACITY_SETTLEMENT_FACILITY_FILTER_ALL,
+    *,
+    height: int = 320,
+) -> Figure:
+    """Return a first-viewport STTM capacity settlement component chart."""
+    summary = sttm_capacity_settlement_summary_frame(
+        load,
+        gas_date_filter,
+        settlement_stage_filter,
+        capacity_component_filter,
+        hub_filter,
+        facility_filter,
+    )
+    figure = Figure()
+    layout = plotly_theme_defaults(height=height)
+    layout["yaxis"] = {
+        "gridcolor": "#d8e2de",
+        "title": "Total quantity GJ",
+        "zeroline": False,
+    }
+    if summary.is_empty():
+        figure.update_layout(**layout)
+        return figure
+
+    chart_frame = (
+        summary.group_by("settlement stage", "capacity settlement component")
+        .agg(
+            pl.col("rows").sum().alias("rows"),
+            pl.col("total quantity gj").sum().alias("total quantity gj"),
+            pl.col("hub").drop_nulls().n_unique().alias("hubs"),
+            pl.col("facility").drop_nulls().n_unique().alias("facilities"),
+        )
+        .sort(
+            ["total quantity gj", "rows", "capacity settlement component"],
+            descending=[True, True, False],
+        )
+        .head(16)
+    )
+    for (stage,), rows in chart_frame.group_by(
+        "settlement stage",
+        maintain_order=True,
+    ):
+        figure.add_trace(
+            Bar(
+                x=rows.get_column("capacity settlement component").to_list(),
+                y=rows.get_column("total quantity gj").to_list(),
+                name=_format_optional_value(stage),
+                customdata=[
+                    [
+                        row["settlement stage"],
+                        row["rows"],
+                        row["hubs"],
+                        row["facilities"],
+                    ]
+                    for row in rows.to_dicts()
+                ],
+                hovertemplate=(
+                    "<b>%{x}</b><br>Total quantity: %{y:,.4f} GJ"
+                    "<br>Settlement stage: %{customdata[0]}"
+                    "<br>Rows: %{customdata[1]:,}"
+                    "<br>Hubs: %{customdata[2]:,}"
+                    "<br>Facilities: %{customdata[3]:,}<extra></extra>"
+                ),
+            )
+        )
+    figure.update_layout(
+        **layout,
+        barmode="group",
+        title={"text": "STTM capacity settlement by component", "font": {"size": 16}},
+    )
+    return figure
+
+
 def sttm_capacity_settlement_source_coverage_frame(
     load: GasTableLoad | None,
     gas_date_filter: str = STTM_CAPACITY_SETTLEMENT_GAS_DATE_FILTER_ALL,
@@ -11791,6 +12127,71 @@ def sttm_mos_allocation_fact_summary_frame(
         populated_rows,
         schema=_STTM_MOS_ALLOCATION_FACT_SUMMARY_SCHEMA,
     )
+
+
+def sttm_mos_allocation_summary_figure(
+    loads: Sequence[GasTableLoad],
+    gas_date_filter: str = STTM_MOS_ALLOCATION_GAS_DATE_FILTER_ALL,
+    source_system_filter: str = STTM_MOS_ALLOCATION_SOURCE_SYSTEM_FILTER_ALL,
+    hub_filter: str = STTM_MOS_ALLOCATION_HUB_FILTER_ALL,
+    facility_filter: str = STTM_MOS_ALLOCATION_FACILITY_FILTER_ALL,
+    *,
+    height: int = 320,
+) -> Figure:
+    """Return a first-viewport STTM MOS/allocation fact chart."""
+    fact_summary = sttm_mos_allocation_fact_summary_frame(
+        loads,
+        gas_date_filter,
+        source_system_filter,
+        hub_filter,
+        facility_filter,
+    )
+    figure = Figure()
+    layout = plotly_theme_defaults(height=height)
+    layout["yaxis"] = {
+        "gridcolor": "#d8e2de",
+        "title": "Rows",
+        "zeroline": False,
+    }
+    if fact_summary.is_empty():
+        figure.update_layout(**layout)
+        return figure
+
+    chart_frame = fact_summary.sort(["rows", "fact"], descending=[True, False])
+    figure.add_trace(
+        Bar(
+            x=chart_frame.get_column("fact").to_list(),
+            y=chart_frame.get_column("rows").to_list(),
+            name="Rows",
+            customdata=[
+                [
+                    row["gas days"],
+                    row["hubs"],
+                    row["facilities"],
+                    row["source reports"],
+                    row["primary measure"],
+                    row["primary value"],
+                    row["latest gas date"],
+                ]
+                for row in chart_frame.to_dicts()
+            ],
+            hovertemplate=(
+                "<b>%{x}</b><br>Rows: %{y:,}"
+                "<br>Gas Days: %{customdata[0]:,}"
+                "<br>Hubs: %{customdata[1]:,}"
+                "<br>Facilities: %{customdata[2]:,}"
+                "<br>Source reports: %{customdata[3]:,}"
+                "<br>Primary measure: %{customdata[4]}"
+                "<br>Primary value: %{customdata[5]}"
+                "<br>Latest Gas Day: %{customdata[6]}<extra></extra>"
+            ),
+        )
+    )
+    figure.update_layout(
+        **layout,
+        title={"text": "STTM MOS and allocation fact coverage", "font": {"size": 16}},
+    )
+    return figure
 
 
 def sttm_mos_stack_summary_frame(
@@ -12614,6 +13015,79 @@ def customer_transfer_daily_frame(
         .head(max(1, preview_rows))
     )
     return daily.select([*list(_CUSTOMER_TRANSFER_DAILY_SCHEMA)])
+
+
+def customer_transfer_activity_figure(
+    load: GasTableLoad | None,
+    gas_date_filter: str = CUSTOMER_TRANSFER_GAS_DATE_FILTER_ALL,
+    market_code_filter: str = CUSTOMER_TRANSFER_MARKET_CODE_FILTER_ALL,
+    source_system_filter: str = CUSTOMER_TRANSFER_SOURCE_SYSTEM_FILTER_ALL,
+    *,
+    height: int = 320,
+) -> Figure:
+    """Return a first-viewport customer transfer activity chart."""
+    daily = customer_transfer_daily_frame(
+        load,
+        gas_date_filter,
+        market_code_filter,
+        source_system_filter,
+    )
+    figure = Figure()
+    layout = plotly_theme_defaults(height=height)
+    layout["yaxis"] = {
+        "gridcolor": "#d8e2de",
+        "title": "Transfers",
+        "zeroline": False,
+    }
+    if daily.is_empty():
+        figure.update_layout(**layout)
+        return figure
+
+    chart_frame = (
+        daily.group_by("market code")
+        .agg(
+            pl.col("transfers lodged").sum().alias("transfers lodged"),
+            pl.col("transfers completed").sum().alias("transfers completed"),
+            pl.col("transfers cancelled").sum().alias("transfers cancelled"),
+            pl.col("internal transfers lodged")
+            .sum()
+            .alias("internal transfers lodged"),
+            pl.col("greenfields received").sum().alias("greenfields received"),
+            pl.col("rows").sum().alias("rows"),
+        )
+        .sort(["transfers lodged", "market code"], descending=[True, False])
+        .head(16)
+    )
+    measures = (
+        ("Transfers lodged", "transfers lodged"),
+        ("Transfers completed", "transfers completed"),
+        ("Transfers cancelled", "transfers cancelled"),
+        ("Internal transfers lodged", "internal transfers lodged"),
+        ("Greenfields received", "greenfields received"),
+    )
+    for label, column in measures:
+        figure.add_trace(
+            Bar(
+                x=chart_frame.get_column("market code").to_list(),
+                y=chart_frame.get_column(column).to_list(),
+                name=label,
+                customdata=[
+                    [row["market code"], row["rows"]]
+                    for row in chart_frame.select("market code", "rows").to_dicts()
+                ],
+                hovertemplate=(
+                    "<b>%{x}</b><br>"
+                    f"{label}: "
+                    "%{y:,}<br>Rows: %{customdata[1]:,}<extra></extra>"
+                ),
+            )
+        )
+    figure.update_layout(
+        **layout,
+        barmode="group",
+        title={"text": "Retail transfer activity by market", "font": {"size": 16}},
+    )
+    return figure
 
 
 def customer_transfer_source_coverage_frame(
@@ -21209,6 +21683,42 @@ def _render_kpi_card(row: Mapping[str, object]) -> str:
 </article>"""
 
 
+def _render_dashboard_status_card(
+    card: DashboardStatusCard,
+    *,
+    card_class: str,
+) -> str:
+    status = card.status or card.state
+    status_class = _dashboard_status_class(status)
+    classes = " ".join(
+        (
+            "dashboard-status-card",
+            f"dashboard-status-card--{status_class}",
+            card_class,
+            f"{card_class}--{status_class}",
+            *card.classes,
+        )
+    )
+    action_html = (
+        ""
+        if card.action is None
+        else f'    <p class="dashboard-status-card__action {card_class}__action">{escape(card.action)}</p>\n'
+    )
+    return f"""\
+<article class="{escape(classes, quote=True)}" data-status="{escape(status_class, quote=True)}">
+    <div class="dashboard-status-card__topline {card_class}__topline">
+        <span>{escape(card.label)}</span>
+        <strong>{escape(card.state)}</strong>
+    </div>
+    <p class="dashboard-status-card__value {card_class}__value">{escape(card.value)}</p>
+    <p>{escape(card.detail)}</p>
+{action_html}</article>"""
+
+
+def _dashboard_status_class(status: str) -> str:
+    return status.lower().replace(" ", "-")
+
+
 def _render_flow_source_status_row(
     row: Mapping[str, object],
     max_measure_rows: float,
@@ -21272,6 +21782,77 @@ def _render_relationship_gap_status_row(row: Mapping[str, object]) -> str:
         <li>{matched_label} matched rows</li>
     </ul>
 </article>"""
+
+
+def _render_dimension_coverage_row(
+    row: Mapping[str, object],
+    max_value: float,
+) -> str:
+    metric = escape(_format_cell_value(row.get("metric")))
+    value = escape(_format_cell_value(row.get("value")))
+    detail = escape(_format_cell_value(row.get("detail")))
+    width = _status_bar_width(_number_value(row.get("value")), max_value)
+    return f"""\
+<article class="dashboard-status-row dashboard-status-row--coverage">
+    <div class="dashboard-status-row__heading">
+        <strong>{metric}</strong>
+        <span>{value}</span>
+    </div>
+    <div class="dashboard-status-row__bar" aria-hidden="true">
+        <span style="width: {width:.1f}%"></span>
+    </div>
+    <p>{detail}</p>
+</article>"""
+
+
+def _render_explainer_relationship_row(
+    row: Mapping[str, object],
+    max_available_rows: float,
+) -> str:
+    relationship = escape(_format_cell_value(_relationship_row_label(row)))
+    source_table = escape(_format_cell_value(row.get("source table")))
+    available_rows = _number_value(row.get("available rows"))
+    matched_value = _relationship_matched_value(row)
+    available_label = escape(_format_cell_value(row.get("available rows")))
+    matched_label = escape(_format_cell_value(matched_value))
+    detail = escape(_format_cell_value(row.get("detail")))
+    available_width = _status_bar_width(available_rows, max_available_rows)
+    matched_width = _status_bar_width(matched_value, available_rows, min_visible=0.0)
+    status = "gap" if matched_value < available_rows else "covered"
+    return f"""\
+<article class="dashboard-relationship-row" data-status="{status}">
+    <div class="dashboard-relationship-row__nodes">
+        <strong>{relationship}</strong>
+        <span aria-hidden="true"></span>
+        <em>{source_table}</em>
+    </div>
+    <div class="dashboard-relationship-row__bars" aria-hidden="true">
+        <div><span style="width: {available_width:.1f}%"></span></div>
+        <div><span style="width: {matched_width:.1f}%"></span></div>
+    </div>
+    <ul>
+        <li>{available_label} available rows</li>
+        <li>{matched_label} matched rows</li>
+    </ul>
+    <p>{detail}</p>
+</article>"""
+
+
+def _relationship_row_label(row: Mapping[str, object]) -> object:
+    relationship = row.get("relationship")
+    if _format_cell_value(relationship) != "":
+        return relationship
+    related_surface = row.get("related surface")
+    if _format_cell_value(related_surface) != "":
+        return related_surface
+    return "Relationship"
+
+
+def _relationship_matched_value(row: Mapping[str, object]) -> float:
+    for column_name, value in row.items():
+        if column_name.startswith("matched ") and _format_cell_value(value) != "":
+            return _number_value(value)
+    return 0.0
 
 
 def _render_facility_flow_storage_status_row(
@@ -21363,6 +21944,13 @@ def _dashboard_visual_primitives_css() -> str:
     width: 100%;
 }
 
+.dashboard-status-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+    gap: 0.9rem;
+    width: 100%;
+}
+
 .dashboard-kpi-card {
     min-height: 8.5rem;
     padding: 0.85rem;
@@ -21372,14 +21960,41 @@ def _dashboard_visual_primitives_css() -> str:
     box-shadow: 0 1px 2px rgb(31 42 46 / 8%);
 }
 
+.dashboard-status-card {
+    display: grid;
+    gap: 0.55rem;
+    min-width: 0;
+    padding: 0.9rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-left-width: 5px;
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+    color: var(--emdl-ink, #1b2324);
+    box-shadow: 0 1px 2px rgb(31 42 46 / 8%);
+}
+
 .dashboard-kpi-card__metric,
-.dashboard-bounded-note__label {
+.dashboard-bounded-note__label,
+.dashboard-status-card__topline {
     margin: 0;
     color: var(--emdl-muted, #566365);
     font-size: 0.74rem;
     font-weight: 720;
     letter-spacing: 0;
     text-transform: uppercase;
+}
+
+.dashboard-status-card__topline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.45rem;
+}
+
+.dashboard-status-card__topline strong,
+.dashboard-status-card__value {
+    color: var(--emdl-slate, #354348);
 }
 
 .dashboard-kpi-card strong {
@@ -21390,6 +22005,13 @@ def _dashboard_visual_primitives_css() -> str:
     line-height: 1.05;
 }
 
+.dashboard-status-card__value {
+    margin: 0;
+    font-size: 1.45rem;
+    font-weight: 760;
+    line-height: 1.1;
+}
+
 .dashboard-kpi-card__detail {
     margin: 0.6rem 0 0;
     color: var(--emdl-muted, #566365);
@@ -21397,8 +22019,34 @@ def _dashboard_visual_primitives_css() -> str:
     line-height: 1.35;
 }
 
+.dashboard-status-card p {
+    margin: 0;
+}
+
+.dashboard-status-card__action {
+    color: var(--emdl-muted, #566365);
+    font-size: 0.9rem;
+}
+
 .dashboard-kpi-card--empty {
     min-height: 5rem;
+}
+
+.dashboard-status-card--ready,
+.dashboard-status-card--reachable,
+.dashboard-status-card--bounded-read {
+    border-left-color: var(--emdl-green, #3e7a54);
+}
+
+.dashboard-status-card--needs-attention,
+.dashboard-status-card--empty,
+.dashboard-status-card--truncated {
+    border-left-color: var(--emdl-amber, #b9822c);
+}
+
+.dashboard-status-card--unavailable,
+.dashboard-status-card--missing {
+    border-left-color: var(--emdl-red, #9e4839);
 }
 
 .dashboard-bounded-note,
@@ -21490,6 +22138,10 @@ def _dashboard_visual_primitives_css() -> str:
     border-color: var(--emdl-warn, #b9822c);
 }
 
+.dashboard-status-row--coverage {
+    min-height: 6.75rem;
+}
+
 .dashboard-status-row__heading {
     display: flex;
     gap: 0.75rem;
@@ -21571,6 +22223,128 @@ def _dashboard_visual_primitives_css() -> str:
 .dashboard-measure-bar strong {
     color: var(--emdl-ink, #1f2a2e);
     text-align: right;
+}
+
+.dashboard-relationship-diagram {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.dashboard-relationship-row {
+    padding: 0.85rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-soft, #f7faf8);
+}
+
+.dashboard-relationship-row[data-status="gap"] {
+    border-color: var(--emdl-warn, #b9822c);
+}
+
+.dashboard-relationship-row__nodes {
+    display: grid;
+    grid-template-columns: minmax(8rem, 1fr) 2rem minmax(8rem, 1.2fr);
+    gap: 0.7rem;
+    align-items: center;
+}
+
+.dashboard-relationship-row__nodes strong,
+.dashboard-relationship-row__nodes em {
+    min-width: 0;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--emdl-line, #cfdbd6);
+    border-radius: 8px;
+    background: var(--emdl-panel, #ffffff);
+    color: var(--emdl-ink, #1f2a2e);
+    font-size: 0.9rem;
+    font-style: normal;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+.dashboard-relationship-row__nodes span {
+    height: 0.14rem;
+    background: var(--emdl-flow, #2d7f75);
+}
+
+.dashboard-relationship-row__nodes span::after {
+    content: "";
+    display: block;
+    width: 0.46rem;
+    height: 0.46rem;
+    margin-top: -0.17rem;
+    margin-left: auto;
+    border-top: 0.14rem solid var(--emdl-flow, #2d7f75);
+    border-right: 0.14rem solid var(--emdl-flow, #2d7f75);
+    transform: rotate(45deg);
+}
+
+.dashboard-relationship-row__bars {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.55rem;
+    margin-top: 0.7rem;
+}
+
+.dashboard-relationship-row__bars div {
+    height: 0.5rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e6eeea;
+}
+
+.dashboard-relationship-row__bars span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+}
+
+.dashboard-relationship-row__bars div:first-child span {
+    background: var(--emdl-flow, #2d7f75);
+}
+
+.dashboard-relationship-row__bars div:last-child span {
+    background: var(--emdl-ok, #3a7d44);
+}
+
+.dashboard-relationship-row ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1rem;
+    margin: 0.65rem 0 0;
+    padding: 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.82rem;
+    list-style: none;
+}
+
+.dashboard-relationship-row p {
+    margin: 0.55rem 0 0;
+    color: var(--emdl-muted, #566365);
+    font-size: 0.85rem;
+    line-height: 1.35;
+}
+
+@media (max-width: 720px) {
+    .dashboard-relationship-row__nodes {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-relationship-row__nodes span {
+        width: 0.14rem;
+        height: 1.1rem;
+        justify-self: center;
+    }
+
+    .dashboard-relationship-row__nodes span::after {
+        margin-top: 0.55rem;
+        margin-left: -0.17rem;
+        transform: rotate(135deg);
+    }
+
+    .dashboard-relationship-row__bars {
+        grid-template-columns: 1fr;
+    }
 }
 """
 

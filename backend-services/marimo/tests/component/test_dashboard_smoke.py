@@ -167,6 +167,55 @@ def test_market_prices_first_viewport_keeps_visual_before_diagnostics() -> None:
     assert "height=300" in source[trend_build:diagnostics]
 
 
+def test_explorer_kpi_frames_use_shared_cards_without_forcing_charts() -> None:
+    coverage_source = (CURATED_NOTEBOOKS_DIR / "source_coverage_matrix.py").read_text(
+        encoding="utf-8"
+    )
+    lineage_source = (
+        CURATED_NOTEBOOKS_DIR / "source_table_lineage_explorer.py"
+    ).read_text(encoding="utf-8")
+    sample_source = (CURATED_NOTEBOOKS_DIR / "sample_energy_market.py").read_text(
+        encoding="utf-8"
+    )
+    table_explorer_source = (CURATED_NOTEBOOKS_DIR / "table_explorer.py").read_text(
+        encoding="utf-8"
+    )
+    gbb_map_source = (CURATED_NOTEBOOKS_DIR / "gbb_interactive_map.py").read_text(
+        encoding="utf-8"
+    )
+
+    coverage_health = coverage_source[
+        coverage_source.index("## Coverage Health") : coverage_source.index(
+            "## Matrix Controls"
+        )
+    ]
+    lineage_health = lineage_source[
+        lineage_source.index("## Lineage Health") : lineage_source.index(
+            '"source-table-lineage-explorer"'
+        )
+    ]
+
+    assert "render_kpi_cards_html(" in coverage_health
+    assert "mo.ui.table(coverage_kpis" not in coverage_health
+    assert "render_source_coverage_matrix_html(" in coverage_source
+    assert "render_kpi_cards_html(" in lineage_health
+    assert "mo.ui.table(lineage_kpis" not in lineage_health
+    assert "render_source_lineage_explorer_html(" in lineage_source
+
+    for table_name in (
+        "table_summary",
+        "price_summary",
+        "quantity_summary",
+        "flow_capacity_summary",
+    ):
+        assert f"mo.ui.table({table_name}" not in sample_source
+    assert sample_source.count("render_kpi_cards_html(") >= 4
+    assert "source_coverage_view = mo.ui.table(source_coverage)" in sample_source
+
+    assert "mo.ui.table(table_summary, selection=None)" in table_explorer_source
+    assert "mo.Html(render_gbb_map_html(map_model, selected_view))" in gbb_map_source
+
+
 @pytest.mark.parametrize(
     "target",
     DASHBOARD_SMOKE_TARGETS,

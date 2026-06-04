@@ -21,8 +21,10 @@ def _():
         hub_zone_identifier_preview_frame,
         hub_zone_source_system_frame,
         hub_zone_table_specs,
+        render_dimension_coverage_diagram_html,
         render_dashboard_context_panel,
         render_hub_zone_context_links,
+        render_kpi_cards_html,
         table_load_by_name,
     )
     from marimoserver.gas_model_loader import refresh_token_from_control
@@ -42,8 +44,10 @@ def _():
         mo,
         pl,
         refresh_token_from_control,
+        render_dimension_coverage_diagram_html,
         render_dashboard_context_panel,
         render_hub_zone_context_links,
+        render_kpi_cards_html,
         table_load_by_name,
     )
 
@@ -163,7 +167,15 @@ def _(
 
 
 @app.cell
-def _(config, hub_zone_coverage, hub_zone_specs, mo, pl):
+def _(
+    config,
+    hub_zone_coverage,
+    hub_zone_specs,
+    mo,
+    pl,
+    render_dimension_coverage_diagram_html,
+    render_kpi_cards_html,
+):
     config_frame = pl.DataFrame(
         {
             "setting": [
@@ -198,6 +210,23 @@ def _(config, hub_zone_coverage, hub_zone_specs, mo, pl):
     mo.vstack(
         [
             mo.md("## Hub / Zone Coverage Health"),
+            mo.Html(
+                render_kpi_cards_html(
+                    hub_zone_coverage,
+                    title="Hub / Zone coverage KPIs",
+                    empty_message="No Hub / Zone coverage metrics are available.",
+                )
+            ),
+            mo.Html(
+                render_dimension_coverage_diagram_html(
+                    hub_zone_coverage,
+                    title="Hub / Zone dimension coverage",
+                    empty_message=(
+                        "No Hub / Zone coverage rows are available in the "
+                        "loaded bounded reads."
+                    ),
+                )
+            ),
             mo.accordion(
                 {
                     "Hub / Zone coverage details": mo.ui.table(

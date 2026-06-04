@@ -100,8 +100,15 @@ the review prompt even when the changed-file inventory is grouped and sampled.
 Passing review lets the normal delivery path continue. Failing review findings
 and concrete blockers in `## Security review` become a repair prompt for
 remaining `--max-codex-attempts` attempts; Ralph reruns QA and review after each
-repair. Completion comments and run manifests preserve the review artifact,
-review log, review attempts, repair attempts, and refreshed redacted security
+repair. Ralph classifies failed findings before repair: missing deployed AWS
+workflow evidence is deferred to the post-**Promotion** checkpointed Operator
+path when it is the only finding after selected QA passed, and clearly
+out-of-scope findings are recorded as follow-up candidates instead of failing
+the current issue. Functional acceptance failures, mixed findings, missing
+selected QA evidence, and concrete security blockers remain repair findings.
+Completion comments and run manifests preserve the review artifact, review log,
+review attempts, repair attempts, finding classification, deferred deployment
+evidence, out-of-scope follow-up candidates, and refreshed redacted security
 evidence. If the budget is exhausted, Ralph marks the issue `agent-failed`,
 preserves worktrees and logs, and does not update an **Integration target**.
 This gate is not human `dev` review, **Ready issue refresh**, or

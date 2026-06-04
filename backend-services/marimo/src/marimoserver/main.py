@@ -161,14 +161,6 @@ _INDEX_CSS = """
             font-size: 0.82rem;
         }
 
-        .concept-nav {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin: 26px 0;
-        }
-
-        .concept-nav a,
         .filter-controls label {
             display: inline-flex;
             align-items: center;
@@ -183,7 +175,6 @@ _INDEX_CSS = """
             text-decoration: none;
         }
 
-        .concept-nav a:hover,
         .filter-controls label:hover {
             border-color: var(--emdl-blue, #166791);
             color: var(--emdl-blue, #166791);
@@ -266,28 +257,11 @@ _INDEX_CSS = """
             background: var(--emdl-blue, #166791);
         }
 
-        #story-all:checked ~ .gallery-tools label[for="story-all"],
-        #story-market:checked ~ .gallery-tools label[for="story-market"],
-        #story-operations:checked ~ .gallery-tools label[for="story-operations"],
-        #story-trust:checked ~ .gallery-tools label[for="story-trust"],
-        #story-concepts:checked ~ .gallery-tools label[for="story-concepts"] {
-            border-color: var(--emdl-green, #3e7a54);
-            color: var(--emdl-panel, #ffffff);
-            background: var(--emdl-green, #3e7a54);
-        }
-
         #audience-platform-operations:checked ~ .dashboard-grid .dashboard-card:not(.audience-platform-operations),
         #audience-operator:checked ~ .dashboard-grid .dashboard-card:not(.audience-operator),
         #audience-analyst:checked ~ .dashboard-grid .dashboard-card:not(.audience-analyst),
         #audience-stakeholder:checked ~ .dashboard-grid .dashboard-card:not(.audience-stakeholder),
         #audience-data-engineer:checked ~ .dashboard-grid .dashboard-card:not(.audience-data-engineer) {
-            display: none;
-        }
-
-        #story-market:checked ~ .dashboard-grid .dashboard-card:not(.story-market),
-        #story-operations:checked ~ .dashboard-grid .dashboard-card:not(.story-operations),
-        #story-trust:checked ~ .dashboard-grid .dashboard-card:not(.story-trust),
-        #story-concepts:checked ~ .dashboard-grid .dashboard-card:not(.story-concepts) {
             display: none;
         }
 
@@ -592,20 +566,11 @@ def _render_index_html(mounted_notebook_names: set[str]) -> str:
     planned_count = sum(
         1 for entry in entries if entry.status is DashboardStatus.PLANNED
     )
-    concept_links = "\n".join(_render_concept_link(entry) for entry in entries)
     audience_inputs = "\n".join(
         _render_audience_input(audience) for audience in ROADMAP_AUDIENCES
     )
     audience_labels = "\n".join(
         _render_audience_label(audience) for audience in ROADMAP_AUDIENCES
-    )
-    story_inputs = "\n".join(
-        _render_story_input(story)
-        for story in ("market", "operations", "trust", "concepts")
-    )
-    story_labels = "\n".join(
-        _render_story_label(story)
-        for story in ("market", "operations", "trust", "concepts")
     )
     overview_cards = "\n".join(
         _render_overview_card(story, entries)
@@ -655,10 +620,6 @@ def _render_index_html(mounted_notebook_names: set[str]) -> str:
             </div>
         </section>
 
-        <nav class="concept-nav" aria-label="Dashboard concepts">
-{concept_links}
-        </nav>
-
         <section class="gallery-shell" aria-label="Dashboard cards">
             <input
                 class="audience-filter"
@@ -668,14 +629,6 @@ def _render_index_html(mounted_notebook_names: set[str]) -> str:
                 checked
             >
 {audience_inputs}
-            <input
-                class="audience-filter"
-                type="radio"
-                id="story-all"
-                name="story-filter"
-                checked
-            >
-{story_inputs}
             <div class="gallery-tools">
                 <label class="search-box" for="dashboard-search">
                     {_inline_icon("search")}
@@ -691,13 +644,6 @@ def _render_index_html(mounted_notebook_names: set[str]) -> str:
                     <div class="filter-controls" aria-label="Audience filters">
                         <label for="audience-all">All audiences</label>
 {audience_labels}
-                    </div>
-                </div>
-                <div class="filter-block">
-                    <p class="filter-heading">Story groups</p>
-                    <div class="filter-controls" aria-label="Story group filters">
-                        <label for="story-all">All stories</label>
-{story_labels}
                     </div>
                 </div>
             </div>
@@ -726,13 +672,6 @@ def _render_index_html(mounted_notebook_names: set[str]) -> str:
     return html
 
 
-def _render_concept_link(entry: DashboardRegistryEntry) -> str:
-    return (
-        f'            <a href="#concept-{escape(entry.concept_id, quote=True)}">'
-        f"{escape(entry.title)}</a>"
-    )
-
-
 def _render_audience_input(audience: DashboardAudience) -> str:
     audience_value = escape(audience.value, quote=True)
     return f"""\
@@ -748,22 +687,6 @@ def _render_audience_label(audience: DashboardAudience) -> str:
     audience_value = escape(audience.value, quote=True)
     audience_label = escape(_label_from_slug(audience.value))
     return f'                <label for="audience-{audience_value}">{audience_label}</label>'
-
-
-def _render_story_input(story: str) -> str:
-    story_value = escape(story, quote=True)
-    return f"""\
-            <input
-                class="audience-filter story-filter"
-                type="radio"
-                id="story-{story_value}"
-                name="story-filter"
-            >"""
-
-
-def _render_story_label(story: str) -> str:
-    story_value = escape(story, quote=True)
-    return f'                        <label for="story-{story_value}">{escape(_label_from_slug(story))}</label>'
 
 
 def _render_overview_card(

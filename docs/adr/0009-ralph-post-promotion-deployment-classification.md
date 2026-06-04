@@ -47,6 +47,11 @@ non-triggering context. Direct `$ralph-loop promote` records the decision under
 recommendation, but does not invoke AWS, Pulumi, or deployment scripts.
 Issue attempts reuse the same classification snapshot in the implementation
 manifest when **Issue completion review** is required by deployable paths.
+If that pre-**Local integration** review reports only that deployed workflow
+evidence is missing, Ralph records the finding as deferred deployment evidence
+instead of failing the issue. The original review artifact remains preserved,
+but the missing log is not repairable inside the issue run because the
+checkpointed Operator path owns deployed evidence after **Promotion**.
 
 Ralph also records source-table archive replay recovery guidance alongside, not
 inside, the deployment tier. When a Promotion changes `surrogate_key_sources`

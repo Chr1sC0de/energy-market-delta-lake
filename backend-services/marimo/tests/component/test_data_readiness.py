@@ -371,10 +371,16 @@ def test_readiness_card_rendering_escapes_content_and_handles_no_actions() -> No
         readiness_action_markdown(overview)
         == "All readiness surfaces are reachable under the current configuration."
     )
-    assert 'class="readiness-card readiness-card--ready"' in html
-    assert 'class="readiness-card readiness-card--needs-attention"' in html
-    assert 'class="readiness-card readiness-card--empty"' in html
-    assert 'class="readiness-card readiness-card--unavailable"' in html
+    assert "dashboard-status-card-grid readiness-card-grid" in html
+    assert "dashboard-status-card--ready" in html
+    assert "dashboard-status-card--needs-attention" in html
+    assert "dashboard-status-card--empty" in html
+    assert "dashboard-status-card--unavailable" in html
+    assert "readiness-card--ready" in html
+    assert "readiness-card--needs-attention" in html
+    assert "readiness-card--empty" in html
+    assert "readiness-card--unavailable" in html
+    assert "Data readiness summary" in html
     assert "&lt;unsafe&gt;" in html
     assert "1 &lt; 2" in html
 
