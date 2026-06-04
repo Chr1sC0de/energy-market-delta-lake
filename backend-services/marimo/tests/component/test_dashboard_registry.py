@@ -6,10 +6,12 @@ import marimoserver.dashboard_registry as registry_module
 from marimoserver.dashboard_registry import (
     DASHBOARD_REGISTRY_RECORDS,
     ROADMAP_AUDIENCES,
+    TASK_GROUPS,
     DashboardAudience,
     DashboardRegistryError,
     DashboardRegistryEntry,
     DashboardStatus,
+    DashboardTaskGroup,
     SourceChunkReference,
     dashboard_registry,
     dashboard_registry_payload,
@@ -34,6 +36,7 @@ def test_dashboard_registry_parses_structured_entries() -> None:
 
     assert overview is not None
     assert overview.status is DashboardStatus.AVAILABLE
+    assert overview.task_group is DashboardTaskGroup.MARKET_ACTIVITY
     assert overview.notebook_name == "sample_energy_market"
     assert overview.notebook_route == "/marimo/sample_energy_market/"
     assert "silver.gas_model.silver_gas_fact_market_price" in overview.backing_assets
@@ -42,6 +45,7 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     source_coverage = registry_entry_by_concept_id("source-coverage-matrix", entries)
     assert source_coverage is not None
     assert source_coverage.status is DashboardStatus.AVAILABLE
+    assert source_coverage.task_group is DashboardTaskGroup.DATA_HEALTH
     assert source_coverage.notebook_name == "source_coverage_matrix"
     assert source_coverage.notebook_route == "/marimo/source_coverage_matrix/"
     assert DashboardAudience.DATA_ENGINEER in source_coverage.audiences
@@ -219,6 +223,7 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     glossary = registry_entry_by_concept_id("glossary-explorer", entries)
     assert glossary is not None
     assert glossary.status is DashboardStatus.AVAILABLE
+    assert glossary.task_group is DashboardTaskGroup.CONCEPT_EVIDENCE
     assert glossary.notebook_name == "glossary_explorer"
     assert glossary.notebook_route == "/marimo/glossary_explorer/"
     assert glossary.backing_assets == ()
@@ -420,6 +425,7 @@ def test_dashboard_registry_parses_structured_entries() -> None:
     flow = registry_entry_by_concept_id("flow-context", entries)
     assert flow is not None
     assert flow.status is DashboardStatus.AVAILABLE
+    assert flow.task_group is DashboardTaskGroup.GAS_OPERATIONS
     assert flow.notebook_name == "flow_operations"
     assert flow.notebook_route == "/marimo/flow_operations/"
     assert flow.backing_assets == (
@@ -448,8 +454,11 @@ def test_dashboard_registry_payload_includes_required_fields() -> None:
     payload = dashboard_registry_payload()
     entries = payload["entries"]
 
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2
     assert payload["audiences"] == [audience.value for audience in ROADMAP_AUDIENCES]
+    assert payload["task_groups"] == [
+        task_group.to_dict() for task_group in TASK_GROUPS
+    ]
     assert isinstance(entries, list)
     assert entries
 
@@ -458,6 +467,7 @@ def test_dashboard_registry_payload_includes_required_fields() -> None:
         "title",
         "description",
         "audiences",
+        "task_group",
         "status",
         "notebook_name",
         "notebook_route",
@@ -489,6 +499,37 @@ def test_dashboard_registry_covers_each_roadmap_audience() -> None:
     }
 
     assert set(ROADMAP_AUDIENCES) <= audiences
+
+
+def test_dashboard_registry_covers_each_task_group() -> None:
+    task_groups = {entry.task_group for entry in dashboard_registry()}
+
+    assert {task_group.value for task_group in TASK_GROUPS} <= task_groups
+
+
+def test_dashboard_registry_requires_each_task_group() -> None:
+    records = _registry_records()
+    for record in records:
+        record["task_group"] = "data-health"
+
+    with pytest.raises(DashboardRegistryError, match="task-group coverage"):
+        load_dashboard_registry(records)
+
+
+def test_dashboard_registry_parsing_rejects_missing_task_group() -> None:
+    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
+    del record["task_group"]
+
+    with pytest.raises(DashboardRegistryError, match="task_group"):
+        load_dashboard_registry([record])
+
+
+def test_dashboard_registry_parsing_rejects_unknown_task_group() -> None:
+    record = dict(DASHBOARD_REGISTRY_RECORDS[0])
+    record["task_group"] = "kitchen-sink"
+
+    with pytest.raises(DashboardRegistryError, match="unknown task_group"):
+        load_dashboard_registry([record])
 
 
 def test_dashboard_registry_keeps_market_context_metadata_in_registry_only_fields() -> (
@@ -695,6 +736,7 @@ def test_dashboard_registry_accepts_legacy_generated_artifact_refs() -> None:
         title="Legacy Context",
         description="Legacy generated artifact reference fixture.",
         audiences=(DashboardAudience.ANALYST,),
+        task_group=DashboardTaskGroup.CONCEPT_EVIDENCE,
         status=DashboardStatus.PLANNED,
         notebook_name=None,
         backing_assets=("silver.gas_model.legacy_table",),
