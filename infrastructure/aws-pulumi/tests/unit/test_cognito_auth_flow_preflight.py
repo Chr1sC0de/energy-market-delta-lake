@@ -10,7 +10,7 @@ from cognito_auth_flow_preflight import (
     CognitoAuthFlowPreflightError,
     cognito_parameter_names,
     load_app_client_reference,
-    user_pool_id_from_metadata_url,
+    user_pool_id_from_token_signing_key_url,
     validate_required_auth_flow,
 )
 
@@ -25,19 +25,19 @@ class FakeSsmClient:
         return {"Parameter": {"Value": self.values[Name]}}
 
 
-def test_user_pool_id_from_metadata_url() -> None:
+def test_user_pool_id_from_token_signing_key_url() -> None:
     assert (
-        user_pool_id_from_metadata_url(
+        user_pool_id_from_token_signing_key_url(
             "https://cognito-idp.ap-southeast-2.amazonaws.com/"
-            "ap-southeast-2_example/.well-known/openid-configuration"
+            "ap-southeast-2_example/.well-known/jwks.json"
         )
         == "ap-southeast-2_example"
     )
 
 
-def test_user_pool_id_rejects_unexpected_metadata_url() -> None:
-    with pytest.raises(CognitoAuthFlowPreflightError, match="metadata URL"):
-        user_pool_id_from_metadata_url("https://example.com/not-cognito")
+def test_user_pool_id_rejects_unexpected_token_signing_key_url() -> None:
+    with pytest.raises(CognitoAuthFlowPreflightError, match="token signing key URL"):
+        user_pool_id_from_token_signing_key_url("https://example.com/not-cognito")
 
 
 def test_load_app_client_reference_reads_non_secret_reference_values() -> None:
@@ -45,9 +45,9 @@ def test_load_app_client_reference_reads_non_secret_reference_values() -> None:
     ssm_client = FakeSsmClient(
         {
             parameter_names["client_id"]: "client-id-123",
-            parameter_names["server_metadata_url"]: (
+            parameter_names["token_signing_key_url"]: (
                 "https://cognito-idp.ap-southeast-2.amazonaws.com/"
-                "ap-southeast-2_pool/.well-known/openid-configuration"
+                "ap-southeast-2_pool/.well-known/jwks.json"
             ),
         }
     )
@@ -61,11 +61,11 @@ def test_load_app_client_reference_reads_non_secret_reference_values() -> None:
         user_pool_id="ap-southeast-2_pool",
         client_id="client-id-123",
         client_id_parameter_name=parameter_names["client_id"],
-        metadata_url_parameter_name=parameter_names["server_metadata_url"],
+        token_signing_key_url_parameter_name=parameter_names["token_signing_key_url"],
     )
     assert ssm_client.calls == [
         {"Name": parameter_names["client_id"], "WithDecryption": True},
-        {"Name": parameter_names["server_metadata_url"], "WithDecryption": True},
+        {"Name": parameter_names["token_signing_key_url"], "WithDecryption": True},
     ]
 
 
@@ -94,7 +94,7 @@ def _app_client_reference() -> CognitoAppClientReference:
         user_pool_id="ap-southeast-2_pool",
         client_id="client-id-123",
         client_id_parameter_name="/test/dagster/fastapi-auth/cognito_client_id",
-        metadata_url_parameter_name=(
-            "/test/dagster/fastapi-auth/cognito_server_metadata_url"
+        token_signing_key_url_parameter_name=(
+            "/test/dagster/fastapi-auth/cognito_token_signing_key_url"
         ),
     )

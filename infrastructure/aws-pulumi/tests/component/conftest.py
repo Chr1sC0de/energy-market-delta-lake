@@ -38,7 +38,6 @@ ComponentConfigSetter = Callable[[dict[str, str] | None], None]
 
 DEFAULT_COMPONENT_CONFIG = {
     "aws-pulumi:cognito_client_id": "test-cognito-client-id",
-    "aws-pulumi:cognito_server_metadata_url": "https://cognito.test.example.com/.well-known/openid-configuration",
     "aws-pulumi:cognito_token_signing_key_url": "https://cognito.test.example.com/.well-known/jwks.json",
     "aws-pulumi:cognito_client_secret": "test-cognito-client-secret",
     "aws-pulumi:website_root_url": "https://test.ausenergymarketdata.com",
@@ -48,7 +47,6 @@ DEFAULT_COMPONENT_CONFIG = {
 
 COMPONENT_SECRET_KEYS = [
     "aws-pulumi:cognito_client_id",
-    "aws-pulumi:cognito_server_metadata_url",
     "aws-pulumi:cognito_token_signing_key_url",
     "aws-pulumi:cognito_client_secret",
     "aws-pulumi:dagster_failure_alert_topic_arn",

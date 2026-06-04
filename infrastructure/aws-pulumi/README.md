@@ -256,7 +256,6 @@ This project reads a small set of important config values:
   - stack region, shown in `Pulumi.dev-ausenergymarket.yaml` as `ap-southeast-2`
 - Pulumi secrets for Cognito/auth and public site configuration:
   - `aws-pulumi:cognito_client_id`
-  - `aws-pulumi:cognito_server_metadata_url`
   - `aws-pulumi:cognito_token_signing_key_url`
   - `aws-pulumi:cognito_client_secret`
   - `aws-pulumi:website_root_url`

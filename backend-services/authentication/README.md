@@ -60,7 +60,6 @@ The service reads these environment variables:
 
 - `WEBSITE_ROOT_URL`
 - `COGNITO_DAGSTER_AUTH_CLIENT_ID`
-- `COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL`
 - `COGNITO_TOKEN_SIGNING_KEY_URL`
 - `COGNITO_DAGSTER_AUTH_CLIENT_SECRET`
 - `AWS_DEFAULT_REGION`
@@ -69,6 +68,8 @@ The service reads these environment variables:
 service compares browser origin headers for login requests.
 `AWS_DEFAULT_REGION` configures the regional Cognito IDP client used by the
 username/password login endpoint.
+`COGNITO_TOKEN_SIGNING_KEY_URL` provides the Cognito JWKS endpoint and issuer
+base used by access-token validation.
 
 The configured Cognito app client must allow username/password auth for the
 custom login endpoint. The service uses `COGNITO_DAGSTER_AUTH_CLIENT_SECRET` to
