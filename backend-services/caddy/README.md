@@ -119,6 +119,13 @@ npm run build
 npm run login-smoke
 ```
 
+When a Ralph issue requires this login-route check, declare it as
+`- QA: npm run build && npm run login-smoke`. Ralph then runs the command from
+this Subproject during formal QA and persists the command, cwd, status, and log
+path in the issue run manifest and Review package evidence. Manual smoke
+commands run only inside the implementation pass remain Codex implementation
+logs.
+
 For screenshot-based browser review, this Subproject includes Playwright as a
 development dependency. Install the Chromium browser once, then review the local
 Vite preview route:

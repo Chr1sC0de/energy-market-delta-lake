@@ -359,6 +359,8 @@ AEMO_ETL_FULL_E2E_SCENARIO = "full-gas-model"
 AEMO_ETL_PROMOTION_E2E_SCENARIO = "promotion-gas-model"
 AEMO_ETL_PROMOTION_E2E_TIMEOUT_SECONDS = 30 * 60
 AEMO_ETL_PROMOTION_E2E_MAX_CONCURRENT_RUNS = 6
+CADDY_LOGIN_SMOKE_QA_NAME = "Caddy build/login smoke"
+CADDY_LOGIN_SMOKE_COMMAND_TEXT = "npm run build && npm run login-smoke"
 MAINTAINED_DOC_PREFIXES = (
     "docs/",
     "backend-services/",
@@ -4663,18 +4665,58 @@ def select_declared_issue_qa_commands(
     changed_files: list[str],
     repo_root: Path,
 ) -> list[QACommand]:
+    commands: list[QACommand] = []
+    caddy_login_smoke_command = declared_caddy_login_smoke_command(
+        issue_body,
+        repo_root=repo_root,
+    )
+    if caddy_login_smoke_command is not None:
+        commands.append(caddy_login_smoke_command)
     if not has_aemo_etl_e2e_declared_qa_change(changed_files):
-        return []
+        return commands
     scenario = declared_aemo_etl_e2e_scenario(issue_body)
     if scenario is None:
-        return []
-    return [
+        return commands
+    commands.append(
         QACommand(
             ("scripts/aemo-etl-e2e", "run", "--scenario", scenario),
             repo_root / BACKEND_SERVICES_PREFIX,
             AEMO_ETL_E2E_QA_NAME,
         )
-    ]
+    )
+    return commands
+
+
+def declared_caddy_login_smoke_command(
+    issue_body: str,
+    *,
+    repo_root: Path,
+) -> QACommand | None:
+    for command_text in qa_command_lines_from_issue_body(issue_body):
+        if is_caddy_login_smoke_command_text(command_text):
+            return QACommand(
+                ("bash", "-lc", CADDY_LOGIN_SMOKE_COMMAND_TEXT),
+                repo_root / CADDY_PREFIX.rstrip("/"),
+                CADDY_LOGIN_SMOKE_QA_NAME,
+            )
+    return None
+
+
+def is_caddy_login_smoke_command_text(command_text: str) -> bool:
+    try:
+        args = shlex.split(command_text)
+    except ValueError:
+        return False
+    if args[:3] == ["cd", CADDY_PREFIX.rstrip("/"), "&&"]:
+        args = args[3:]
+    return args == ["npm", "run", "build", "&&", "npm", "run", "login-smoke"]
+
+
+def issue_declares_caddy_login_smoke(issue_body: str) -> bool:
+    return any(
+        is_caddy_login_smoke_command_text(command_text)
+        for command_text in qa_command_lines_from_issue_body(issue_body)
+    )
 
 
 def declared_aemo_etl_e2e_scenario(issue_body: str) -> str | None:
@@ -4775,6 +4817,18 @@ def validate_declared_issue_qa_evidence(
     issue: Issue,
     qa_results: list[QAResult],
 ) -> None:
+    if issue_declares_caddy_login_smoke(issue.body):
+        has_caddy_login_smoke_evidence = any(
+            result.command.name == CADDY_LOGIN_SMOKE_QA_NAME for result in qa_results
+        )
+        if not has_caddy_login_smoke_evidence:
+            raise IssueFailure(
+                f"Issue #{issue.number} declares `{CADDY_LOGIN_SMOKE_COMMAND_TEXT}` "
+                "evidence, but Ralph did not record "
+                f"`{CADDY_LOGIN_SMOKE_QA_NAME}` before Local integration. Run the "
+                "declared Caddy Subproject smoke command or remove the stale issue "
+                "QA requirement before rerunning Ralph."
+            )
     if declared_aemo_etl_e2e_scenario(issue.body) is None:
         return
     if any(result.command.name == AEMO_ETL_E2E_QA_NAME for result in qa_results):
