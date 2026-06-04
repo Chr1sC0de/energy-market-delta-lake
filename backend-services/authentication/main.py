@@ -1,23 +1,21 @@
-"""FastAPI OIDC authentication service for protected backend routes."""
+"""FastAPI Cognito authentication service for protected backend routes."""
 
 from base64 import b64encode
-from collections.abc import Awaitable
 from hmac import new as hmac_new
 from hashlib import sha256
 from os import environ
 from secrets import token_urlsafe
 from time import time
-from typing import Any, Callable, NotRequired, TypedDict, cast
+from typing import Any, NotRequired, TypedDict, cast
 from urllib.parse import unquote, urlsplit
 
 import boto3
 import requests
-from authlib.integrations.starlette_client import OAuth, StarletteOAuth2App
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from jose import jwk, jwt
 from jose.utils import base64url_decode
 from starlette.middleware.sessions import SessionMiddleware
-from starlette.responses import JSONResponse, RedirectResponse, Response
+from starlette.responses import JSONResponse
 from starlette.status import (
     HTTP_200_OK,
     HTTP_401_UNAUTHORIZED,
@@ -75,10 +73,9 @@ def _normalise_website_root_url(raw: str) -> str:
     Trailing slashes are always stripped so callers can safely append a path
     without producing double-slashes.
 
-    This guards against the config being set without a scheme, which would
-    cause Starlette to treat the redirect as relative and produce a malformed
-    URL such as:
-      /oauth2/…/authorize/ausenergymarketdata.com/dagster-webserver/admin
+    This keeps configured origins comparable with browser Origin and Referer
+    headers even when the environment value omits the scheme or has a trailing
+    slash.
     """
     url = raw.rstrip("/")
     if url.startswith("http://"):
@@ -92,23 +89,6 @@ def _normalise_website_root_url(raw: str) -> str:
 
 _website_root_url: str = _normalise_website_root_url(environ["WEBSITE_ROOT_URL"])
 
-
-oauth = OAuth()
-
-
-_ = oauth.register(
-    name="oidc",
-    client_id=environ["COGNITO_DAGSTER_AUTH_CLIENT_ID"],
-    server_metadata_url=environ["COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL"],
-    client_secret=environ["COGNITO_DAGSTER_AUTH_CLIENT_SECRET"],
-    client_kwargs={"scope": "openid email phone"},
-)
-
-oidc = cast(StarletteOAuth2App, oauth.oidc)
-
-authorize_redirect = cast(
-    Callable[..., Awaitable[RedirectResponse]], oidc.authorize_redirect
-)
 
 # JSON Web Key
 JWK = dict[str, str]
@@ -425,14 +405,6 @@ def _validate_session(request: Request) -> JSONResponse:
         )
 
 
-def _build_redirect_uri(request: Request, route_name: str) -> str:
-    """Build a redirect URI, rewriting http→https for non-localhost hosts."""
-    redirect_uri = str(request.url_for(route_name))
-    if "localhost" not in redirect_uri:
-        redirect_uri = redirect_uri.replace("http", "https", 1)
-    return redirect_uri
-
-
 @router.post("/auth/login")
 async def auth_login(request: Request) -> JSONResponse:
     """Authenticate credentials through Cognito and start an opaque session."""
@@ -512,28 +484,6 @@ async def logout(request: Request) -> JSONResponse:
     return JSONResponse(status_code=HTTP_200_OK, content={"redirect": "/"})
 
 
-async def _authorize_callback(request: Request, redirect_path: str) -> Response:
-    """Shared OIDC callback logic — exchanges code for token, sets session."""
-    try:
-        token = await oidc.authorize_access_token(request)
-        clear_session(request.session)
-        session_id = token_urlsafe(32)
-        AUTH_SESSIONS[session_id] = {
-            "user": token["userinfo"],
-            "token_type": token["token_type"],
-            "access_token": token["access_token"],
-            "expires_at": token["expires_at"],
-        }
-        request.session[AUTH_SESSION_ID_FIELD] = session_id
-        return RedirectResponse(f"{_website_root_url}{redirect_path}")
-    except Exception as e:
-        clear_session(request.session)
-        return JSONResponse(
-            status_code=HTTP_401_UNAUTHORIZED,
-            content={"message": str(e)},
-        )
-
-
 # ---------------------------------------------------------------------------
 # Dagster webserver admin routes
 # ---------------------------------------------------------------------------
@@ -542,28 +492,7 @@ async def _authorize_callback(request: Request, redirect_path: str) -> Response:
 @router.get("/oauth2/dagster-webserver/admin/validate")
 async def oauth2_dagster_webserver_validate(request: Request) -> JSONResponse:
     """Validate the Dagster webserver admin browser session."""
-    request.session
-
-    login_redirect_uri = str(request.url_for("oauth2_dagster_webserver_login"))
-    if "localhost" not in login_redirect_uri:
-        login_redirect_uri = login_redirect_uri.replace("http", "https", 1)
-
     return _validate_session(request)
-
-
-@router.get("/dagster-webserver/admin/login")
-async def oauth2_dagster_webserver_login(request: Request) -> RedirectResponse:
-    """Start the Dagster webserver admin OIDC login flow."""
-    redirect_uri = _build_redirect_uri(request, "oauth2_dagster_webserver_authorize")
-    return await oidc.authorize_redirect(request, redirect_uri)
-
-
-@router.get("/oauth2/dagster-webserver/admin/authorize", response_model=None)
-async def oauth2_dagster_webserver_authorize(
-    request: Request,
-) -> Response:
-    """Handle the Dagster webserver admin OIDC authorization callback."""
-    return await _authorize_callback(request, "/dagster-webserver/admin")
 
 
 # ---------------------------------------------------------------------------
@@ -575,19 +504,6 @@ async def oauth2_dagster_webserver_authorize(
 async def oauth2_marimo_validate(request: Request) -> JSONResponse:
     """Validate the marimo browser session."""
     return _validate_session(request)
-
-
-@router.get("/marimo/login")
-async def oauth2_marimo_login(request: Request) -> RedirectResponse:
-    """Start the marimo OIDC login flow."""
-    redirect_uri = _build_redirect_uri(request, "oauth2_marimo_authorize")
-    return await oidc.authorize_redirect(request, redirect_uri)
-
-
-@router.get("/oauth2/marimo/authorize", response_model=None)
-async def oauth2_marimo_authorize(request: Request) -> Response:
-    """Handle the marimo OIDC authorization callback."""
-    return await _authorize_callback(request, "/marimo")
 
 
 app.include_router(router)

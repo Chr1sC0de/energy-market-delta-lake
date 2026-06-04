@@ -75,7 +75,7 @@ flowchart LR
 | Component | Placement | Key resources | Purpose |
 |---|---|---|---|
 | `BastionHostComponentResource` | public subnet | EC2 instance, EIP, SSH key pair, SSM params | controlled operator entry point |
-| `FastAPIAuthComponentResource` | private subnet | EC2 instance, ECR-read role, digest-pinned Docker bootstrap | OIDC/session bridge for protected routes |
+| `FastAPIAuthComponentResource` | private subnet | EC2 instance, ECR-read role, digest-pinned Docker bootstrap | Cognito session validator for protected routes |
 | `MarimoDashboardComponentResource` | private subnet | EC2 instance with encrypted 30 GiB `gp3` root volume, ECR-read and SSM role, Cloud Map service, read-only S3 policy | curated dashboard notebook service |
 | `CaddyServerComponentResource` | public subnet | EC2 instance, EIP, 1 GiB EBS volume, Route 53 record | public TLS termination and reverse proxy |
 

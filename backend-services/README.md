@@ -30,7 +30,7 @@ architecture is defined in `infrastructure/aws-pulumi/`.
 | `dagster-webserver-admin` | Protected Dagster UI + GraphQL API | internal |
 | `dagster-webserver-guest` | Guest Dagster UI + GraphQL API | internal |
 | `dagster-daemon` | Schedule, sensor, and run queue processor | — |
-| `authentication` | OIDC/session bridge for protected routes | internal |
+| `authentication` | Cognito session validator for protected routes | internal |
 | `marimo-dashboard` | Curated Marimo dashboard service | internal |
 | `marimo-codex-workspace` | Local-only Marimo-Codex research workspace | `127.0.0.1:2719` |
 | `caddy` | Local reverse proxy, Vite + React Router portfolio, and public entrypoint | `80`, `443` |
