@@ -18,6 +18,10 @@ FastAPI service used behind Caddy to protect the admin Dagster UI and
   `SessionMiddleware` browser cookie
 - keeps Cognito user and access-token state server-side behind that session id
 - redirects users to the configured OIDC provider for login
+- accepts same-origin custom login posts at `/auth/login`, authenticates
+  username/password credentials with Cognito password auth, and returns a safe
+  local redirect target
+- clears the opaque auth session through `POST /logout`
 - validates the returned Cognito access token against the configured JWKS
   endpoint, user-pool issuer, expiry, access-token use, and app client id
 - returns auth decisions to Caddy `forward_auth` checks for protected routes
@@ -34,10 +38,20 @@ Current route groups implemented in [main.py](main.py):
   - `/marimo/login`
   - `/oauth2/marimo/authorize`
   - `/oauth2/marimo/validate`
+- Custom browser auth:
+  - `POST /auth/login`
+  - `POST /logout`
 
 In local compose and AWS, Caddy forwards these auth routes to the
 `authentication` service and uses the `*/validate` endpoints for `forward_auth`
 checks before proxying to the protected upstream.
+
+`POST /auth/login` accepts JSON or form fields named `identifier`, `password`,
+and optional `next`. It rejects cross-origin `Origin` or `Referer` headers,
+computes Cognito `SECRET_HASH` server-side, and stores only server-side auth
+state behind the opaque browser session id. `next` must resolve to `/`,
+`/dagster-webserver/admin`, `/dagster-webserver/admin/...`, `/marimo`, or
+`/marimo/...`.
 
 The local-only `marimo-codex-workspace` service is not routed through this auth
 service. It binds to `127.0.0.1:2719` for local research and remains outside
@@ -65,6 +79,11 @@ external auth callback routes for each protected surface:
 For local browser auth testing, also allow the same two callback paths under
 `https://localhost`. If the Marimo callback is missing, Cognito returns
 `redirect_mismatch` when users open `/marimo` without an existing admin session.
+
+The same Cognito app client must allow username/password auth for the custom
+login endpoint. The service uses `COGNITO_DAGSTER_AUTH_CLIENT_SECRET` to compute
+the Cognito `SECRET_HASH`; the secret hash, password, raw Cognito response, ID
+token, and refresh token are not written to browser cookies or responses.
 
 ## Local usage
 

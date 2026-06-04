@@ -150,6 +150,10 @@ def _client_with_auth_session(
     return client, headers, session_id
 
 
+def _same_origin_headers() -> dict[str, str]:
+    return {"Origin": "https://example.com", "Referer": "https://example.com/login"}
+
+
 # ---------------------------------------------------------------------------
 # TestGetUserPoolTokenSigningKey
 # ---------------------------------------------------------------------------
@@ -167,6 +171,54 @@ class TestGetUserPoolTokenSigningKey:
         main.requests.get.assert_called_once_with(  # type: ignore[attr-defined]
             main.environ["COGNITO_TOKEN_SIGNING_KEY_URL"]
         )
+
+
+class TestAuthenticateWithCognitoPassword:
+    def test_calls_cognito_user_password_auth(self, mocker: MockerFixture) -> None:
+        cognito_client = MagicMock()
+        cognito_client.initiate_auth.return_value = {"AuthenticationResult": {}}
+        boto3_client = mocker.patch("main.boto3.client", return_value=cognito_client)
+
+        result = main.authenticate_with_cognito_password(
+            identifier="user@example.com",
+            password="password",
+            secret_hash="secret-hash",
+        )
+
+        assert result == {"AuthenticationResult": {}}
+        boto3_client.assert_called_once_with("cognito-idp")
+        cognito_client.initiate_auth.assert_called_once_with(
+            AuthFlow="USER_PASSWORD_AUTH",
+            ClientId="test-client-id",
+            AuthParameters={
+                "USERNAME": "user@example.com",
+                "PASSWORD": "password",
+                "SECRET_HASH": "secret-hash",
+            },
+        )
+
+
+class TestLoginRequestHelpers:
+    @pytest.mark.parametrize("url", ["", "/relative", "ftp://example.com"])
+    def test_origin_for_url_rejects_non_http_origins(self, url: str) -> None:
+        assert main._origin_for_url(url) is None
+
+    def test_configured_bad_website_origin_rejects_request(
+        self, mocker: MockerFixture
+    ) -> None:
+        mocker.patch("main._website_root_url", "/relative")
+        authenticate = mocker.patch("main.authenticate_with_cognito_password")
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.post(
+            TestCustomLoginEndpoint.URL,
+            headers=_same_origin_headers(),
+            json={"identifier": "user@example.com", "password": "password"},
+        )
+
+        assert response.status_code == 403
+        assert response.json() == {"message": main.LOGIN_FAILURE_MESSAGE}
+        authenticate.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -569,6 +621,345 @@ class TestLoginEndpoint:
         assert len(captured) == 1
         # localhost → no rewrite, stays http
         assert captured[0].startswith("http://")
+
+
+# ---------------------------------------------------------------------------
+# TestCustomLoginEndpoint
+# ---------------------------------------------------------------------------
+
+
+class TestCustomLoginEndpoint:
+    URL = "/auth/login"
+
+    def _successful_cognito_response(self) -> dict[str, Any]:
+        return {
+            "AuthenticationResult": {
+                "AccessToken": FAKE_TOKEN,
+                "TokenType": "Bearer",
+                "ExpiresIn": 3600,
+                "IdToken": "id-token-not-stored",
+                "RefreshToken": "refresh-token-not-stored",
+            }
+        }
+
+    def test_json_login_success_sets_only_opaque_cookie(
+        self, mocker: MockerFixture
+    ) -> None:
+        authenticate = mocker.patch(
+            "main.authenticate_with_cognito_password",
+            return_value=self._successful_cognito_response(),
+        )
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.post(
+            self.URL,
+            headers=_same_origin_headers(),
+            json={
+                "identifier": "user@example.com",
+                "password": "correct-password",
+                "next": "/marimo",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"redirect": "/marimo"}
+        expected_secret_hash = main.compute_secret_hash("user@example.com")
+        authenticate.assert_called_once_with(
+            identifier="user@example.com",
+            password="correct-password",
+            secret_hash=expected_secret_hash,
+        )
+
+        cookie_payload = _session_cookie_from_response(response)
+        assert set(cookie_payload) == {main.AUTH_SESSION_ID_FIELD}
+        session_id = cookie_payload[main.AUTH_SESSION_ID_FIELD]
+        assert session_id in main.AUTH_SESSIONS
+        assert main.AUTH_SESSIONS[session_id]["user"] == {
+            "identifier": "user@example.com"
+        }
+        assert main.AUTH_SESSIONS[session_id]["token_type"] == "Bearer"
+        assert main.AUTH_SESSIONS[session_id]["access_token"] == FAKE_TOKEN
+        assert main.AUTH_SESSIONS[session_id]["expires_at"] > time()
+
+        response_text = response.text.lower()
+        cookie_text = response.headers["set-cookie"].lower()
+        server_state_text = json.dumps(main.AUTH_SESSIONS[session_id]).lower()
+        for forbidden in (
+            "correct-password",
+            expected_secret_hash.lower(),
+            "id-token-not-stored",
+            "refresh-token-not-stored",
+            "authenticationresult",
+        ):
+            assert forbidden not in response_text
+            assert forbidden not in cookie_text
+            assert forbidden not in server_state_text
+
+    def test_form_login_success(self, mocker: MockerFixture) -> None:
+        mocker.patch(
+            "main.authenticate_with_cognito_password",
+            return_value=self._successful_cognito_response(),
+        )
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.post(
+            self.URL,
+            headers=_same_origin_headers(),
+            data={
+                "identifier": "user@example.com",
+                "password": "correct-password",
+                "next": "/dagster-webserver/admin",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"redirect": "/dagster-webserver/admin"}
+
+    def test_failed_credentials_returns_generic_error_and_no_session(
+        self, mocker: MockerFixture
+    ) -> None:
+        mocker.patch(
+            "main.authenticate_with_cognito_password",
+            side_effect=RuntimeError("not authorized"),
+        )
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.post(
+            self.URL,
+            headers=_same_origin_headers(),
+            json={"identifier": "user@example.com", "password": "wrong-password"},
+        )
+
+        assert response.status_code == 401
+        assert response.json() == {"message": main.LOGIN_FAILURE_MESSAGE}
+        assert main.AUTH_SESSIONS == {}
+        assert "not authorized" not in response.text.lower()
+        assert "wrong-password" not in response.text
+
+    def test_challenge_response_does_not_authenticate(
+        self, mocker: MockerFixture
+    ) -> None:
+        mocker.patch(
+            "main.authenticate_with_cognito_password",
+            return_value={
+                "ChallengeName": "NEW_PASSWORD_REQUIRED",
+                "Session": "challenge-session",
+            },
+        )
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.post(
+            self.URL,
+            headers=_same_origin_headers(),
+            json={"identifier": "user@example.com", "password": "password"},
+        )
+
+        assert response.status_code == 401
+        assert response.json() == {"message": main.LOGIN_FAILURE_MESSAGE}
+        assert main.AUTH_SESSIONS == {}
+        assert "challenge-session" not in response.text
+
+    @pytest.mark.parametrize(
+        "cognito_response",
+        [
+            {},
+            {"AuthenticationResult": None},
+            {"AuthenticationResult": {"TokenType": "Bearer", "ExpiresIn": 3600}},
+            {
+                "AuthenticationResult": {
+                    "AccessToken": FAKE_TOKEN,
+                    "ExpiresIn": 3600,
+                }
+            },
+            {
+                "AuthenticationResult": {
+                    "AccessToken": FAKE_TOKEN,
+                    "TokenType": "Bearer",
+                    "ExpiresIn": 0,
+                }
+            },
+        ],
+    )
+    def test_malformed_cognito_response_does_not_authenticate(
+        self, mocker: MockerFixture, cognito_response: dict[str, Any]
+    ) -> None:
+        mocker.patch(
+            "main.authenticate_with_cognito_password", return_value=cognito_response
+        )
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.post(
+            self.URL,
+            headers=_same_origin_headers(),
+            json={"identifier": "user@example.com", "password": "password"},
+        )
+
+        assert response.status_code == 401
+        assert response.json() == {"message": main.LOGIN_FAILURE_MESSAGE}
+        assert main.AUTH_SESSIONS == {}
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {},
+            {"identifier": "user@example.com"},
+            {"password": "password"},
+            {"identifier": "", "password": "password"},
+            {"identifier": "user@example.com", "password": ""},
+        ],
+    )
+    def test_malformed_request_does_not_call_cognito(
+        self, mocker: MockerFixture, payload: dict[str, str]
+    ) -> None:
+        authenticate = mocker.patch("main.authenticate_with_cognito_password")
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.post(self.URL, headers=_same_origin_headers(), json=payload)
+
+        assert response.status_code == 401
+        assert response.json() == {"message": main.LOGIN_FAILURE_MESSAGE}
+        authenticate.assert_not_called()
+        assert main.AUTH_SESSIONS == {}
+
+    @pytest.mark.parametrize("body", ["[1, 2, 3]", "{"])
+    def test_malformed_json_body_does_not_call_cognito(
+        self, mocker: MockerFixture, body: str
+    ) -> None:
+        authenticate = mocker.patch("main.authenticate_with_cognito_password")
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.post(
+            self.URL,
+            headers={**_same_origin_headers(), "Content-Type": "application/json"},
+            content=body,
+        )
+
+        assert response.status_code == 401
+        assert response.json() == {"message": main.LOGIN_FAILURE_MESSAGE}
+        authenticate.assert_not_called()
+        assert main.AUTH_SESSIONS == {}
+
+    @pytest.mark.parametrize(
+        "headers",
+        [
+            {"Origin": "https://attacker.example.com"},
+            {"Referer": "https://attacker.example.com/login"},
+            {
+                "Origin": "https://example.com",
+                "Referer": "https://attacker.example.com/login",
+            },
+        ],
+    )
+    def test_origin_rejection_happens_before_cognito(
+        self, mocker: MockerFixture, headers: dict[str, str]
+    ) -> None:
+        authenticate = mocker.patch("main.authenticate_with_cognito_password")
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.post(
+            self.URL,
+            headers=headers,
+            json={"identifier": "user@example.com", "password": "password"},
+        )
+
+        assert response.status_code == 403
+        assert response.json() == {"message": main.LOGIN_FAILURE_MESSAGE}
+        authenticate.assert_not_called()
+        assert main.AUTH_SESSIONS == {}
+
+    @pytest.mark.parametrize(
+        "next_path",
+        [
+            "/",
+            "/dagster-webserver/admin",
+            "/dagster-webserver/admin/runs",
+            "/marimo",
+            "/marimo/notebooks",
+        ],
+    )
+    def test_safe_next_values_are_returned(
+        self, mocker: MockerFixture, next_path: str
+    ) -> None:
+        mocker.patch(
+            "main.authenticate_with_cognito_password",
+            return_value=self._successful_cognito_response(),
+        )
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.post(
+            self.URL,
+            headers=_same_origin_headers(),
+            json={
+                "identifier": "user@example.com",
+                "password": "password",
+                "next": next_path,
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"redirect": next_path}
+
+    @pytest.mark.parametrize(
+        "next_path",
+        [
+            "https://example.com/marimo",
+            "http://example.com/marimo",
+            "//example.com/marimo",
+            "//",
+            "/%2fexample.com/marimo",
+            "/%5cexample.com/marimo",
+            "/marimo%0d%0aSet-Cookie:%20x=y",
+            "/marimo\nx",
+            "/marimo\\x",
+            "/dagster-webserver",
+            "/dagster-webserver/administer",
+            "/other",
+            "marimo",
+        ],
+    )
+    def test_unsafe_next_values_do_not_call_cognito(
+        self, mocker: MockerFixture, next_path: str
+    ) -> None:
+        authenticate = mocker.patch("main.authenticate_with_cognito_password")
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.post(
+            self.URL,
+            headers=_same_origin_headers(),
+            json={
+                "identifier": "user@example.com",
+                "password": "password",
+                "next": next_path,
+            },
+        )
+
+        assert response.status_code == 401
+        assert response.json() == {"message": main.LOGIN_FAILURE_MESSAGE}
+        authenticate.assert_not_called()
+        assert main.AUTH_SESSIONS == {}
+
+
+class TestCustomLogoutEndpoint:
+    URL = "/logout"
+
+    def test_post_logout_clears_opaque_session(self) -> None:
+        client, headers, session_id = _client_with_auth_session(_auth_session_data())
+
+        response = client.post(self.URL, headers=headers)
+
+        assert response.status_code == 200
+        assert response.json() == {"redirect": "/"}
+        assert session_id not in main.AUTH_SESSIONS
+        cookie = SimpleCookie()
+        cookie.load(response.headers["set-cookie"])
+        assert cookie["session"].value == "null"
+
+    def test_get_logout_is_out_of_scope(self) -> None:
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get(self.URL)
+
+        assert response.status_code == 405
 
 
 # ---------------------------------------------------------------------------
