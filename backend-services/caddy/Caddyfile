@@ -100,7 +100,7 @@
 
                 @error status 401
                 handle_response @error {
-                    redir * /marimo/login
+                    redir * /login?next=/marimo
                 }
         }
 
