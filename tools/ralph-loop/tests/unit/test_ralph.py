@@ -5865,6 +5865,116 @@ Build it.
         self.assertEqual(commands[-1].name, "aemo-etl End-to-end test")
         self.assertEqual(commands[-1].cwd, Path("/repo/backend-services"))
 
+    def test_select_qa_commands_adds_declared_caddy_login_smoke(self) -> None:
+        commands = ralph.select_qa_commands(
+            ["backend-services/caddy/scripts/login-smoke.mjs"],
+            Path("/repo"),
+            issue_body="\n".join(
+                [
+                    "## QA/deploy verification plan",
+                    "",
+                    "- QA: `npm run build && npm run login-smoke`",
+                ]
+            ),
+        )
+
+        self.assertEqual(
+            [(command.name, command.args, command.cwd) for command in commands],
+            [
+                (
+                    "root Commit check",
+                    ("prek", "run", "-a"),
+                    Path("/repo"),
+                ),
+                (
+                    "Caddy build/login smoke",
+                    ("bash", "-lc", "npm run build && npm run login-smoke"),
+                    Path("/repo/backend-services/caddy"),
+                ),
+            ],
+        )
+
+    def test_declared_caddy_login_smoke_requires_recorded_evidence(self) -> None:
+        issue = make_issue(
+            {ralph.READY_LABEL},
+            body="\n".join(
+                [
+                    "## QA/deploy verification plan",
+                    "",
+                    "- QA: `npm run build && npm run login-smoke`",
+                ]
+            ),
+        )
+        qa_results = [
+            ralph.QAResult(
+                command=ralph.QACommand(
+                    ("prek", "run", "-a"),
+                    Path("/repo"),
+                    "root Commit check",
+                ),
+                log_path=Path("/logs/qa.log"),
+            )
+        ]
+
+        with self.assertRaises(ralph.IssueFailure) as context:
+            ralph.validate_declared_issue_qa_evidence(issue, qa_results)
+
+        self.assertIn("npm run build && npm run login-smoke", str(context.exception))
+        self.assertIn("before Local integration", str(context.exception))
+
+    def test_declared_caddy_login_smoke_accepts_recorded_evidence(self) -> None:
+        issue = make_issue(
+            {ralph.READY_LABEL},
+            body="\n".join(
+                [
+                    "## QA/deploy verification plan",
+                    "",
+                    "- QA: `npm run build && npm run login-smoke`",
+                ]
+            ),
+        )
+        qa_results = [
+            ralph.QAResult(
+                command=ralph.QACommand(
+                    ("bash", "-lc", "npm run build && npm run login-smoke"),
+                    Path("/repo/backend-services/caddy"),
+                    "Caddy build/login smoke",
+                ),
+                log_path=Path("/logs/caddy-login-smoke.log"),
+            )
+        ]
+
+        ralph.validate_declared_issue_qa_evidence(issue, qa_results)
+
+    def test_review_package_prompt_includes_caddy_login_smoke_log_path(self) -> None:
+        issue = make_issue({ralph.READY_LABEL}, IMPLEMENTATION_BODY)
+        delivery_plan = ralph.resolve_delivery_plan(
+            issue,
+            default_mode=ralph.TRUNK_MODE,
+            target_branch="main",
+        )
+        prompt = ralph.review_package_prompt(
+            issue=issue,
+            repo="example/repo",
+            changed_files=["backend-services/caddy/scripts/login-smoke.mjs"],
+            delivery_plan=delivery_plan,
+            qa_results=[
+                ralph.QAResult(
+                    command=ralph.QACommand(
+                        ("bash", "-lc", "npm run build && npm run login-smoke"),
+                        Path("/repo/backend-services/caddy"),
+                        "Caddy build/login smoke",
+                    ),
+                    log_path=Path("/logs/qa-2-caddy-build-login-smoke.log"),
+                )
+            ],
+            run_dir=Path("/logs/issue-42-test"),
+        )
+
+        self.assertIn("npm run build && npm run login-smoke", prompt)
+        self.assertIn("/repo/backend-services/caddy", prompt)
+        self.assertIn("/logs/qa-2-caddy-build-login-smoke.log", prompt)
+
     def test_declared_aemo_etl_end_to_end_lane_requires_recorded_evidence(
         self,
     ) -> None:
@@ -13979,6 +14089,88 @@ Build it.
                     "status": "passed",
                 }
             ],
+        )
+
+    def test_declared_caddy_login_smoke_records_manifest_command(self) -> None:
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = make_loop(tmp_path, runner)
+            issue = make_issue(
+                {"ready-for-agent"},
+                IMPLEMENTATION_BODY
+                + """
+## QA/deploy verification plan
+
+- QA: `npm run build && npm run login-smoke`
+""",
+            )
+            delivery_plan = ralph.resolve_delivery_plan(
+                issue,
+                default_mode=loop.config.delivery_mode,
+                target_branch=loop.config.target_branch,
+            )
+            branch, worktree_path, integration_path = loop._branch_and_worktrees(issue)
+            run_dir = tmp_path / "logs" / "issue-42-test"
+            manifest = ralph.RunManifest.for_implementation(
+                run_dir=run_dir,
+                issue=issue,
+                delivery_plan=delivery_plan,
+                branch=branch,
+                worktree_path=worktree_path,
+                integration_path=integration_path,
+                config=loop.config,
+            )
+
+            with patch.dict(ralph.os.environ, {"PATH": "/usr/bin"}, clear=True):
+                with redirect_stdout(io.StringIO()):
+                    loop._run_qa_commands(
+                        ["backend-services/caddy/scripts/login-smoke.mjs"],
+                        loop.config.repo_root,
+                        run_dir,
+                        log_prefix="qa",
+                        subject="#42",
+                        manifest=manifest,
+                        issue_body=issue.body,
+                    )
+
+            manifest_payload = json.loads(manifest.path.read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            manifest_payload["qa_results"],
+            [
+                {
+                    "name": "root Commit check",
+                    "command": ["prek", "run", "-a"],
+                    "cwd": str(loop.config.repo_root),
+                    "log_path": str(run_dir / "qa-1-root-commit-check.log"),
+                    "status": "passed",
+                },
+                {
+                    "name": "Caddy build/login smoke",
+                    "command": [
+                        "bash",
+                        "-lc",
+                        "npm run build && npm run login-smoke",
+                    ],
+                    "cwd": str(loop.config.repo_root / "backend-services/caddy"),
+                    "log_path": str(run_dir / "qa-2-caddy-build-login-smoke.log"),
+                    "status": "passed",
+                },
+            ],
+        )
+
+        caddy_call = next(
+            call
+            for call in runner.calls
+            if call.phase == "#42: QA Caddy build/login smoke"
+        )
+        self.assertEqual(
+            caddy_call.cwd, loop.config.repo_root / "backend-services/caddy"
+        )
+        self.assertEqual(
+            caddy_call.args,
+            ("bash", "-lc", "npm run build && npm run login-smoke"),
         )
 
     def test_successful_implementation_squash_merges_pushes_comments_and_closes(

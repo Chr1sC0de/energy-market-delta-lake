@@ -15,6 +15,7 @@ but marimo does not support ``path="/"`` for dynamic directories.
 
 from __future__ import annotations
 
+import json
 import mimetypes
 import os
 from html import escape
@@ -327,7 +328,7 @@ _INDEX_CSS = """
             gap: 10px;
         }
 
-        .roadmap-section .asset-list {
+        .roadmap-section .evidence-list {
             display: none;
         }
 
@@ -374,8 +375,7 @@ _INDEX_CSS = """
         }
 
         .card-topline,
-        .audience-tags,
-        .asset-list {
+        .evidence-list {
             display: flex;
             flex-wrap: wrap;
             gap: 7px;
@@ -383,8 +383,8 @@ _INDEX_CSS = """
         }
 
         .status-pill,
-        .audience-tag,
-        .asset-pill {
+        .evidence-pill,
+        .detail-pill {
             display: inline-flex;
             align-items: center;
             max-width: 100%;
@@ -421,18 +421,18 @@ _INDEX_CSS = """
             background: rgb(var(--emdl-blue-rgb, 22 103 145) / 0.11);
         }
 
-        .audience-tag {
+        .evidence-pill {
             color: var(--emdl-slate, #354348);
             background: var(--emdl-service-band, #eef4f1);
         }
 
-        .asset-list {
+        .evidence-list {
             padding: 0;
             margin: 0;
             list-style: none;
         }
 
-        .asset-pill {
+        .detail-pill {
             color: var(--emdl-muted, #566365);
             background: rgb(var(--emdl-line-rgb, 207 219 214) / 0.34);
         }
@@ -464,10 +464,41 @@ _INDEX_CSS = """
             color: var(--emdl-muted, #566365);
         }
 
-        .spotlight-meta {
+        .spotlight-meta,
+        .spotlight-detail-grid {
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
+            min-width: 0;
+        }
+
+        .spotlight-detail-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+            margin-top: 4px;
+        }
+
+        .spotlight-detail {
+            display: grid;
+            align-content: start;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .spotlight-detail strong {
+            color: var(--emdl-slate, #354348);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+        }
+
+        .detail-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            min-width: 0;
+            padding: 0;
+            margin: 0;
+            list-style: none;
         }
 
         @media (max-width: 640px) {
@@ -716,11 +747,12 @@ def _render_index_html(mounted_notebook_names: set[str]) -> str:
                 <h2>Source to dashboard route</h2>
                 <p>
                     Select or focus a dashboard card to inspect its task group,
-                    status, audience, and backing assets.
+                    route, section, status, audience, backing assets, and
+                    evidence identifiers.
                 </p>
                 <div class="spotlight-meta" aria-label="Spotlight details">
-                    <span class="asset-pill">Static fallback ready</span>
-                    <span class="asset-pill">No auto-refresh timers</span>
+                    <span class="detail-pill">Static fallback ready</span>
+                    <span class="detail-pill">No auto-refresh timers</span>
                 </div>
             </div>
             <div class="gallery-content">
@@ -847,15 +879,26 @@ def _render_dashboard_card(
             task_group.title,
             " ".join(audience.value for audience in entry.audiences),
             " ".join(entry.backing_assets),
+            " ".join(entry.market_context_ids),
+            " ".join(entry.source_chunk_ids),
         )
     )
+    route_label = entry.notebook_route or "No notebook route registered"
     attributes = (
         f'class="{card_class}" '
         f'id="concept-{escape(entry.concept_id, quote=True)}" '
         f'data-concept-id="{escape(entry.concept_id, quote=True)}" '
         f'data-status="{escape(entry.status.value, quote=True)}" '
+        f'data-status-label="{escape(_status_label(status_kind), quote=True)}" '
         f'data-availability="{escape(status_kind, quote=True)}" '
         f'data-task-group="{escape(entry.task_group.value, quote=True)}" '
+        f'data-task-group-label="{escape(task_group.title, quote=True)}" '
+        f'data-route="{escape(route_label, quote=True)}" '
+        f'data-audiences="{_json_data_attr(_labels_from_audiences(entry.audiences))}" '
+        f'data-backing-assets="{_json_data_attr(entry.backing_assets)}" '
+        f'data-market-context-ids="{_json_data_attr(entry.market_context_ids)}" '
+        f'data-source-chunk-ids="{_json_data_attr(entry.source_chunk_ids)}" '
+        f'data-evidence-counts="{_json_data_attr(_evidence_count_labels(entry))}" '
         f'data-search="{escape(search_text.lower(), quote=True)}"'
     )
     body = _render_dashboard_card_body(entry, status_kind, task_group.title)
@@ -863,7 +906,7 @@ def _render_dashboard_card(
     if href is not None:
         return f'                <a {attributes} href="{escape(href, quote=True)}">\n{body}\n                </a>'
 
-    return f"                <article {attributes}>\n{body}\n                </article>"
+    return f'                <article {attributes} tabindex="0">\n{body}\n                </article>'
 
 
 def _render_dashboard_card_body(
@@ -871,24 +914,10 @@ def _render_dashboard_card_body(
     status_kind: str,
     task_group_title: str,
 ) -> str:
-    audience_tags = "\n".join(
-        f'                    <span class="audience-tag">{escape(_label_from_slug(audience.value))}</span>'
-        for audience in entry.audiences
+    evidence_counts = "\n".join(
+        f'                    <li class="evidence-pill">{escape(count_label)}</li>'
+        for count_label in _evidence_count_labels(entry)
     )
-    assets = "\n".join(
-        f'                    <li class="asset-pill">{escape(asset)}</li>'
-        for asset in entry.backing_assets[:3]
-    )
-    if len(entry.backing_assets) == 0:
-        assets = (
-            '                    <li class="asset-pill">'
-            "Registry or configuration metadata only</li>"
-        )
-    if len(entry.backing_assets) > 3:
-        assets = (
-            f"{assets}\n"
-            f'                    <li class="asset-pill">+{len(entry.backing_assets) - 3} more</li>'
-        )
 
     return f"""\
                     <div class="card-topline">
@@ -903,15 +932,39 @@ def _render_dashboard_card_body(
                         <h2>{escape(entry.title)}</h2>
                         <p>{escape(entry.description)}</p>
                     </div>
-                    <div class="audience-tags" aria-label="Audience tags">
-{audience_tags}
-                    </div>
-                    <ul class="asset-list" aria-label="Backing assets">
-{assets}
+                    <ul class="evidence-list" aria-label="Evidence counts">
+{evidence_counts}
                     </ul>
                     <span class="dashboard-action dashboard-action--{escape(status_kind, quote=True)}">
                         {escape(_action_label(status_kind))}
                     </span>"""
+
+
+def _json_data_attr(values: tuple[str, ...]) -> str:
+    return escape(json.dumps(list(values), separators=(",", ":")), quote=True)
+
+
+def _labels_from_audiences(
+    audiences: tuple[DashboardAudience, ...],
+) -> tuple[str, ...]:
+    return tuple(_label_from_slug(audience.value) for audience in audiences)
+
+
+def _evidence_count_labels(entry: DashboardRegistryEntry) -> tuple[str, ...]:
+    return (
+        _count_label(len(entry.backing_assets), "backing asset", "backing assets"),
+        _count_label(
+            len(entry.market_context_ids),
+            "Market context ID",
+            "Market context IDs",
+        ),
+        _count_label(len(entry.source_chunk_ids), "source chunk", "source chunks"),
+    )
+
+
+def _count_label(count: int, singular: str, plural: str) -> str:
+    noun = singular if count == 1 else plural
+    return f"{count} {noun}"
 
 
 def _task_group_metadata(entry: DashboardRegistryEntry) -> DashboardTaskGroupMetadata:
@@ -975,6 +1028,38 @@ _INDEX_JS = """
     const search = document.querySelector("#dashboard-search");
     const cards = Array.from(document.querySelectorAll(".dashboard-card"));
     const spotlight = document.querySelector("#route-spotlight");
+    const fallbackValue = "Registry or configuration metadata only";
+
+    const escapeHtml = (value) => String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+
+    const parseList = (card, name) => {
+        const raw = card.getAttribute(name) || "[]";
+        try {
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed.map((value) => String(value)) : [];
+        } catch {
+            return [];
+        }
+    };
+
+    const renderPills = (values) => {
+        const list = values.length > 0 ? values : [fallbackValue];
+        return list
+            .map((value) => `<li class="detail-pill">${escapeHtml(value)}</li>`)
+            .join("");
+    };
+
+    const renderDetail = (label, values) => `
+        <div class="spotlight-detail">
+            <strong>${escapeHtml(label)}</strong>
+            <ul class="detail-list">${renderPills(values)}</ul>
+        </div>
+    `;
 
     const updateSearch = () => {
         const query = search.value.trim().toLowerCase();
@@ -990,20 +1075,31 @@ _INDEX_JS = """
         }
         const title = card.querySelector("h2")?.textContent || "Dashboard route";
         const description = card.querySelector("p")?.textContent || "";
-        const taskGroup = card.getAttribute("data-task-group") || "market-activity";
-        const status = card.getAttribute("data-availability") || card.getAttribute("data-status") || "available";
-        const assets = Array.from(card.querySelectorAll(".asset-pill"))
-            .slice(0, 4)
-            .map((node) => `<span class="asset-pill">${node.textContent}</span>`)
-            .join("");
+        const route = card.getAttribute("data-route") || "No notebook route registered";
+        const taskGroup = card.getAttribute("data-task-group-label")
+            || card.getAttribute("data-task-group")
+            || "Market Activity";
+        const status = card.getAttribute("data-status-label") || card.getAttribute("data-availability") || "Available";
+        const audiences = parseList(card, "data-audiences");
+        const assets = parseList(card, "data-backing-assets");
+        const marketContextIds = parseList(card, "data-market-context-ids");
+        const sourceChunkIds = parseList(card, "data-source-chunk-ids");
+        const evidenceCounts = parseList(card, "data-evidence-counts");
         spotlight.innerHTML = `
             <p class="eyebrow">Route spotlight</p>
-            <h2>${title}</h2>
-            <p>${description}</p>
+            <h2>${escapeHtml(title)}</h2>
+            <p>${escapeHtml(description)}</p>
             <div class="spotlight-meta" aria-label="Spotlight details">
-                <span class="asset-pill">${taskGroup}</span>
-                <span class="asset-pill">${status}</span>
-                ${assets}
+                <span class="detail-pill">${escapeHtml(route)}</span>
+                <span class="detail-pill">${escapeHtml(taskGroup)}</span>
+                <span class="detail-pill">${escapeHtml(status)}</span>
+                ${evidenceCounts.map((count) => `<span class="detail-pill">${escapeHtml(count)}</span>`).join("")}
+            </div>
+            <div class="spotlight-detail-grid">
+                ${renderDetail("Audiences", audiences)}
+                ${renderDetail("Backing assets", assets)}
+                ${renderDetail("Market context IDs", marketContextIds)}
+                ${renderDetail("Source chunk IDs", sourceChunkIds)}
             </div>
         `;
     };

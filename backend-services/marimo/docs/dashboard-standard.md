@@ -111,6 +111,13 @@ The `/marimo` hub renders available dashboards first in that order, then renders
 planned concepts in a compact secondary Roadmap section below the available
 task sections.
 
+The `/marimo` hub cards are operational wayfinding surfaces. Keep visible card
+content to the dashboard title, concise job text, status/action, task-section
+label, and compact evidence counts. Put detailed route, audience, backing
+asset, Market context ID, and source chunk metadata in the route
+spotlight/details panel, and escape registry text before embedding or rendering
+that detail HTML.
+
 ## Dashboard intent
 
 Choose one primary intent before designing the dashboard:
@@ -287,6 +294,11 @@ environment is available:
 4. Exercise every primary control and confirm the visible result changes as
    intended.
 5. Iterate on visual and usefulness issues before final QA.
+
+For `/marimo` hub changes, include the card grid and route spotlight/details
+panel in that loop. Exercise search, audience filters, task-section anchors,
+card focus, card hover, desktop width, and a narrow viewport so evidence covers
+both wayfinding and overflow behavior.
 
 The final handoff must summarize the Playwright review evidence: pages opened,
 viewports reviewed, controls exercised, and visual or interaction fixes made.

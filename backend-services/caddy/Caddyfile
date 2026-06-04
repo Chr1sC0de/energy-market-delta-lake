@@ -66,7 +66,7 @@
 
                 @error status 401
                 handle_response @error {
-                    redir * /dagster-webserver/admin/login
+                    redir * /login?next=/dagster-webserver/admin
                 }
         }
 

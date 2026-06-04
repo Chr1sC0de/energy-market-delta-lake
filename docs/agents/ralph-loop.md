@@ -1416,6 +1416,15 @@ route, the same Caddy recipe also records desktop and narrow `.webm` videos for
 browser-review helper; it remains separate from Marimo notebook capture for
 `/marimo/<notebook>/` routes.
 
+Issue-required Caddy login-route smoke is a separate QA evidence boundary. When
+an issue declares `- QA: npm run build && npm run login-smoke`, Ralph records a
+structured `Caddy build/login smoke` QA result in `qa_results` with cwd
+`backend-services/caddy`, command `bash -lc 'npm run build && npm run
+login-smoke'`, status, and a `qa-*` log path. The root **Commit check** remains
+selected independently for Caddy file changes. Caddy commands run manually by
+Codex during implementation remain implementation logs only unless the issue
+declares this supported QA command and Ralph runs it in the formal QA phase.
+
 Ralph then generates a **Review package** at `review-package.html` in the run
 directory and links recorded sibling media from that package. The generator
 receives the final changed-file inventory, QA evidence, issue contract,

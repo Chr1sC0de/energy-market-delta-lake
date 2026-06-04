@@ -35,6 +35,8 @@ Dagster, auth, and Marimo.
 - [Caddyfile](Caddyfile) proxies the custom FastAPI auth API at `/auth*` and
   `POST /logout` to `DAGSTER_AUTHSERVER` alongside the hosted-OIDC routes used
   by `forward_auth`.
+- Failed Dagster admin `forward_auth` checks redirect to the shared custom
+  login route at `/login?next=/dagster-webserver/admin`.
 
 ## React Router portfolio
 
@@ -116,6 +118,13 @@ smoke:
 npm run build
 npm run login-smoke
 ```
+
+When a Ralph issue requires this login-route check, declare it as
+`- QA: npm run build && npm run login-smoke`. Ralph then runs the command from
+this Subproject during formal QA and persists the command, cwd, status, and log
+path in the issue run manifest and Review package evidence. Manual smoke
+commands run only inside the implementation pass remain Codex implementation
+logs.
 
 For screenshot-based browser review, this Subproject includes Playwright as a
 development dependency. Install the Chromium browser once, then review the local
