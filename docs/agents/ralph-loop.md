@@ -1742,7 +1742,8 @@ from that **Subproject** with non-empty `AWS_ENDPOINT_URL` and
 `AWS_ENDPOINT_URL_*` entries removed from the subprocess environment, so the
 same log is the **Deployed test** evidence and the full-tier idempotency
 evidence. The AWS Pulumi script still rejects direct runs that inherit endpoint
-override variables.
+override variables and checks the externally managed Cognito app client for the
+custom login `ALLOW_USER_PASSWORD_AUTH` requirement before `pulumi up`.
 
 If a checkpointed Operator deployment command or its **Deployed test** evidence
 fails, Ralph runs a deploy-failure analysis pass before recording the

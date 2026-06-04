@@ -126,6 +126,11 @@ live proof for that parameter-type change.
   `AWS_ENDPOINT_URL_*` variables before command discovery or credential checks,
   and the failure lists only variable names so LocalStack endpoint values and
   credentials are not printed.
+- The same deployed workflow checks the externally managed Cognito app client
+  for `ALLOW_USER_PASSWORD_AUTH` before `pulumi up`. That keeps custom
+  `/auth/login` misconfiguration from surfacing only after an EC2/ECS deploy,
+  and its failure message names SSM parameter paths and the missing flow rather
+  than client IDs, secrets, passwords, or endpoint override values.
 
 ## Related docs
 
@@ -141,6 +146,7 @@ live proof for that parameter-type change.
 - `sync.owner`: `docs`
 - `sync.sources`:
   - `infrastructure/aws-pulumi/configs.py`
+  - `infrastructure/aws-pulumi/cognito_auth_flow_preflight.py`
   - `infrastructure/aws-pulumi/dagster_core_deployment.py`
   - `backend-services/dagster-core/code-locations.aws.toml`
   - `infrastructure/aws-pulumi/code_locations.py`
@@ -161,6 +167,7 @@ live proof for that parameter-type change.
   - `infrastructure/aws-pulumi/Pulumi.dev-ausenergymarket.yaml`
   - `infrastructure/aws-pulumi/scripts/redeploy-user-code`
   - `infrastructure/aws-pulumi/scripts/run-integration-tests`
+  - `infrastructure/aws-pulumi/tests/unit/test_cognito_auth_flow_preflight.py`
   - `infrastructure/aws-pulumi/tests/component/conftest.py`
   - `infrastructure/aws-pulumi/tests/component/test_bastion_host.py`
   - `infrastructure/aws-pulumi/tests/component/test_caddy.py`

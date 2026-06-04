@@ -85,7 +85,9 @@ removed, so local LocalStack settings from the parent shell do not contaminate
 the real-AWS command. The command itself is still a real-AWS boundary: it
 rejects non-empty endpoint override variables before any AWS CLI, Pulumi, `uv`,
 `prek`, ECS rollout, deployed pytest, or idempotency preview step can inherit a
-LocalStack endpoint override.
+LocalStack endpoint override. It also checks the externally managed Cognito app
+client for the custom login `ALLOW_USER_PASSWORD_AUTH` requirement before
+`pulumi up`.
 
 The **AWS/Pulumi credential boundary** remains in the operator/Ralph outer loop:
 deployment commands may run only when the checkpointed Operator path or another
@@ -154,6 +156,7 @@ failures recorded in the manifests.
   - `docs/adr/0013-ralph-security-sensitive-issue-completion-review.md`
   - `infrastructure/aws-pulumi/scripts/redeploy-user-code`
   - `infrastructure/aws-pulumi/scripts/run-integration-tests`
+  - `infrastructure/aws-pulumi/cognito_auth_flow_preflight.py`
 - `sync.scope`: `operations, deployment`
 - `sync.qa`:
   - `git diff --name-only`

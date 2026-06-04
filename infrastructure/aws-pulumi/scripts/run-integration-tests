@@ -89,6 +89,9 @@ require_command prek
 
 export PULUMI_STACK="$STACK"
 export AWS_DEFAULT_REGION="$AWS_REGION"
+ENVIRONMENT_NAME="${ENVIRONMENT:-${PULUMI_STACK%%-*}}"
+RESOURCE_NAME="${ENVIRONMENT_NAME}-energy-market"
+CLUSTER_NAME="${RESOURCE_NAME}-dagster-cluster"
 
 if command -v aws >/dev/null 2>&1; then
 	HAS_AWS_CLI=1
@@ -106,6 +109,11 @@ printf '\n==> Running local Pulumi QA\n'
 uv run pytest tests/unit tests/component -q
 prek run -a
 
+printf '\n==> Checking Cognito app client auth flow\n'
+uv run python -m cognito_auth_flow_preflight \
+	--region "$AWS_DEFAULT_REGION" \
+	--resource-name "$RESOURCE_NAME"
+
 if [[ "$RUN_UP" -eq 1 ]]; then
 	printf '\n==> Applying Pulumi stack\n'
 	pulumi up --yes --non-interactive --stack "$PULUMI_STACK"
@@ -113,9 +121,6 @@ else
 	printf '\n==> Skipping pulumi up\n'
 fi
 
-ENVIRONMENT_NAME="${ENVIRONMENT:-${PULUMI_STACK%%-*}}"
-RESOURCE_NAME="${ENVIRONMENT_NAME}-energy-market"
-CLUSTER_NAME="${RESOURCE_NAME}-dagster-cluster"
 mapfile -t SERVICES < <(
 	RESOURCE_NAME="$RESOURCE_NAME" uv run python - <<'PY'
 import os
