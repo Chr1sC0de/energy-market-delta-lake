@@ -14,9 +14,12 @@ FastAPI service used behind Caddy to protect the admin Dagster UI and
 ## What it does
 
 - starts a FastAPI app from [main.py](main.py)
-- stores browser session state with Starlette `SessionMiddleware`
+- stores only an opaque auth session id in the Starlette
+  `SessionMiddleware` browser cookie
+- keeps Cognito user and access-token state server-side behind that session id
 - redirects users to the configured OIDC provider for login
-- validates the returned access token against the configured JWKS endpoint
+- validates the returned Cognito access token against the configured JWKS
+  endpoint, user-pool issuer, expiry, access-token use, and app client id
 - returns auth decisions to Caddy `forward_auth` checks for protected routes
 
 ## Protected route flows

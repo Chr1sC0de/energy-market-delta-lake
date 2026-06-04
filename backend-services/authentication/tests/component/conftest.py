@@ -34,14 +34,12 @@ _token_patch = patch("secrets.token_urlsafe", return_value=TEST_SESSION_SECRET)
 _token_patch.start()
 
 # Set required environment variables before main.py is imported.
-os.environ.setdefault("COGNITO_DAGSTER_AUTH_CLIENT_ID", "test-client-id")
-os.environ.setdefault(
-    "COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL",
-    "https://cognito.example.com/.well-known/openid-configuration",
+os.environ["COGNITO_DAGSTER_AUTH_CLIENT_ID"] = "test-client-id"
+os.environ["COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL"] = (
+    "https://cognito.example.com/.well-known/openid-configuration"
 )
-os.environ.setdefault("COGNITO_DAGSTER_AUTH_CLIENT_SECRET", "test-client-secret")
-os.environ.setdefault(
-    "COGNITO_TOKEN_SIGNING_KEY_URL",
-    "https://cognito.example.com/.well-known/jwks.json",
+os.environ["COGNITO_DAGSTER_AUTH_CLIENT_SECRET"] = "test-client-secret"
+os.environ["COGNITO_TOKEN_SIGNING_KEY_URL"] = (
+    "https://cognito.example.com/.well-known/jwks.json"
 )
 os.environ["WEBSITE_ROOT_URL"] = "https://example.com"

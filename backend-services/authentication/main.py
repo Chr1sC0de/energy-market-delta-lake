@@ -4,7 +4,7 @@ from collections.abc import Awaitable
 from os import environ
 from secrets import token_urlsafe
 from time import time
-from typing import Any, Callable, cast
+from typing import Any, Callable, NotRequired, TypedDict, cast
 
 import requests
 from authlib.integrations.starlette_client import OAuth, StarletteOAuth2App
@@ -23,6 +23,29 @@ app = FastAPI()
 router = APIRouter()
 
 app.add_middleware(SessionMiddleware, secret_key=token_urlsafe(32))
+
+AUTH_SESSION_ID_FIELD = "auth_session_id"
+
+
+class AuthSession(TypedDict):
+    """Server-side authentication fields for one browser session."""
+
+    user: Any
+    token_type: str
+    access_token: str
+    expires_at: float
+
+
+class CognitoAccessTokenClaims(TypedDict):
+    """Cognito access-token claims required by this service."""
+
+    iss: str
+    exp: int | float
+    token_use: str
+    client_id: NotRequired[str]
+
+
+AUTH_SESSIONS: dict[str, AuthSession] = {}
 
 
 def _normalise_website_root_url(raw: str) -> str:
@@ -94,8 +117,34 @@ def get_hmac_key_data(token: str, jwks: JWKS) -> JWK | None:
             return key
 
 
+def _configured_cognito_issuer() -> str:
+    """Return the configured Cognito user-pool issuer URL."""
+    metadata_url = environ["COGNITO_DAGSTER_AUTH_SERVER_METADATA_URL"]
+    well_known_path = "/.well-known/openid-configuration"
+    if metadata_url.endswith(well_known_path):
+        return metadata_url[: -len(well_known_path)]
+    return metadata_url.rstrip("/")
+
+
+def _validate_access_token_claims(claims: CognitoAccessTokenClaims) -> None:
+    """Validate Cognito access-token claims bound to this app client."""
+    issuer = claims.get("iss")
+    if issuer != _configured_cognito_issuer():
+        raise ValueError("Invalid token issuer")
+
+    expires_at = claims.get("exp")
+    if expires_at is None or time() >= float(expires_at):
+        raise ValueError("Token has expired")
+
+    if claims.get("token_use") != "access":
+        raise ValueError("Invalid token use")
+
+    if claims.get("client_id") != environ["COGNITO_DAGSTER_AUTH_CLIENT_ID"]:
+        raise ValueError("Invalid token client")
+
+
 def verify_jwt(token: str) -> bool:
-    """Verify a JWT against the configured Cognito signing keys."""
+    """Verify a JWT signature and required Cognito access-token claims."""
     try:
         jwks = get_user_pool_token_signing_key()
 
@@ -112,9 +161,15 @@ def verify_jwt(token: str) -> bool:
 
         message, encoded_signature = token.rsplit(".", 1)
 
-        return hmac_key.verify(
+        verified = hmac_key.verify(
             message.encode(), base64url_decode(encoded_signature.encode())
         )
+        if not verified:
+            return False
+
+        claims = cast(CognitoAccessTokenClaims, jwt.get_unverified_claims(token))
+        _validate_access_token_claims(claims)
+        return True
     except Exception as e:
         raise HTTPException(
             status_code=HTTP_401_UNAUTHORIZED,
@@ -123,7 +178,12 @@ def verify_jwt(token: str) -> bool:
 
 
 def clear_session(session: dict[str, Any]) -> None:
-    """Clear authentication fields from a session mapping."""
+    """Clear the browser session id and matching server-side auth state."""
+    session_id = session.pop(AUTH_SESSION_ID_FIELD, None)
+    if isinstance(session_id, str):
+        AUTH_SESSIONS.pop(session_id, None)
+
+    # Remove legacy auth fields if an older cookie is presented.
     session.pop("user", None)
     session.pop("token_type", None)
     session.pop("access_token", None)
@@ -132,16 +192,33 @@ def clear_session(session: dict[str, Any]) -> None:
 
 def _validate_session(request: Request) -> JSONResponse:
     """Shared session validation logic for protected service endpoints."""
-    if any(
-        field not in request.session
-        for field in ("user", "token_type", "access_token", "expires_at")
-    ):
+    session_id = request.session.get(AUTH_SESSION_ID_FIELD)
+    if not isinstance(session_id, str):
+        clear_session(request.session)
         return JSONResponse(
             status_code=HTTP_401_UNAUTHORIZED,
             content={"message": "unauthorized access"},
         )
 
-    if time() >= request.session["expires_at"]:
+    auth_session = AUTH_SESSIONS.get(session_id)
+    if auth_session is None:
+        clear_session(request.session)
+        return JSONResponse(
+            status_code=HTTP_401_UNAUTHORIZED,
+            content={"message": "unauthorized access"},
+        )
+
+    if any(
+        field not in auth_session
+        for field in ("user", "token_type", "access_token", "expires_at")
+    ):
+        clear_session(request.session)
+        return JSONResponse(
+            status_code=HTTP_401_UNAUTHORIZED,
+            content={"message": "unauthorized access"},
+        )
+
+    if time() >= auth_session["expires_at"]:
         clear_session(request.session)
         return JSONResponse(
             status_code=HTTP_401_UNAUTHORIZED,
@@ -151,7 +228,7 @@ def _validate_session(request: Request) -> JSONResponse:
     if verify_jwt(
         cast(
             str,
-            request.session["access_token"],
+            auth_session["access_token"],
         )
     ):
         return JSONResponse(
@@ -177,10 +254,15 @@ async def _authorize_callback(request: Request, redirect_path: str) -> Response:
     """Shared OIDC callback logic — exchanges code for token, sets session."""
     try:
         token = await oidc.authorize_access_token(request)
-        request.session["user"] = token["userinfo"]
-        request.session["token_type"] = token["token_type"]
-        request.session["access_token"] = token["access_token"]
-        request.session["expires_at"] = token["expires_at"]
+        clear_session(request.session)
+        session_id = token_urlsafe(32)
+        AUTH_SESSIONS[session_id] = {
+            "user": token["userinfo"],
+            "token_type": token["token_type"],
+            "access_token": token["access_token"],
+            "expires_at": token["expires_at"],
+        }
+        request.session[AUTH_SESSION_ID_FIELD] = session_id
         return RedirectResponse(f"{_website_root_url}{redirect_path}")
     except Exception as e:
         clear_session(request.session)
