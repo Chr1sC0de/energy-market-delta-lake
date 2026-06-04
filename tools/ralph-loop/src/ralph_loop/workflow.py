@@ -5505,6 +5505,23 @@ def issue_completion_review_markdown_lines(
         lines.append(f"- Artifact: `{artifact_path}`")
     if log_path:
         lines.append(f"- Log: `{log_path}`")
+    finding_classification = review.get("finding_classification")
+    if isinstance(finding_classification, dict):
+        outcome = str(finding_classification.get("outcome") or "unknown")
+        reason = str(finding_classification.get("reason") or "").strip()
+        reason_text = f": {reason}" if reason else ""
+        lines.append(f"- Finding classification: `{outcome}`{reason_text}")
+    deferred = review.get("deferred_deployment_evidence")
+    if isinstance(deferred, dict):
+        action = str(deferred.get("recommended_action") or "").strip()
+        owner = str(deferred.get("next_owner") or "post-Promotion").strip()
+        if action:
+            lines.append(f"- Deferred deployment evidence: {action} (owner: `{owner}`)")
+        else:
+            lines.append(f"- Deferred deployment evidence owner: `{owner}`")
+    followups = review.get("out_of_scope_followups")
+    if isinstance(followups, list) and followups:
+        lines.append(f"- Out-of-scope follow-up candidates: {len(followups)}")
     attempts = review.get("attempts")
     if isinstance(attempts, list) and attempts:
         attempt_lines: list[str] = []

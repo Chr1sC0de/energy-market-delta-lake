@@ -166,6 +166,9 @@ class RunManifest:
                 "artifact_path": None,
                 "attempts": [],
                 "repair_attempts": [],
+                "finding_classification": None,
+                "deferred_deployment_evidence": None,
+                "out_of_scope_followups": [],
                 "failure": None,
             },
             "review_package": {
@@ -733,6 +736,9 @@ class RunManifest:
         review_attempt: int | None = None,
         result: str | None = None,
         findings: str | None = None,
+        finding_classification: dict[str, Any] | None = None,
+        deferred_deployment_evidence: dict[str, Any] | None = None,
+        out_of_scope_followups: list[dict[str, Any]] | None = None,
         repair_attempt: int | None = None,
         error: str | None = None,
     ) -> None:
@@ -761,6 +767,16 @@ class RunManifest:
             review["log_path"] = path_text(log_path)
         if artifact_path is not None or "artifact_path" not in review:
             review["artifact_path"] = path_text(artifact_path)
+        if result is not None:
+            review["result"] = result
+        if findings is not None:
+            review["findings"] = findings
+        if finding_classification is not None:
+            review["finding_classification"] = dict(finding_classification)
+        if deferred_deployment_evidence is not None:
+            review["deferred_deployment_evidence"] = dict(deferred_deployment_evidence)
+        if out_of_scope_followups is not None:
+            review["out_of_scope_followups"] = list(out_of_scope_followups)
         if error is not None:
             review["failure"] = {
                 "message": error,

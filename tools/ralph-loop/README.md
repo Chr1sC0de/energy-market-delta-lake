@@ -44,13 +44,13 @@ make run-prek
   formatting/parsing, and recovery policy helpers
 - `src/ralph_loop/state.py`: Ralph run and Operator manifest state helpers,
   including **Issue completion review**, security-sensitive path evidence,
-  structured Stiffness ratio evidence, Operator smoke evidence, adaptive-event
-  evidence, source-table replay recovery guidance, active child run status,
-  deploy-repair issue state, and checkpointed deploy-repair target state,
-  Operator rollup failed-command summaries, rollup requeue recovery
-  classification including no-change Codex environment failures, bounded Review
-  package rollup and Promotion inventory evidence, and stale detached Operator
-  status inputs
+  deferred deployment evidence, out-of-scope follow-up candidates, structured
+  Stiffness ratio evidence, Operator smoke evidence, adaptive-event evidence,
+  source-table replay recovery guidance, active child run status, deploy-repair
+  issue state, and checkpointed deploy-repair target state, Operator rollup
+  failed-command summaries, rollup requeue recovery classification including
+  no-change Codex environment failures, bounded Review package rollup and
+  Promotion inventory evidence, and stale detached Operator status inputs
 - `tests/unit/`: Ralph unit tests
 - `.pre-commit-config.yaml`: Subproject `prek` hook surface
 
@@ -78,6 +78,12 @@ ADR
 [0013](../../docs/adr/0013-ralph-security-sensitive-issue-completion-review.md)
 records why **Security-sensitive change** extends **Issue completion review**
 instead of adding a separate security gate or scanner block.
+ADR
+[0009](../../docs/adr/0009-ralph-post-promotion-deployment-classification.md)
+records why deployed AWS workflow logs are post-**Promotion** evidence. Ralph
+therefore classifies deployment-evidence-only review failures as deferred
+Operator evidence instead of spending no-change repair attempts before
+**Local integration**.
 
 ## Sync metadata
 

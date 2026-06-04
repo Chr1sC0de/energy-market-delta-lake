@@ -1366,12 +1366,23 @@ ordinary implementation, Codex, and QA retries; after each repair Ralph reruns
 selected QA, refreshes redacted security diff evidence from the repaired diff,
 and reruns **Issue completion review** before **Local integration**, Trunk push,
 or Exploratory handoff can proceed.
+Before starting repair, Ralph classifies failed review findings. A finding that
+only reports missing post-**Promotion** deployed AWS workflow evidence is
+recorded as deferred deployment evidence and the issue can continue, because
+`redeploy-user-code`, `run-integration-tests --with-idempotency`, AWS, Pulumi,
+and **Deployed test** logs belong to the checkpointed Operator path after
+**Promotion**. A finding that is clearly outside the current issue contract is
+recorded as an out-of-scope follow-up candidate for later queue maintenance.
+Functional acceptance failures, mixed findings, missing selected QA evidence,
+and security blockers remain current-issue repair findings.
 Security blockers reported in `## Security review` are included in the same
 repair prompt as ordinary `## Findings`; they do not create a separate security
 gate term. Completion comments and `ralph-run.json` preserve the review
 artifact path, review log path, review attempt sequence, repair attempt
-sequence, and refreshed redacted security evidence so Operators can inspect the
-failure, repair, QA rerun, and review rerun ordering after publication.
+sequence, finding classification, deferred deployment evidence,
+out-of-scope follow-up candidates, and refreshed redacted security evidence so
+Operators can inspect the failure, repair, QA rerun, and review rerun ordering
+after publication.
 Ralph then runs any configured Review package media recipes. Changed curated
 Marimo notebook files under
 `backend-services/marimo/notebooks/<name>.py` map to `/marimo/<name>/` when that
@@ -1435,6 +1446,11 @@ reruns review. If the attempt budget is exhausted, Ralph marks the issue
 `agent-failed`, preserves the worktrees and logs, records
 `issue_completion_review.status: failed_exhausted`, and does not update an
 **Integration target** or push an Exploratory handoff.
+If a repair attempt completes without changed files, Ralph reclassifies the
+original review findings before consuming more attempts. Deferred deployment
+evidence and out-of-scope follow-up findings continue without further
+no-change repair attempts; ambiguous or current-issue findings still fail
+normally with preserved evidence.
 
 For **Local integration**, Ralph creates a temporary detached integration
 worktree at latest target, runs `git merge --squash` from the issue branch,
