@@ -42,16 +42,14 @@
     # guest server route
     reverse_proxy /dagster-webserver/guest* {$DAGSTER_WEBSERVER_GUEST}
 
-    # Auth server routes (custom auth API, login, logout, and OAuth callback)
+    # Auth server routes (custom auth API, logout, and validation endpoints)
     reverse_proxy /auth* {$DAGSTER_AUTHSERVER}
-    reverse_proxy /logout {$DAGSTER_AUTHSERVER}
-    reverse_proxy /dagster-webserver/admin/login* {$DAGSTER_AUTHSERVER}
-    reverse_proxy /oauth2/dagster-webserver/admin* {$DAGSTER_AUTHSERVER}
+    reverse_proxy /logout* {$DAGSTER_AUTHSERVER}
+    reverse_proxy /oauth2/dagster-webserver/admin/validate {$DAGSTER_AUTHSERVER}
 
     # Protected Dagster routes
     @protected {
         path /dagster-webserver/admin*
-        not path /dagster-webserver/admin/login*
     }
 
     handle @protected {
@@ -75,15 +73,13 @@
 
     # ----- Marimo notebook server -----
 
-    # Auth server routes (login and OAuth callback)
-    reverse_proxy /marimo/login*  {$DAGSTER_AUTHSERVER}
-    reverse_proxy /oauth2/marimo* {$DAGSTER_AUTHSERVER}
+    # Auth server route for Marimo validation checks.
+    reverse_proxy /oauth2/marimo/validate {$DAGSTER_AUTHSERVER}
 
     # Protected Marimo routes
     @protectedMarimo {
         path /marimo*
         not path /marimo/health
-        not path /marimo/login*
         not header Connection *Upgrade*
         not path /marimo/*/assets/* /marimo/*/favicon.ico /marimo/*/favicon.* /marimo/*/manifest.json /marimo/*/apple-touch-icon.png
     }
