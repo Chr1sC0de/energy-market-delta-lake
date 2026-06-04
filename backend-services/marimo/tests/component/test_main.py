@@ -315,8 +315,14 @@ class TestIndexPage:
         assert "capacity-context" in cards
         assert "Marimo concept gallery" in response.text
         assert "Audience filters" in response.text
-        assert 'href="#concept-gas-market-overview"' in response.text
         assert 'class="audience-filter"' in response.text
+
+    def test_index_omits_concept_jump_list(self) -> None:
+        response = _get("/marimo")
+
+        assert "concept-nav" not in response.text
+        assert 'aria-label="Dashboard concepts"' not in response.text
+        assert 'href="#concept-gas-market-overview"' not in response.text
 
     def test_index_links_available_cards_to_mounted_notebooks(self) -> None:
         response = _get("/marimo")
@@ -397,17 +403,28 @@ class TestIndexPage:
         assert "setinterval(" not in html
         assert "settimeout(" not in html
 
-    def test_index_renders_search_story_filters_and_spotlight(self) -> None:
+    def test_index_renders_search_audience_filters_and_spotlight(self) -> None:
         response = _get("/marimo")
 
         assert 'id="dashboard-search"' in response.text
-        assert "Story groups" in response.text
-        assert 'for="story-market"' in response.text
+        assert "Audience filters" in response.text
+        assert 'for="audience-all"' in response.text
+        assert 'for="audience-operator"' in response.text
         assert 'id="route-spotlight"' in response.text
         assert 'data-story="market"' in response.text
         assert 'data-story="operations"' in response.text
         assert 'data-story="trust"' in response.text
         assert 'data-story="concepts"' in response.text
+
+    def test_index_omits_story_filter_controls(self) -> None:
+        response = _get("/marimo")
+
+        assert "Story groups" not in response.text
+        assert 'aria-label="Story group filters"' not in response.text
+        assert 'id="story-all"' not in response.text
+        assert 'for="story-market"' not in response.text
+        assert 'name="story-filter"' not in response.text
+        assert "story-filter" not in response.text
 
     def test_story_group_falls_back_to_market_for_market_entries(self) -> None:
         entry = DashboardRegistryEntry(

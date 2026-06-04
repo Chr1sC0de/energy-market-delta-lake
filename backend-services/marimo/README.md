@@ -60,8 +60,8 @@ The dashboard app in [src/marimoserver/main.py](src/marimoserver/main.py):
 - exposes `/health` for container health checks
 - discovers `*.py` notebooks from `notebooks/`
 - mounts each notebook as a marimo sub-app under `/marimo/<notebook-name>`
-- serves a concept gallery hub at `/marimo` for registry concepts, filterable
-  by audience and story group
+- serves a concept gallery hub at `/marimo` for registry concepts, with search,
+  audience filters, summary counts, and route spotlight context
 - serves the code-local dashboard roadmap registry at
   `/marimo/dashboard-registry.json`
 - links the Caddy-served shared light theme at `/theme.css` for the index and
