@@ -35,6 +35,8 @@ Dagster, auth, and Marimo.
 - [Caddyfile](Caddyfile) proxies the custom FastAPI auth API at `/auth*` and
   `POST /logout` to `DAGSTER_AUTHSERVER` alongside the hosted-OIDC routes used
   by `forward_auth`.
+- Failed Dagster admin `forward_auth` checks redirect to the shared custom
+  login route at `/login?next=/dagster-webserver/admin`.
 
 ## React Router portfolio
 
